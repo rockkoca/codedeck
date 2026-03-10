@@ -2,7 +2,8 @@
  * Push notification registration for Capacitor apps.
  * Registers for APNs (iOS) / FCM (Android) and sends token to CF Worker.
  */
-import { Capacitor } from '@capacitor/core';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isNative = (): boolean => typeof (globalThis as any).Capacitor?.isNativePlatform === 'function' && (globalThis as any).Capacitor.isNativePlatform();
 
 let pushSupported = false;
 
@@ -10,9 +11,10 @@ export async function initPushNotifications(
   apiKey: string,
   cfWorkerUrl: string,
 ): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+  if (!isNative()) return;
 
   // Dynamic import to avoid bundling on web
+  // @ts-ignore
   const { PushNotifications } = await import('@capacitor/push-notifications');
 
   const perms = await PushNotifications.checkPermissions();
@@ -24,15 +26,15 @@ export async function initPushNotifications(
   pushSupported = true;
   await PushNotifications.register();
 
-  PushNotifications.addListener('registration', async (token) => {
+  PushNotifications.addListener('registration', async (token: { value: string }) => {
     await registerDeviceToken(token.value, apiKey, cfWorkerUrl);
   });
 
-  PushNotifications.addListener('pushNotificationReceived', (notification) => {
+  PushNotifications.addListener('pushNotificationReceived', (notification: unknown) => {
     console.log('Push received:', notification);
   });
 
-  PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+  PushNotifications.addListener('pushNotificationActionPerformed', (action: { notification: { data: unknown } }) => {
     console.log('Push action:', action);
     // Navigate based on action data (e.g., to specific session)
     const data = action.notification.data as Record<string, string> | undefined;
@@ -43,7 +45,8 @@ export async function initPushNotifications(
 }
 
 async function registerDeviceToken(token: string, apiKey: string, cfWorkerUrl: string): Promise<void> {
-  const platform = Capacitor.getPlatform(); // 'ios' | 'android'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const platform = (globalThis as any).Capacitor?.getPlatform?.() ?? 'unknown'; // 'ios' | 'android'
   try {
     await fetch(`${cfWorkerUrl}/api/push/register`, {
       method: 'POST',

@@ -3,6 +3,7 @@ import type { Env } from '../types.js';
 import { randomHex, sha256Hex } from '../security/crypto.js';
 import { createServer, getServerById } from '../db/queries.js';
 import { logAudit } from '../security/audit.js';
+import { requireAuth } from '../security/authorization.js';
 import { z } from 'zod';
 
 export const bindRoutes = new Hono<{ Bindings: Env }>();
@@ -10,12 +11,13 @@ export const bindRoutes = new Hono<{ Bindings: Env }>();
 const BIND_CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 // POST /api/bind/initiate — user starts bind flow, gets a short code
-bindRoutes.post('/initiate', async (c) => {
+bindRoutes.post('/initiate', requireAuth(), async (c) => {
   const body = await c.req.json().catch(() => null);
-  const parsed = z.object({ userId: z.string(), serverName: z.string() }).safeParse(body);
+  const parsed = z.object({ serverName: z.string() }).safeParse(body);
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
 
-  const { userId, serverName } = parsed.data;
+  const userId = c.get('userId' as never) as string;
+  const { serverName } = parsed.data;
   const code = randomHex(4).toUpperCase(); // 8-char hex code
   const expiresAt = Date.now() + BIND_CODE_TTL_MS;
 
@@ -56,6 +58,25 @@ bindRoutes.post('/confirm', async (c) => {
   await logAudit({ userId: pending.user_id, action: 'bind.confirm', ip: c.req.header('CF-Connecting-IP'), details: { serverId } }, c.env.DB);
 
   return c.json({ serverId, token: rawToken });
+});
+
+// POST /api/bind/direct — single-step bind for web-authenticated users (API key already in hand)
+bindRoutes.post('/direct', requireAuth(), async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = z.object({ serverName: z.string().min(1).max(64) }).safeParse(body);
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
+
+  const userId = c.get('userId' as never) as string;
+  const { serverName } = parsed.data;
+
+  const rawToken = randomHex(32);
+  const tokenHash = await sha256Hex(rawToken);
+  const serverId = randomHex(16);
+
+  await createServer(c.env.DB, serverId, userId, serverName, tokenHash);
+  await logAudit({ userId, action: 'bind.direct', ip: c.req.header('CF-Connecting-IP'), details: { serverId } }, c.env.DB);
+
+  return c.json({ serverId, token: rawToken, serverName }, 201);
 });
 
 // POST /api/bind/verify — verify a daemon auth token

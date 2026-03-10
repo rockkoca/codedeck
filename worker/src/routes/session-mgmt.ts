@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { Env } from '../types.js';
 import { getServerById } from '../db/queries.js';
-import { requireAuth, checkServerTeamAccess } from '../security/authorization.js';
+import { requireAuth, resolveServerRole } from '../security/authorization.js';
 import logger from '../util/logger.js';
 
 export const sessionMgmtRoutes = new Hono<{ Bindings: Env }>();
@@ -14,38 +14,38 @@ export const sessionMgmtRoutes = new Hono<{ Bindings: Env }>();
  * All commands are relayed to the daemon via DaemonBridge (JSON over WebSocket send endpoint).
  * The daemon interprets and executes the session operation locally.
  *
- * Permission model (11.7):
- * - members: can view/send
- * - admins: can start/stop
- * - owners: can manage
+ * Permission model:
+ * - start/stop: requires owner | admin
+ * - send: requires owner | admin | member
  */
 
 // Apply auth middleware globally to all session routes
 sessionMgmtRoutes.use('/*', requireAuth());
 
 sessionMgmtRoutes.post('/:id/session/start', async (c) => {
-  // start requires admin or owner — no team-membership bypass
-  const role = c.get('role' as never) as string;
-  if (!['admin', 'owner'].includes(role)) {
+  const userId = c.get('userId' as never) as string;
+  const role = await resolveServerRole(c.env.DB, c.req.param('id')!, userId);
+  if (role !== 'owner' && role !== 'admin') {
     return c.json({ error: 'forbidden', reason: 'start requires admin or owner role' }, 403);
   }
   return relayToDaemon(c, 'session.start');
 });
 
 sessionMgmtRoutes.post('/:id/session/stop', async (c) => {
-  // stop requires admin or owner — no team-membership bypass
-  const role = c.get('role' as never) as string;
-  if (!['admin', 'owner'].includes(role)) {
+  const userId = c.get('userId' as never) as string;
+  const role = await resolveServerRole(c.env.DB, c.req.param('id')!, userId);
+  if (role !== 'owner' && role !== 'admin') {
     return c.json({ error: 'forbidden', reason: 'stop requires admin or owner role' }, 403);
   }
   return relayToDaemon(c, 'session.stop');
 });
 
 sessionMgmtRoutes.post('/:id/session/send', async (c) => {
-  // send allows any authenticated team member — verify server access
   const userId = c.get('userId' as never) as string;
-  const hasAccess = await checkServerTeamAccess(c, c.req.param('id')!, userId);
-  if (!hasAccess) return c.json({ error: 'forbidden', reason: 'not_authorized_for_server' }, 403);
+  const role = await resolveServerRole(c.env.DB, c.req.param('id')!, userId);
+  if (role === 'none') {
+    return c.json({ error: 'forbidden', reason: 'not_authorized_for_server' }, 403);
+  }
   return relayToDaemon(c, 'session.send');
 });
 

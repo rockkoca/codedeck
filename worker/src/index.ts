@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from './types.js';
+import { githubAuthRoutes } from './routes/github-auth.js';
 import { authRoutes } from './routes/auth.js';
 import { bindRoutes } from './routes/bind.js';
 import { serverRoutes } from './routes/server.js';
@@ -21,6 +22,7 @@ export { RateLimiter } from '../durable-objects/RateLimiter.js';
 const app = new Hono<{ Bindings: Env }>();
 
 // Routes
+app.route('/api/auth/github', githubAuthRoutes);
 app.route('/api/auth', authRoutes);
 app.route('/api/bind', bindRoutes);
 app.route('/api/server', serverRoutes);
@@ -37,17 +39,16 @@ app.route('/webhook', webhookRoutes);
 // Health check
 app.get('/api/health', (c) => c.json({ service: 'codedeck-worker', status: 'ok' }));
 
-// Serve web UI static assets (built to ../web/dist, referenced via ASSETS binding in wrangler.toml)
-// Any non-API route falls through to the SPA index.html
+// SPA fallback — serve index.html for all non-API routes
 app.get('*', async (c) => {
   const url = new URL(c.req.url);
-  // Only serve SPA for non-API routes
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/webhook')) {
     return c.json({ error: 'not_found' }, 404);
   }
-  // CF Pages / static assets — handled by wrangler assets binding
-  // In dev, proxy to vite dev server; in prod, wrangler handles ASSETS
-  return new Response('Remote Chat CLI — build web/ and deploy', { status: 200 });
+  // Try exact asset first, fall back to index.html for SPA routing
+  const assetRes = await c.env.ASSETS.fetch(c.req.raw).catch(() => null);
+  if (assetRes && assetRes.status !== 404) return assetRes;
+  return c.env.ASSETS.fetch(new Request(new URL('/index.html', url).toString()));
 });
 
 export default {

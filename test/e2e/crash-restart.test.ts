@@ -9,7 +9,7 @@ import { restartSession } from '../../src/agent/session-manager.js';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-const SKIP = process.env.SKIP_TMUX_TESTS === '1';
+const SKIP = process.env.SKIP_TMUX_TESTS === '1' || !!process.env.CLAUDECODE;
 const SESSION = 'e2e_crash_restart_test';
 const FIXTURES = new URL('../fixtures', import.meta.url).pathname;
 

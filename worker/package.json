@@ -8,7 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "migrate": "wrangler d1 execute DB --file migrations/0001_initial.sql && wrangler d1 execute DB --file migrations/0002_teams.sql && wrangler d1 execute DB --file migrations/0003_security.sql"
+    "migrate": "wrangler d1 execute DB --file migrations/0001_initial.sql && wrangler d1 execute DB --file migrations/0002_teams.sql && wrangler d1 execute DB --file migrations/0003_security.sql && wrangler d1 execute DB --file migrations/0004_platform_bots.sql && wrangler d1 execute DB --file migrations/0005_binding_bot_id.sql"
   },
   "dependencies": {
     "hono": "^4.0.0",
@@ -19,6 +19,6 @@
     "miniflare": "^3.0.0",
     "typescript": "^5.3.0",
     "vitest": "^1.0.0",
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.71.0"
   }
 }

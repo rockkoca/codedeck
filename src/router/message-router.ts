@@ -11,6 +11,7 @@ import logger from '../util/logger.js';
 
 export interface InboundMessage {
   platform: string;
+  botId: string;             // which registered bot received this — required for binding persistence
   channelId: string;
   userId: string;
   content: string;
@@ -24,6 +25,7 @@ export interface InboundMessage {
 export interface ChannelBinding {
   platform: string;
   channelId: string;
+  botId: string;    // which bot this binding is for — matches D1 composite key
   projectName: string;
   boundBy: string;  // userId who bound this channel
   boundAt: number;
@@ -31,40 +33,43 @@ export interface ChannelBinding {
   allowedUserIds?: string[]; // if set, only these users can send messages
 }
 
-export type OutboundSender = (channelId: string, platform: string, content: string, replyToId?: string) => Promise<void>;
+export type OutboundSender = (channelId: string, platform: string, botId: string, content: string, replyToId?: string) => Promise<void>;
+export type BindingPersister = (platform: string, channelId: string, botId: string, bindingType: string, target: string) => Promise<boolean>;
+export type BindingRemover = (platform: string, channelId: string, botId: string) => Promise<boolean>;
 
 // ── In-memory binding store (persisted via CF Worker D1 — this is daemon-side cache) ─────
 
 const bindings = new Map<string, ChannelBinding>();
 
-function bindingKey(platform: string, channelId: string): string {
-  return `${platform}:${channelId}`;
+function bindingKey(platform: string, channelId: string, botId: string): string {
+  return `${platform}:${channelId}:${botId}`;
 }
 
 export function bindChannel(
   platform: string,
   channelId: string,
+  botId: string,
   projectName: string,
   userId: string,
   opts?: { teamId?: string; allowedUserIds?: string[] },
 ): void {
-  const key = bindingKey(platform, channelId);
+  const key = bindingKey(platform, channelId, botId);
   bindings.set(key, {
-    platform, channelId, projectName, boundBy: userId, boundAt: Date.now(),
+    platform, channelId, botId, projectName, boundBy: userId, boundAt: Date.now(),
     teamId: opts?.teamId,
     allowedUserIds: opts?.allowedUserIds,
   });
-  logger.info({ platform, channelId, projectName, teamId: opts?.teamId }, 'Channel bound to project');
+  logger.info({ platform, channelId, botId, projectName, teamId: opts?.teamId }, 'Channel bound to project');
 }
 
-export function unbindChannel(platform: string, channelId: string): void {
-  const key = bindingKey(platform, channelId);
+export function unbindChannel(platform: string, channelId: string, botId: string): void {
+  const key = bindingKey(platform, channelId, botId);
   bindings.delete(key);
-  logger.info({ platform, channelId }, 'Channel unbound');
+  logger.info({ platform, channelId, botId }, 'Channel unbound');
 }
 
-export function getBinding(platform: string, channelId: string): ChannelBinding | undefined {
-  return bindings.get(bindingKey(platform, channelId));
+export function getBinding(platform: string, channelId: string, botId: string): ChannelBinding | undefined {
+  return bindings.get(bindingKey(platform, channelId, botId));
 }
 
 export function getAllBindings(): ChannelBinding[] {
@@ -76,6 +81,10 @@ export function getAllBindings(): ChannelBinding[] {
 export interface RouterContext {
   sendOutbound: OutboundSender;
   sendToSession: (sessionName: string, text: string) => Promise<void>;
+  /** Persist a channel binding to D1 via CF Worker API. No-op if not connected. */
+  persistBinding?: BindingPersister;
+  /** Remove a channel binding from D1 via CF Worker API. No-op if not connected. */
+  removeBinding?: BindingRemover;
 }
 
 export async function routeMessage(msg: InboundMessage, ctx: RouterContext): Promise<void> {
@@ -97,17 +106,18 @@ export async function routeMessage(msg: InboundMessage, ctx: RouterContext): Pro
 
   // Handle help command (always available)
   if (parsed.isCommand && parsed.command?.name === 'help') {
-    await ctx.sendOutbound(msg.channelId, msg.platform, buildHelpText());
+    await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, buildHelpText());
     return;
   }
 
   // All other commands require a channel binding
-  const binding = getBinding(msg.platform, msg.channelId);
+  const binding = getBinding(msg.platform, msg.channelId, msg.botId);
   if (!binding) {
     if (parsed.isCommand) {
       await ctx.sendOutbound(
         msg.channelId,
         msg.platform,
+        msg.botId,
         'This channel is not bound to a project. Use /bind <project-name> to get started.',
       );
     }
@@ -137,29 +147,48 @@ async function handleBind(
   ctx: RouterContext,
 ): Promise<void> {
   if (args.length === 0) {
-    await ctx.sendOutbound(msg.channelId, msg.platform, 'Usage: /bind <project-name>');
+    await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, 'Usage: /bind <project-name>');
     return;
   }
 
   const projectName = args[0];
   const sessions = listSessions();
   const brainSession = sessions.find(
-    (s) => s.project === projectName && s.role === 'brain',
+    (s) => s.projectName === projectName && s.role === 'brain',
   );
 
   if (!brainSession) {
     await ctx.sendOutbound(
       msg.channelId,
       msg.platform,
+      msg.botId,
       `Project "${projectName}" has no active brain session. Start it first with: codedeck project start ${projectName}`,
     );
     return;
   }
 
-  bindChannel(msg.platform, msg.channelId, projectName, msg.userId);
+  bindChannel(msg.platform, msg.channelId, msg.botId, projectName, msg.userId);
+
+  // Persist to D1 via CF Worker so inbound webhook routing survives restarts.
+  // If persistence fails, roll back the in-memory bind and report the error.
+  if (ctx.persistBinding) {
+    const ok = await ctx.persistBinding(msg.platform, msg.channelId, msg.botId, 'project', projectName);
+    if (!ok) {
+      unbindChannel(msg.platform, msg.channelId, msg.botId);
+      await ctx.sendOutbound(
+        msg.channelId,
+        msg.platform,
+        msg.botId,
+        `Failed to bind channel — could not reach the server. Please try again.`,
+      );
+      return;
+    }
+  }
+
   await ctx.sendOutbound(
     msg.channelId,
     msg.platform,
+    msg.botId,
     `Channel bound to project "${projectName}". Send messages here to interact with the brain.`,
   );
 }
@@ -176,28 +205,28 @@ async function handleCommand(
   switch (command.name) {
     case 'status': {
       const sessions = listSessions();
-      const projectSessions = sessions.filter((s) => s.project === projectName);
+      const projectSessions = sessions.filter((s) => s.projectName === projectName);
       if (projectSessions.length === 0) {
-        await ctx.sendOutbound(msg.channelId, msg.platform, `No sessions for project "${projectName}"`);
+        await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, `No sessions for project "${projectName}"`);
         return;
       }
       const lines = projectSessions.map(
         (s) => `${s.name}: ${s.state} (${s.agentType})`,
       );
-      await ctx.sendOutbound(msg.channelId, msg.platform, lines.join('\n'));
+      await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, lines.join('\n'));
       return;
     }
 
     case 'list': {
       const sessions = listSessions();
-      const names = sessions.map((s) => `${s.project}/${s.role} [${s.state}]`).join('\n');
-      await ctx.sendOutbound(msg.channelId, msg.platform, names || 'No active sessions');
+      const names = sessions.map((s) => `${s.projectName}/${s.role} [${s.state}]`).join('\n');
+      await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, names || 'No active sessions');
       return;
     }
 
     case 'stop': {
       await ctx.sendToSession(brainSessionName, '@stop');
-      await ctx.sendOutbound(msg.channelId, msg.platform, `Stop signal sent to project "${projectName}"`);
+      await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, `Stop signal sent to project "${projectName}"`);
       return;
     }
 
@@ -207,7 +236,7 @@ async function handleCommand(
         : brainSessionName;
       const session = getSession(sessionName);
       if (!session) {
-        await ctx.sendOutbound(msg.channelId, msg.platform, `Session "${sessionName}" not found`);
+        await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, `Session "${sessionName}" not found`);
         return;
       }
       // The response-collector will capture screen and send it; just request it
@@ -218,9 +247,9 @@ async function handleCommand(
     case 'send': {
       if (command.rawArgs) {
         await forwardTextToBrain(brainSessionName, command.rawArgs, ctx);
-        await ctx.sendOutbound(msg.channelId, msg.platform, 'Message sent to brain.');
+        await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, 'Message sent to brain.');
       } else {
-        await ctx.sendOutbound(msg.channelId, msg.platform, 'Usage: /send <message>');
+        await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, 'Usage: /send <message>');
       }
       return;
     }
@@ -240,7 +269,7 @@ async function handleCommand(
       ].join('\n');
 
       if (!sub || sub === 'help') {
-        await ctx.sendOutbound(msg.channelId, msg.platform, teamHelpText);
+        await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, teamHelpText);
       } else {
         // Forward team management commands to brain as structured request
         const teamCommand = `/team ${command.rawArgs}`;
@@ -248,6 +277,7 @@ async function handleCommand(
         await ctx.sendOutbound(
           msg.channelId,
           msg.platform,
+          msg.botId,
           `Team command forwarded to brain: \`${teamCommand}\`. Check the web UI for results.`,
         );
       }
@@ -255,7 +285,7 @@ async function handleCommand(
     }
 
     case 'help': {
-      await ctx.sendOutbound(msg.channelId, msg.platform, buildHelpText());
+      await ctx.sendOutbound(msg.channelId, msg.platform, msg.botId, buildHelpText());
       return;
     }
 

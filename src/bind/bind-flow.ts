@@ -1,12 +1,13 @@
-import { readFile, writeFile, mkdir, chmod } from 'fs/promises';
+import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
-import { homedir } from 'os';
-import { createInterface } from 'readline/promises';
-import { loadConfig } from '../config.js';
+import { homedir, hostname } from 'os';
+import { execSync } from 'child_process';
 import logger from '../util/logger.js';
 
 const CREDS_DIR = join(homedir(), '.codedeck');
 const CREDS_PATH = join(CREDS_DIR, 'server.json');
+const PLIST_LABEL = 'cc.codedeck.daemon';
+const PLIST_PATH = join(homedir(), 'Library', 'LaunchAgents', `${PLIST_LABEL}.plist`);
 
 interface ServerCredentials {
   serverId: string;
@@ -16,64 +17,139 @@ interface ServerCredentials {
   boundAt: number;
 }
 
-export async function bindFlow(serverName: string): Promise<void> {
-  const config = await loadConfig();
-  const workerUrl = config.cf?.workerUrl;
-
-  if (!workerUrl) {
-    console.error('CF_WORKER_URL not set. Add it to ~/.codedeck/config.yaml or .env');
+/**
+ * Main entry point.
+ * Usage: codedeck bind https://app.codedeck.cc/bind/<apiKey> [device-name]
+ */
+export async function bindFlow(bindUrl: string, deviceName?: string): Promise<void> {
+  // Parse the bind URL
+  let url: URL;
+  try {
+    url = new URL(bindUrl);
+  } catch {
+    console.error('Invalid URL. Usage: codedeck bind https://app.codedeck.cc/bind/<api-key> [device-name]');
     process.exit(1);
   }
 
-  const apiKey = config.cf?.apiKey;
-  if (!apiKey) {
-    console.error('CF_API_KEY not set.');
+  const pathParts = url.pathname.split('/').filter(Boolean); // ['bind', '<apiKey>']
+  if (pathParts[0] !== 'bind' || !pathParts[1]) {
+    console.error('Invalid bind URL format. Expected: https://<worker>/bind/<api-key>');
     process.exit(1);
   }
 
-  // Step 1: Initiate bind — get a short code
-  const initRes = await fetch(`${workerUrl}/api/bind/initiate`, {
+  const apiKey = pathParts[1];
+  const workerUrl = url.origin;
+  const serverName = deviceName ?? hostname();
+
+  console.log(`Binding "${serverName}" to ${workerUrl}...`);
+
+  // One-shot bind — no code dance needed
+  const res = await fetch(`${workerUrl}/api/bind/direct`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ userId: 'me', serverName }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ serverName }),
   });
 
-  if (!initRes.ok) {
-    console.error(`Bind initiation failed: ${initRes.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.error(`Bind failed: ${res.status} ${body}`);
     process.exit(1);
   }
 
-  const { code, expiresAt } = await initRes.json() as { code: string; expiresAt: number };
-  const expiresIn = Math.round((expiresAt - Date.now()) / 1000);
-  console.log(`\nBind code: ${code}  (expires in ${expiresIn}s)\n`);
-  console.log('Enter this code in your chat platform (/agent bind <code>) or press Enter to confirm here:');
+  const { serverId, token } = await res.json() as { serverId: string; token: string };
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  await rl.question('> ');
-  rl.close();
-
-  // Step 2: Confirm the bind
-  const confirmRes = await fetch(`${workerUrl}/api/bind/confirm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
-  });
-
-  if (!confirmRes.ok) {
-    console.error(`Bind confirmation failed: ${confirmRes.status}`);
-    process.exit(1);
-  }
-
-  const { serverId, token } = await confirmRes.json() as { serverId: string; token: string };
-
-  // Step 3: Store credentials with 0600 permissions
+  // Save credentials (0600 permissions)
   const creds: ServerCredentials = { serverId, token, workerUrl, serverName, boundAt: Date.now() };
   await mkdir(CREDS_DIR, { recursive: true });
   await writeFile(CREDS_PATH, JSON.stringify(creds, null, 2), { encoding: 'utf8', mode: 0o600 });
+  logger.info({ serverId, serverName }, 'Daemon bound');
 
-  console.log(`\nBound successfully! Server ID: ${serverId}`);
-  console.log(`Credentials saved to ${CREDS_PATH}`);
-  logger.info({ serverId, serverName }, 'Daemon bound to CF server');
+  // Install tmux if missing
+  await ensureTmux();
+
+  // Install launch agent (macOS)
+  if (process.platform === 'darwin') {
+    await installLaunchAgent();
+    console.log('\nDaemon installed as a launch agent — starts automatically on login.');
+  } else {
+    console.log('\nRun "codedeck start" to start the daemon.');
+  }
+
+  console.log(`\nBound! Device "${serverName}" is ready.`);
+  console.log(`Open ${workerUrl} to see it online.`);
+}
+
+async function ensureTmux(): Promise<void> {
+  try {
+    execSync('tmux -V', { stdio: 'ignore' });
+    return; // already installed
+  } catch {
+    // not found
+  }
+
+  if (process.platform === 'darwin') {
+    // Check brew is available
+    try {
+      execSync('which brew', { stdio: 'ignore' });
+    } catch {
+      console.error('tmux not found and Homebrew is not installed. Please install tmux manually: https://formulae.brew.sh/formula/tmux');
+      process.exit(1);
+    }
+    console.log('tmux not found — installing via Homebrew...');
+    execSync('brew install tmux', { stdio: 'inherit' });
+    console.log('tmux installed.');
+  } else {
+    console.error('tmux not found. Please install it with your package manager (e.g. apt install tmux).');
+    process.exit(1);
+  }
+}
+
+async function installLaunchAgent(): Promise<void> {
+  const nodeExec = process.execPath;
+  const script = process.argv[1];
+  const logPath = join(CREDS_DIR, 'daemon.log');
+  const launchAgentsDir = join(homedir(), 'Library', 'LaunchAgents');
+
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${PLIST_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${nodeExec}</string>
+    <string>${script}</string>
+    <string>start</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${process.env.PATH ?? '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'}</string>
+    <key>HOME</key>
+    <string>${homedir()}</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${logPath}</string>
+  <key>StandardErrorPath</key>
+  <string>${logPath}</string>
+</dict>
+</plist>`;
+
+  await mkdir(launchAgentsDir, { recursive: true });
+  await writeFile(PLIST_PATH, plist, 'utf8');
+
+  // Unload existing (ignore error), then load fresh
+  try { execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null`, { stdio: 'ignore' }); } catch { /* ok */ }
+  execSync(`launchctl load -w "${PLIST_PATH}"`);
+  console.log(`Launch agent loaded: ${PLIST_PATH}`);
 }
 
 export async function loadCredentials(): Promise<ServerCredentials | null> {

@@ -1,48 +1,79 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { LoginPage } from './pages/LoginPage.js';
+import { DashboardPage } from './pages/DashboardPage.js';
 import { SessionTabs } from './components/SessionTabs.js';
 import { TerminalView } from './components/TerminalView.js';
 import { SessionControls } from './components/SessionControls.js';
 import { NewSessionDialog } from './components/NewSessionDialog.js';
 import { WsClient } from './ws-client.js';
-import type { SessionInfo, ServerInfo, TerminalDiff } from './types.js';
+import { configure as configureApi } from './api.js';
+import type { SessionInfo, TerminalDiff } from './types.js';
 
 interface AuthState {
   token: string;
-  serverId: string;
-  serverUrl: string;
+  userId: string;
+  baseUrl: string;
 }
+
+type View = 'dashboard' | 'terminal';
 
 export function App() {
   const [auth, setAuth] = useState<AuthState | null>(() => {
     try {
       const raw = localStorage.getItem('rcc_auth');
-      return raw ? (JSON.parse(raw) as AuthState) : null;
+      const state = raw ? (JSON.parse(raw) as AuthState) : null;
+      if (state) configureApi(state.baseUrl, state.token);
+      return state;
     } catch {
       return null;
     }
   });
 
+  const [view, setView] = useState<View>('dashboard');
+  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+
+  // Handle OAuth callback token in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const userId = params.get('userId');
+    if (token && userId) {
+      const authState: AuthState = { token, userId, baseUrl: window.location.origin };
+      localStorage.setItem('rcc_auth', JSON.stringify(authState));
+      setAuth(authState);
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
+
+  // Configure API client when auth changes
+  useEffect(() => {
+    if (auth) configureApi(auth.baseUrl, auth.token);
+  }, [auth]);
+
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [showNewSession, setShowNewSession] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const wsRef = useRef<WsClient | null>(null);
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
 
-  // Set up WebSocket when authenticated
+  // Set up WebSocket only when in terminal view with a selected server
   useEffect(() => {
-    if (!auth) return;
+    if (!auth || view !== 'terminal' || !selectedServerId) return;
 
-    const ws = new WsClient(auth.serverUrl, auth.serverId, auth.token);
+    const ws = new WsClient(auth.baseUrl, selectedServerId, auth.token);
     wsRef.current = ws;
 
     const unsub = ws.onMessage((msg) => {
       if (msg.type === 'session.event') {
-        if (msg.event === 'connected') setConnected(true);
+        if (msg.event === 'connected') {
+          setConnected(true);
+          // Request session list immediately so we can restore tabs after refresh
+          ws.requestSessionList();
+        }
         if (msg.event === 'disconnected') setConnected(false);
-        // Update session list
         setSessions((prev) => {
           const existing = prev.find((s) => s.name === msg.session);
           if (!existing && msg.session) {
@@ -50,6 +81,15 @@ export function App() {
           }
           return prev.map((s) => s.name === msg.session ? { ...s, state: msg.state as SessionInfo['state'] } : s);
         });
+      }
+      if (msg.type === 'session_list') {
+        setSessions(msg.sessions.map((s) => ({
+          name: s.name,
+          project: s.project,
+          role: s.role as SessionInfo['role'],
+          agentType: s.agentType,
+          state: s.state as SessionInfo['state'],
+        })));
       }
       if (msg.type === 'terminal.diff') {
         const apply = diffApplyersRef.current.get(msg.diff.sessionName);
@@ -65,12 +105,13 @@ export function App() {
       wsRef.current = null;
       setConnected(false);
     };
-  }, [auth]);
+  }, [auth, view, selectedServerId]);
 
   // Subscribe to terminal when session changes
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || !activeSession) return;
+    setLatencyMs(null);
     ws.subscribeTerminal(activeSession);
     return () => ws.unsubscribeTerminal(activeSession);
   }, [activeSession]);
@@ -85,6 +126,19 @@ export function App() {
     setAuth(null);
     setSessions([]);
     setActiveSession(null);
+    setView('dashboard');
+    setSelectedServerId(null);
+  }, []);
+
+  const handleSelectServer = useCallback((serverId: string) => {
+    setSelectedServerId(serverId);
+    setView('terminal');
+  }, []);
+
+  const handleBackToDashboard = useCallback(() => {
+    setView('dashboard');
+    setSelectedServerId(null);
+    setActiveSession(null);
   }, []);
 
   const registerDiffApplyer = useCallback((sessionName: string, apply: (d: TerminalDiff) => void) => {
@@ -95,13 +149,22 @@ export function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
+  if (view === 'dashboard') {
+    return <DashboardPage onSelectServer={handleSelectServer} onLogout={handleLogout} />;
+  }
+
   const activeSessionInfo = sessions.find((s) => s.name === activeSession) ?? null;
 
   return (
     <div class="layout">
       {/* Sidebar */}
       <aside class="sidebar">
-        <div class="sidebar-header">Remote Chat CLI</div>
+        <div class="sidebar-header">
+          <button class="btn btn-secondary" style={{ marginRight: 8, padding: '4px 8px' }} onClick={handleBackToDashboard}>
+            ←
+          </button>
+          Codedeck
+        </div>
         <div style={{ padding: '8px 16px 4px', fontSize: 11, color: '#64748b' }}>
           <span class={`badge ${connected ? 'badge-online' : 'badge-offline'}`}>
             {connected ? '● Online' : '○ Offline'}
@@ -130,7 +193,9 @@ export function App() {
           <TerminalView
             key={activeSession}
             sessionName={activeSession}
+            ws={wsRef.current}
             onDiff={(apply) => registerDiffApplyer(activeSession, apply)}
+            onLatency={setLatencyMs}
           />
         ) : (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
@@ -142,11 +207,15 @@ export function App() {
           </div>
         )}
 
-        <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} />
+        <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} latencyMs={latencyMs} />
       </main>
 
       {showNewSession && (
-        <NewSessionDialog ws={wsRef.current} onClose={() => setShowNewSession(false)} />
+        <NewSessionDialog
+          ws={wsRef.current}
+          onClose={() => setShowNewSession(false)}
+          onSessionStarted={(name) => { setActiveSession(name); setShowNewSession(false); }}
+        />
       )}
     </div>
   );

@@ -11,11 +11,12 @@ export const outboundRoutes = new Hono<{ Bindings: Env }>();
 /**
  * Route an inbound message to the appropriate daemon via DaemonBridge.
  * Called by webhook.ts after verification and rate limiting.
+ * botId identifies which bot received the webhook — used for deterministic binding lookup.
  */
-export async function routeInbound(msg: InboundMessage, env: Env): Promise<void> {
-  const binding = await findChannelBindingByPlatformChannel(env.DB, msg.platform, msg.channelId);
+export async function routeInbound(msg: InboundMessage, env: Env, botId: string): Promise<void> {
+  const binding = await findChannelBindingByPlatformChannel(env.DB, msg.platform, msg.channelId, botId);
   if (!binding) {
-    logger.info({ platform: msg.platform, channelId: msg.channelId }, 'No channel binding found — ignoring');
+    logger.info({ platform: msg.platform, channelId: msg.channelId, botId }, 'No channel binding found — ignoring');
     return;
   }
 

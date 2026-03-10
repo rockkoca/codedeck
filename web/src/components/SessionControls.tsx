@@ -5,15 +5,21 @@ import type { SessionInfo } from '../types.js';
 interface Props {
   ws: WsClient | null;
   activeSession: SessionInfo | null;
+  latencyMs?: number | null;
 }
 
-export function SessionControls({ ws, activeSession }: Props) {
+export function SessionControls({ ws, activeSession, latencyMs }: Props) {
   const [input, setInput] = useState('');
+
+  const latencyColor = latencyMs == null ? '#94a3b8'
+    : latencyMs < 150 ? '#22c55e'
+    : latencyMs < 400 ? '#f59e0b'
+    : '#ef4444';
 
   const handleSend = () => {
     if (!input.trim() || !ws || !activeSession) return;
     ws.sendSessionCommand('send', {
-      session: activeSession.name,
+      sessionName: activeSession.name,
       text: input.trim(),
     });
     setInput('');
@@ -59,6 +65,9 @@ export function SessionControls({ ws, activeSession }: Props) {
       >
         Stop
       </button>
+      <span style={{ marginLeft: 8, fontSize: 12, fontFamily: 'monospace', color: latencyColor, minWidth: 56, whiteSpace: 'nowrap' }}>
+        ⏱ {latencyMs != null ? `${latencyMs}ms` : '—'}
+      </span>
     </div>
   );
 }

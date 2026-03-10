@@ -62,49 +62,52 @@ describe.skipIf(SKIP)('Auto-fix pipeline E2E flow', () => {
   });
 
   it('state machine starts in planning state', async () => {
-    const { createAutoFixTask } = await import('../../src/autofix/state-machine.js');
-    const task = createAutoFixTask({
+    const { createTask } = await import('../../src/autofix/state-machine.js');
+    const task = createTask({
       issueId: '42',
       title: 'Fix login timeout bug',
-      branch: 'fix/42-login-timeout',
+      description: 'Login times out after 30s',
+      coderSession: CODER_SESSION,
+      auditorSession: AUDITOR_SESSION,
+      projectName: 'test-project',
     });
     expect(task.state).toBe('planning');
     expect(task.discussionRounds).toBe(0);
   });
 
   it('state machine transitions planning → design_review', async () => {
-    const { createAutoFixTask, transition } = await import('../../src/autofix/state-machine.js');
-    const task = createAutoFixTask({ issueId: '42', title: 'Fix timeout', branch: 'fix/42' });
-    const next = transition(task, 'design_submitted');
+    const { createTask, transition } = await import('../../src/autofix/state-machine.js');
+    const task = createTask({ issueId: '42', title: 'Fix timeout', description: '', coderSession: CODER_SESSION, auditorSession: AUDITOR_SESSION, projectName: 'test' });
+    const next = transition(task, 'submit_design');
     expect(next.state).toBe('design_review');
   });
 
   it('state machine transitions design_review → implementing on approval', async () => {
-    const { createAutoFixTask, transition } = await import('../../src/autofix/state-machine.js');
-    let task = createAutoFixTask({ issueId: '42', title: 'Fix timeout', branch: 'fix/42' });
-    task = transition(task, 'design_submitted');
-    task = transition(task, 'design_approved');
+    const { createTask, transition } = await import('../../src/autofix/state-machine.js');
+    let task = createTask({ issueId: '42', title: 'Fix timeout', description: '', coderSession: CODER_SESSION, auditorSession: AUDITOR_SESSION, projectName: 'test' });
+    task = transition(task, 'submit_design');
+    task = transition(task, 'approve_design');
     expect(task.state).toBe('implementing');
   });
 
   it('state machine transitions implementing → code_review on completion', async () => {
-    const { createAutoFixTask, transition } = await import('../../src/autofix/state-machine.js');
-    let task = createAutoFixTask({ issueId: '42', title: 'Fix timeout', branch: 'fix/42' });
-    task = transition(task, 'design_submitted');
-    task = transition(task, 'design_approved');
-    task = transition(task, 'implementation_done');
+    const { createTask, transition } = await import('../../src/autofix/state-machine.js');
+    let task = createTask({ issueId: '42', title: 'Fix timeout', description: '', coderSession: CODER_SESSION, auditorSession: AUDITOR_SESSION, projectName: 'test' });
+    task = transition(task, 'submit_design');
+    task = transition(task, 'approve_design');
+    task = transition(task, 'submit_code');
     expect(task.state).toBe('code_review');
   });
 
   it('state machine transitions code_review → approved → done', async () => {
-    const { createAutoFixTask, transition } = await import('../../src/autofix/state-machine.js');
-    let task = createAutoFixTask({ issueId: '42', title: 'Fix timeout', branch: 'fix/42' });
-    task = transition(task, 'design_submitted');
-    task = transition(task, 'design_approved');
-    task = transition(task, 'implementation_done');
-    task = transition(task, 'code_approved');
+    const { createTask, transition } = await import('../../src/autofix/state-machine.js');
+    let task = createTask({ issueId: '42', title: 'Fix timeout', description: '', coderSession: CODER_SESSION, auditorSession: AUDITOR_SESSION, projectName: 'test' });
+    task = transition(task, 'submit_design');
+    task = transition(task, 'approve_design');
+    task = transition(task, 'submit_code');
+    task = transition(task, 'approve_code');
     expect(task.state).toBe('approved');
-    task = transition(task, 'merged');
+    task = transition(task, 'complete');
     expect(task.state).toBe('done');
   });
 
@@ -148,15 +151,15 @@ describe.skipIf(SKIP)('Auto-fix pipeline E2E flow', () => {
   });
 
   it('discussion round limit is enforced (max 3)', async () => {
-    const { createAutoFixTask, transition } = await import('../../src/autofix/state-machine.js');
-    let task = createAutoFixTask({ issueId: '42', title: 'Fix timeout', branch: 'fix/42' });
-    task = transition(task, 'design_submitted');
+    const { createTask, transition } = await import('../../src/autofix/state-machine.js');
+    let task = createTask({ issueId: '42', title: 'Fix timeout', description: '', coderSession: CODER_SESSION, auditorSession: AUDITOR_SESSION, projectName: 'test' });
+    task = transition(task, 'submit_design');
 
     // Simulate 3 rejection rounds
     for (let i = 0; i < 3; i++) {
-      task = transition(task, 'design_rejected');
+      task = transition(task, 'reject_design');
       if (task.state === 'failed') break;
-      task = transition(task, 'design_submitted');
+      task = transition(task, 'submit_design');
     }
 
     // After max rounds, task should be failed or discussion rounds tracked

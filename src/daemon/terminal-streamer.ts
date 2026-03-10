@@ -1,11 +1,15 @@
 /**
  * Capture tmux pane at ~10 FPS, compute line-level diffs, stream to WebSocket.
  * Used by the web terminal viewer for real-time session display.
+ * Features idle detection: drops to 1 FPS after 2s of no changes.
  */
-import { capturePane } from '../agent/tmux.js';
+import { capturePaneVisible } from '../agent/tmux.js';
+import { getPaneSize } from '../agent/tmux.js';
 import logger from '../util/logger.js';
 
-const CAPTURE_INTERVAL_MS = 100; // 10 FPS
+const ACTIVE_INTERVAL_MS = 100; // 10 FPS
+const IDLE_INTERVAL_MS = 1000; // 1 FPS
+const IDLE_THRESHOLD_MS = 2000; // 2s without changes → idle
 
 export interface TerminalDiff {
   sessionName: string;
@@ -28,7 +32,14 @@ export interface StreamSubscriber {
 export class TerminalStreamer {
   private subscribers = new Map<string, Set<StreamSubscriber>>();
   private lastFrames = new Map<string, string[]>();
-  private timers = new Map<string, ReturnType<typeof setInterval>>();
+  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private lastChangeAt = new Map<string, number>();
+  private isIdle = new Map<string, boolean>();
+  private errorCounts = new Map<string, number>();
+  private sizeCache = new Map<string, { cols: number; rows: number; ts: number }>();
+  private static readonly SIZE_CACHE_MS = 5_000;
+
+  private static readonly MAX_CONSECUTIVE_ERRORS = 5;
 
   subscribe(subscriber: StreamSubscriber): () => void {
     const { sessionName } = subscriber;
@@ -51,64 +62,132 @@ export class TerminalStreamer {
       this.stopCapture(sessionName);
       this.subscribers.delete(sessionName);
       this.lastFrames.delete(sessionName);
+      this.lastChangeAt.delete(sessionName);
+      this.isIdle.delete(sessionName);
+      this.errorCounts.delete(sessionName);
     }
   }
 
+  /** Wake up the capture loop immediately (e.g. after keyboard input). */
+  nudge(sessionName: string): void {
+    if (!this.subscribers.has(sessionName)) return;
+    this.stopCapture(sessionName);
+    this.isIdle.set(sessionName, false);
+    this.lastChangeAt.set(sessionName, Date.now());
+    this.scheduleNextCapture(sessionName, 50);
+  }
+
+  /** Invalidate size cache after a resize event. */
+  invalidateSize(sessionName: string): void {
+    this.sizeCache.delete(sessionName);
+  }
+
   private startCapture(sessionName: string): void {
-    const timer = setInterval(() => {
-      void this.captureAndBroadcast(sessionName);
-    }, CAPTURE_INTERVAL_MS);
-    this.timers.set(sessionName, timer);
+    this.lastChangeAt.set(sessionName, Date.now());
+    this.isIdle.set(sessionName, false);
+    this.errorCounts.set(sessionName, 0);
+    this.scheduleNextCapture(sessionName, ACTIVE_INTERVAL_MS);
     logger.debug({ sessionName }, 'Terminal capture started');
+  }
+
+  private scheduleNextCapture(sessionName: string, delayMs: number): void {
+    const timer = setTimeout(() => {
+      void this.captureAndBroadcast(sessionName);
+    }, delayMs);
+    this.timers.set(sessionName, timer);
   }
 
   private stopCapture(sessionName: string): void {
     const timer = this.timers.get(sessionName);
     if (timer) {
-      clearInterval(timer);
+      clearTimeout(timer);
       this.timers.delete(sessionName);
     }
     logger.debug({ sessionName }, 'Terminal capture stopped');
   }
 
   private async captureAndBroadcast(sessionName: string): Promise<void> {
-    let frame: string;
+    if (!this.subscribers.has(sessionName)) return;
+
+    let currentLines: string[];
+    let cols = 80;
+    let rows = 24;
     try {
-      frame = await capturePane(sessionName);
+      // Get size from cache (refreshed every 5s) to avoid extra tmux call each frame
+      const cached = this.sizeCache.get(sessionName);
+      if (!cached || Date.now() - cached.ts > TerminalStreamer.SIZE_CACHE_MS) {
+        const size = await getPaneSize(sessionName);
+        this.sizeCache.set(sessionName, { ...size, ts: Date.now() });
+        cols = size.cols;
+        rows = size.rows;
+      } else {
+        cols = cached.cols;
+        rows = cached.rows;
+      }
+
+      // Capture ONLY the visible pane with ANSI colors — no scrollback
+      const raw = await capturePaneVisible(sessionName);
+      // Split into lines, trim to exact visible rows
+      currentLines = raw.split('\n').slice(0, rows);
+      // Pad to rows if shorter
+      while (currentLines.length < rows) currentLines.push('');
+      this.errorCounts.set(sessionName, 0);
     } catch {
-      // Session may have ended — stop capturing
-      this.stopCapture(sessionName);
+      const errors = (this.errorCounts.get(sessionName) ?? 0) + 1;
+      this.errorCounts.set(sessionName, errors);
+      if (errors >= TerminalStreamer.MAX_CONSECUTIVE_ERRORS) {
+        logger.warn({ sessionName, errors }, 'Terminal capture: too many errors, stopping');
+        this.stopCapture(sessionName);
+      } else {
+        this.scheduleNextCapture(sessionName, ACTIVE_INTERVAL_MS * errors);
+      }
       return;
     }
 
-    const currentLines = frame.split('\n');
     const previousLines = this.lastFrames.get(sessionName) ?? [];
-
     const diff = computeLineDiff(previousLines, currentLines);
-    if (diff.length === 0) return; // No change
 
-    this.lastFrames.set(sessionName, currentLines);
+    if (diff.length > 0) {
+      this.lastFrames.set(sessionName, currentLines);
+      this.lastChangeAt.set(sessionName, Date.now());
+      this.isIdle.set(sessionName, false);
 
-    const payload: TerminalDiff = {
-      sessionName,
-      timestamp: Date.now(),
-      lines: diff,
-      cols: Math.max(...currentLines.map((l) => l.length), 80),
-      rows: currentLines.length,
-    };
+      const payload: TerminalDiff = {
+        sessionName,
+        timestamp: Date.now(),
+        lines: diff,
+        cols,
+        rows,
+      };
 
-    const subs = this.subscribers.get(sessionName);
-    if (!subs) return;
-
-    for (const sub of subs) {
-      try {
-        sub.send(payload);
-      } catch (err) {
-        logger.error({ sessionName, err }, 'Subscriber send failed');
-        sub.onError?.(err instanceof Error ? err : new Error(String(err)));
-        this.unsubscribe(sub);
+      const subs = this.subscribers.get(sessionName);
+      if (subs) {
+        for (const sub of subs) {
+          try {
+            sub.send(payload);
+          } catch (err) {
+            logger.error({ sessionName, err }, 'Subscriber send failed');
+            sub.onError?.(err instanceof Error ? err : new Error(String(err)));
+            this.unsubscribe(sub);
+          }
+        }
       }
     }
+
+    if (!this.subscribers.has(sessionName)) return;
+
+    const lastChange = this.lastChangeAt.get(sessionName) ?? Date.now();
+    const wasIdle = this.isIdle.get(sessionName) ?? false;
+    const nowIdle = Date.now() - lastChange > IDLE_THRESHOLD_MS;
+
+    if (nowIdle && !wasIdle) {
+      this.isIdle.set(sessionName, true);
+    } else if (!nowIdle && wasIdle) {
+      this.isIdle.set(sessionName, false);
+    }
+
+    const nextInterval = nowIdle ? IDLE_INTERVAL_MS : ACTIVE_INTERVAL_MS;
+    this.scheduleNextCapture(sessionName, nextInterval);
   }
 
   destroy(): void {
@@ -117,6 +196,8 @@ export class TerminalStreamer {
     }
     this.subscribers.clear();
     this.lastFrames.clear();
+    this.lastChangeAt.clear();
+    this.isIdle.clear();
   }
 }
 

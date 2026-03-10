@@ -90,10 +90,11 @@ program
 
 program
   .command('bind')
-  .description('Bind this daemon to the CF server')
-  .argument('<server-name>', 'Friendly name for this server')
-  .action(async (serverName: string) => {
-    await bindFlow(serverName);
+  .description('Bind this machine to Codedeck')
+  .argument('<url>', 'Bind URL from the Codedeck dashboard (https://app.codedeck.cc/bind/<api-key>)')
+  .argument('[device-name]', 'Friendly name for this device (default: hostname)')
+  .action(async (url: string, deviceName?: string) => {
+    await bindFlow(url, deviceName);
   });
 
 program.parseAsync(process.argv).catch((err) => {

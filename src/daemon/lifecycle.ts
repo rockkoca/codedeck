@@ -1,15 +1,26 @@
-import { loadStore, flushStore } from '../store/session-store.js';
-import { restoreFromStore } from '../agent/session-manager.js';
+import { loadStore, flushStore, listSessions } from '../store/session-store.js';
+import { restoreFromStore, setSessionEventCallback, restartSession } from '../agent/session-manager.js';
+import { sessionExists } from '../agent/tmux.js';
 import { detectMemoryBackend } from '../memory/detector.js';
 import { ServerLink } from './server-link.js';
+import { handleWebCommand, setRouterContext } from './command-handler.js';
 import { loadConfig, type Config } from '../config.js';
+import { loadCredentials } from '../bind/bind-flow.js';
+import { sendKeys } from '../agent/tmux.js';
 import logger from '../util/logger.js';
 import type { MemoryBackend } from '../memory/interface.js';
+import type { RouterContext } from '../router/message-router.js';
 
 export interface DaemonContext {
   config: Config;
   memory: MemoryBackend | null;
   serverLink: ServerLink | null;
+  /** Persist a channel binding to D1 via CF Worker API. Returns false if not connected or request fails. */
+  persistBinding(platform: string, channelId: string, botId: string, bindingType: string, target: string): Promise<boolean>;
+  /** Remove a channel binding from D1 via CF Worker API. Returns false if not connected or request fails. */
+  removeBinding(platform: string, channelId: string, botId: string): Promise<boolean>;
+  /** Send a session event (started/stopped/error) to the CF Worker for relay to browsers. */
+  sendSessionEvent(event: 'started' | 'stopped' | 'error', session: string, state: string): void;
 }
 
 let ctx: DaemonContext | null = null;
@@ -31,13 +42,107 @@ export async function startup(): Promise<DaemonContext> {
   logger.info('Sessions reconciled');
 
   let serverLink: ServerLink | null = null;
-  if (config.cf?.workerUrl && config.cf?.apiKey) {
-    serverLink = new ServerLink(config.cf.workerUrl, config.cf.apiKey);
-    serverLink.connect().catch((e) => logger.warn({ err: e }, 'Server link connect failed'));
+  const creds = await loadCredentials();
+  if (creds) {
+    serverLink = new ServerLink({ workerUrl: creds.workerUrl, serverId: creds.serverId, token: creds.token });
+    serverLink.onMessage((msg) => {
+      handleWebCommand(msg, serverLink!);
+    });
+    serverLink.connect();
   }
 
-  ctx = { config, memory, serverLink };
+  // Wire session events → ServerLink so the browser sees them
+  setSessionEventCallback((event, session, state) => {
+    if (!serverLink) return;
+    try { serverLink.send({ type: 'session_event', event, session, state }); } catch { /* not connected */ }
+  });
+  // No fallback: a valid serverId is required for the WS endpoint (/api/server/:id/ws)
+  // and for the auth handshake. Without stored credentials from `codedeck bind`, we
+  // cannot connect to the CF Worker.
+
+  const workerUrl = creds?.workerUrl;
+  const serverId = creds?.serverId ?? '';
+  const token = creds?.token ?? '';
+
+  async function persistBinding(platform: string, channelId: string, botId: string, bindingType: string, target: string): Promise<boolean> {
+    if (!workerUrl || !serverId || !token) return false;
+    try {
+      const res = await fetch(`${workerUrl}/api/server/${serverId}/bindings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ platform, channelId, botId, bindingType, target }),
+      });
+      if (!res.ok) {
+        logger.warn({ status: res.status, platform, channelId }, 'persistBinding: worker returned error');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      logger.warn({ err: e, platform, channelId }, 'persistBinding: fetch failed');
+      return false;
+    }
+  }
+
+  async function removeBinding(platform: string, channelId: string, botId: string): Promise<boolean> {
+    if (!workerUrl || !serverId || !token) return false;
+    try {
+      const res = await fetch(`${workerUrl}/api/server/${serverId}/bindings`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ platform, channelId, botId }),
+      });
+      if (!res.ok) {
+        logger.warn({ status: res.status, platform, channelId }, 'removeBinding: worker returned error');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      logger.warn({ err: e, platform, channelId }, 'removeBinding: fetch failed');
+      return false;
+    }
+  }
+
+  function sendSessionEvent(event: 'started' | 'stopped' | 'error', session: string, state: string): void {
+    if (!serverLink) return;
+    try {
+      serverLink.send({ type: 'session_event', event, session, state });
+    } catch (e) {
+      logger.warn({ err: e, event, session }, 'Failed to send session event');
+    }
+  }
+
+  // Set up router context so inbound chat messages can be dispatched to routeMessage
+  if (serverLink) {
+    setRouterContext({
+      sendOutbound: async (channelId, platform, botId, content) => {
+        if (!workerUrl || !token) {
+          logger.warn({ platform, channelId }, 'sendOutbound: no worker credentials');
+          return;
+        }
+        try {
+          const res = await fetch(`${workerUrl}/api/outbound`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ platform, botId, channelId, content }),
+          });
+          if (!res.ok) {
+            logger.warn({ status: res.status, platform, channelId }, 'sendOutbound: worker returned error');
+          }
+        } catch (e) {
+          logger.warn({ err: e, platform, channelId }, 'sendOutbound failed');
+        }
+      },
+      sendToSession: async (sessionName, text) => {
+        await sendKeys(sessionName, text);
+      },
+      persistBinding,
+      removeBinding,
+    });
+  }
+
+  ctx = { config, memory, serverLink, persistBinding, removeBinding, sendSessionEvent };
   setupSignalHandlers();
+  startHealthPoller();
 
   logger.info('Daemon started');
   return ctx;
@@ -48,6 +153,7 @@ export async function shutdown(exitCode = 0): Promise<void> {
   logger.info('Daemon shutting down');
 
   try {
+    if (healthTimer) clearInterval(healthTimer);
     ctx?.serverLink?.disconnect();
     await flushStore();
     logger.info('Store flushed');
@@ -58,6 +164,28 @@ export async function shutdown(exitCode = 0): Promise<void> {
   // tmux sessions are intentionally NOT killed — they keep running
   logger.info('Daemon stopped (tmux sessions left running)');
   process.exit(exitCode);
+}
+
+const HEALTH_POLL_MS = 30_000;
+let healthTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Periodically check all running sessions; restart any that have disappeared. */
+function startHealthPoller(): void {
+  healthTimer = setInterval(async () => {
+    const sessions = listSessions();
+    for (const s of sessions) {
+      if (s.state === 'stopped' || s.state === 'error') continue;
+      try {
+        const alive = await sessionExists(s.name);
+        if (!alive) {
+          logger.warn({ session: s.name }, 'Session missing, attempting restart');
+          await restartSession(s);
+        }
+      } catch (err) {
+        logger.warn({ session: s.name, err }, 'Health check error');
+      }
+    }
+  }, HEALTH_POLL_MS);
 }
 
 function setupSignalHandlers(): void {

@@ -37,11 +37,13 @@ export class ClaudeMemBackend implements MemoryBackend {
     return data.results ?? [];
   }
 
-  async getProjectContext(projectName: string): Promise<string> {
+  async getProjectContext(projectName: string): Promise<MemorySearchResult[]> {
     const res = await fetch(`${BASE_URL}/context/${encodeURIComponent(projectName)}`);
-    if (!res.ok) return '';
+    if (!res.ok) return [];
     const data = (await res.json()) as { context: string };
-    return data.context ?? '';
+    const context = data.context ?? '';
+    if (!context) return [];
+    return [{ content: context, score: 1, timestamp: Date.now() }];
   }
 
   async summarizeSession(sessionName: string, projectName: string, screenContent: string): Promise<void> {

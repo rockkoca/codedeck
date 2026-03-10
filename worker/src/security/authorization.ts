@@ -38,10 +38,12 @@ async function resolveAuth(c: Context<{ Bindings: Env }>): Promise<AuthContext |
   }
 
   // Try JWT (access token) — verify HMAC-SHA256 signature
+  // Reject special-purpose tokens (e.g. ws-ticket) from being used as session auth
   if (!c.env.JWT_SIGNING_KEY) return null;
   const payload = await verifyJwt(token, c.env.JWT_SIGNING_KEY);
   if (!payload) return null;
   if (typeof payload.sub !== 'string') return null;
+  if (payload.type === 'ws-ticket') return null; // reject single-use WebSocket tickets
   return { userId: payload.sub, role: (payload.role as Role) ?? 'member' };
 }
 
@@ -145,6 +147,43 @@ export function requireTeamRole(minRole: 'owner' | 'admin' | 'member' = 'member'
   };
 }
 
+export type ServerRole = 'owner' | 'admin' | 'member' | 'none';
+
+/**
+ * Resolve the user's role for a specific server.
+ * Checks server ownership first, then team membership.
+ */
+export async function resolveServerRole(
+  db: D1Database,
+  serverId: string,
+  userId: string,
+): Promise<ServerRole> {
+  const server = await db
+    .prepare('SELECT team_id, user_id FROM servers WHERE id = ?')
+    .bind(serverId)
+    .first<{ team_id: string | null; user_id: string }>();
+
+  if (!server) return 'none';
+
+  // Direct owner
+  if (server.user_id === userId) return 'owner';
+
+  // Team membership
+  if (server.team_id) {
+    const member = await db
+      .prepare('SELECT role FROM team_members WHERE team_id = ? AND user_id = ?')
+      .bind(server.team_id, userId)
+      .first<{ role: string }>();
+    if (member) {
+      if (member.role === 'owner') return 'admin'; // team owner → admin on server
+      if (member.role === 'admin') return 'admin';
+      return 'member';
+    }
+  }
+
+  return 'none';
+}
+
 /**
  * Check if a server belongs to a team the user is a member of.
  * Used before server operations to enforce team-scoped access.
@@ -154,24 +193,6 @@ export async function checkServerTeamAccess(
   serverId: string,
   userId: string,
 ): Promise<boolean> {
-  const server = await c.env.DB
-    .prepare('SELECT team_id, user_id FROM servers WHERE id = ?')
-    .bind(serverId)
-    .first<{ team_id: string | null; user_id: string }>();
-
-  if (!server) return false;
-
-  // Direct owner always has access
-  if (server.user_id === userId) return true;
-
-  // If server belongs to a team, check membership
-  if (server.team_id) {
-    const member = await c.env.DB
-      .prepare('SELECT role FROM team_members WHERE team_id = ? AND user_id = ?')
-      .bind(server.team_id, userId)
-      .first();
-    return !!member;
-  }
-
-  return false;
+  const role = await resolveServerRole(c.env.DB, serverId, userId);
+  return role !== 'none';
 }

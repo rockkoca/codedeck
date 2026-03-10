@@ -1,5 +1,6 @@
 import type { Env } from '../src/types.js';
 import { sha256Hex } from '../src/security/crypto.js';
+import { updateServerHeartbeat, updateServerStatus } from '../src/db/queries.js';
 
 const AUTH_TIMEOUT_MS = 5_000;
 const MAX_QUEUE_SIZE = 100;
@@ -15,6 +16,7 @@ export class DaemonBridge implements DurableObject {
   private env: Env;
   private ws: WebSocket | null = null;
   private authenticated = false;
+  private serverId: string | null = null;
   private queue: QueuedMessage[] = [];
   private authTimer?: ReturnType<typeof setTimeout>;
   private idleTimer?: ReturnType<typeof setTimeout>;
@@ -110,9 +112,12 @@ export class DaemonBridge implements DurableObject {
             const hash = await sha256Hex(msg.token);
             if (hash === server.token_hash) {
               this.authenticated = true;
+              this.serverId = msg.serverId;
               if (this.authTimer !== undefined) clearTimeout(this.authTimer);
               ws.send(JSON.stringify({ type: 'auth_ok' }));
               this.resetIdleTimer(ws);
+              // Mark server online immediately
+              await updateServerHeartbeat(this.env.DB, msg.serverId);
               // Drain queued messages
               for (const q of this.queue) ws.send(q.data);
               this.queue = [];
@@ -127,10 +132,23 @@ export class DaemonBridge implements DurableObject {
       // Reset idle timer on any authenticated message (heartbeat or data)
       this.resetIdleTimer(ws);
 
-      // Forward outbound messages to browser viewers
-      if (msg.type === 'terminal_update' || msg.type === 'outbound') {
+      // Update heartbeat timestamp in D1 on each heartbeat message
+      if (msg.type === 'heartbeat' && this.serverId) {
+        await updateServerHeartbeat(this.env.DB, this.serverId);
+      }
+
+      // Forward and normalize messages for browser viewers
+      const BROWSER_FORWARD = ['terminal_update', 'session_event', 'session.error', 'session_list'];
+      if (BROWSER_FORWARD.includes(msg.type as string)) {
+        let browserData = data;
+        if (msg.type === 'terminal_update') {
+          browserData = JSON.stringify({ ...msg, type: 'terminal.diff' });
+        } else if (msg.type === 'session_event') {
+          browserData = JSON.stringify({ ...msg, type: 'session.event' });
+        }
+        // session.error and session_list pass through as-is
         for (const bs of this.browserSockets) {
-          try { bs.send(data); } catch { this.browserSockets.delete(bs); }
+          try { bs.send(browserData); } catch { this.browserSockets.delete(bs); }
         }
       }
     });
@@ -139,6 +157,10 @@ export class DaemonBridge implements DurableObject {
       this.ws = null;
       this.authenticated = false;
       if (this.idleTimer) clearTimeout(this.idleTimer);
+      if (this.serverId) {
+        void updateServerStatus(this.env.DB, this.serverId, 'offline');
+        this.serverId = null;
+      }
     });
   }
 

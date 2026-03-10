@@ -1,4 +1,4 @@
-import { newSession, killSession, sessionExists, listSessions as tmuxListSessions, sendKeys, capturePane, showBuffer } from './tmux.js';
+import { newSession, killSession, sessionExists, listSessions as tmuxListSessions, sendKeys, sendKey, capturePane, showBuffer } from './tmux.js';
 import { ClaudeCodeDriver } from './drivers/claude-code.js';
 import { CodexDriver } from './drivers/codex.js';
 import { OpenCodeDriver } from './drivers/opencode.js';
@@ -19,6 +19,17 @@ import logger from '../util/logger.js';
 // Restart loop prevention: max 3 restarts within 5 minutes
 const MAX_RESTARTS = 3;
 const RESTART_WINDOW_MS = 5 * 60 * 1000;
+
+type SessionEventCallback = (event: 'started' | 'stopped' | 'error', session: string, state: string) => void;
+let _onSessionEvent: SessionEventCallback | null = null;
+
+export function setSessionEventCallback(cb: SessionEventCallback): void {
+  _onSessionEvent = cb;
+}
+
+function emitSessionEvent(event: 'started' | 'stopped' | 'error', session: string, state: string): void {
+  try { _onSessionEvent?.(event, session, state); } catch { /* ignore */ }
+}
 
 export interface ProjectConfig {
   name: string;
@@ -57,6 +68,7 @@ export async function stopProject(projectName: string): Promise<void> {
   for (const s of sessions) {
     await killSession(s.name).catch(() => {});
     removeSession(s.name);
+    emitSessionEvent('stopped', s.name, 'stopped');
   }
 }
 
@@ -85,6 +97,7 @@ export async function restartSession(record: SessionRecord): Promise<boolean> {
   if (recentRestarts.length >= MAX_RESTARTS) {
     logger.error({ session: record.name }, 'Restart loop detected — marking as error');
     updateSessionState(record.name, 'error');
+    emitSessionEvent('error', record.name, 'error');
     return false;
   }
 
@@ -119,13 +132,13 @@ interface LaunchOpts {
   extraEnv?: Record<string, string>;
 }
 
-async function launchSession(opts: LaunchOpts): Promise<void> {
+export async function launchSession(opts: LaunchOpts): Promise<void> {
   const { name, projectName, role, agentType, projectDir, skipStore, extraEnv } = opts;
   const driver = getDriver(agentType);
 
   // Configure agent-specific hooks/signals
   if (agentType === 'claude-code') {
-    await setupCCStopHook(name).catch((e) => logger.warn({ err: e }, 'CC hook setup failed'));
+    await setupCCStopHook().catch((e) => logger.warn({ err: e }, 'CC hook setup failed'));
   } else if (agentType === 'codex') {
     await setupCodexNotify(projectDir, name).catch((e) => logger.warn({ err: e }, 'Codex notify setup failed'));
   } else if (agentType === 'opencode') {
@@ -134,19 +147,23 @@ async function launchSession(opts: LaunchOpts): Promise<void> {
     await setupOpenCodePlugin(projectDir, name).catch((e) => logger.warn({ err: e }, 'OpenCode plugin setup failed'));
   }
 
-  // Resume first, fall back to fresh start
   const exists = await sessionExists(name);
   if (!exists) {
-    const resumeCmd = driver.buildResumeCommand(name, { cwd: projectDir, resumeFirst: true });
+    // On restart (skipStore=true), try resume first so agents can continue their conversation.
+    // On first launch, go straight to buildLaunchCommand — resume commands may hang waiting
+    // for interactive input when there is no prior conversation.
     let launched = false;
 
-    if (resumeCmd) {
-      try {
-        await newSession(name, resumeCmd, { cwd: projectDir, env: extraEnv });
-        launched = true;
-        logger.info({ session: name, agentType }, 'Resumed session');
-      } catch {
-        await killSession(name).catch(() => {});
+    if (skipStore) {
+      const resumeCmd = driver.buildResumeCommand(name, { cwd: projectDir, resumeFirst: true });
+      if (resumeCmd) {
+        try {
+          await newSession(name, resumeCmd, { cwd: projectDir, env: extraEnv });
+          launched = true;
+          logger.info({ session: name, agentType }, 'Resumed session');
+        } catch {
+          await killSession(name).catch(() => {});
+        }
       }
     }
 
@@ -170,6 +187,16 @@ async function launchSession(opts: LaunchOpts): Promise<void> {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+  }
+
+  emitSessionEvent('started', name, 'running');
+
+  // Auto-dismiss startup prompts (trust folder, settings errors, update dialogs)
+  if (driver.postLaunch) {
+    driver.postLaunch(
+      () => capturePane(name),
+      (key) => sendKey(name, key),
+    ).catch((e) => logger.warn({ err: e, session: name }, 'postLaunch failed'));
   }
 }
 

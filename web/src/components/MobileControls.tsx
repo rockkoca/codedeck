@@ -1,4 +1,3 @@
-import { h } from 'preact';
 import { useState, useRef } from 'preact/hooks';
 
 interface MobileControlsProps {

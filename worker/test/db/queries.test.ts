@@ -117,7 +117,7 @@ describe('upsertChannelBinding / getChannelBinding', () => {
   it('upsert runs without error', async () => {
     const db = mockD1();
     await expect(
-      upsertChannelBinding(db, 'cb-1', 'srv-1', 'discord', 'ch-123', 'project', 'my-project'),
+      upsertChannelBinding(db, 'cb-1', 'srv-1', 'discord', 'ch-123', 'project', 'my-project', 'bot-1'),
     ).resolves.toBeUndefined();
   });
 

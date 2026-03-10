@@ -29,11 +29,14 @@ export class ServerLink {
   }
 
   connect(): void {
-    const wsUrl = this.workerUrl.replace(/^http/, 'ws') + '/ws/daemon';
+    const wsUrl = this.workerUrl.replace(/^http/, 'ws') + `/api/server/${this.serverId}/ws`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.addEventListener('open', () => {
       this.backoffMs = INITIAL_BACKOFF_MS;
+      // Send auth handshake immediately — DaemonBridge closes the socket if this is not
+      // the first message or if credentials are invalid (5s timeout enforced server-side).
+      this.ws!.send(JSON.stringify({ type: 'auth', serverId: this.serverId, token: this.token }));
       this.startHeartbeat();
     });
 
@@ -42,13 +45,12 @@ export class ServerLink {
     });
 
     this.ws.addEventListener('message', (event: MessageEvent) => {
+      const raw = typeof event.data === 'string' ? event.data : event.data.toString();
       try {
-        const msg = JSON.parse(
-          typeof event.data === 'string' ? event.data : event.data.toString(),
-        );
+        const msg = JSON.parse(raw);
         for (const h of this.handlers) h(msg);
       } catch {
-        // ignore parse error
+        // ignore parse errors
       }
     });
 

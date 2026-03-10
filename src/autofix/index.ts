@@ -45,7 +45,7 @@ export function registerAutoFixCommand(program: Command): void {
     .argument('[task]', 'Task description (standalone mode)')
     .action(async (taskDescription: string | undefined, opts: Record<string, string>) => {
       const config = await loadConfig();
-      const projectName = opts.project ?? config.defaultProject;
+      const projectName = opts.project ?? (config as unknown as Record<string, string>).defaultProject;
 
       if (!projectName) {
         console.error('--project is required');
@@ -185,7 +185,6 @@ async function runTrackerMode(opts: AutoFixOptions): Promise<void> {
       auditorSession,
       projectName: opts.project,
       issueId: issue.id,
-      branch: branch.name,
       maxDiscussionRounds: opts.maxRounds ?? 3,
     });
 

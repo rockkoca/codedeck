@@ -53,13 +53,13 @@ function makeFeishuConfig(overrides: Partial<Record<string, string>> = {}): BotC
   };
 }
 
-// ── routeInbound: uses platform+channelId without serverId ────────────────────
+// ── routeInbound: uses platform+channelId+botId for deterministic routing ─────
 
 describe('routeInbound()', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('looks up binding by platform+channelId only (no serverId required)', async () => {
-    const binding = { id: 'b1', server_id: 'srv-1', platform: 'telegram', channel_id: 'ch-1' };
+  it('scopes binding lookup by platform + channelId + botId (deterministic routing)', async () => {
+    const binding = { id: 'b1', server_id: 'srv-1', platform: 'telegram', channel_id: 'ch-1', bot_id: 'bot-1' };
     const mockFirst = vi.fn().mockResolvedValue(binding);
     const mockBind = vi.fn().mockReturnValue({ first: mockFirst });
     const mockPrepare = vi.fn().mockReturnValue({ bind: mockBind });
@@ -73,14 +73,14 @@ describe('routeInbound()', () => {
       } as unknown as DurableObjectNamespace,
     };
 
-    await routeInbound(makeMsg(), env as never);
+    await routeInbound(makeMsg({ botId: 'bot-1' }), env as never, 'bot-1');
 
-    // DB query must be called with only platform + channelId (no serverId bind arg)
-    expect(mockBind).toHaveBeenCalledWith('telegram', 'ch-1');
+    // DB query must use botId for deterministic binding resolution
+    expect(mockBind).toHaveBeenCalledWith('telegram', 'ch-1', 'bot-1');
     expect(mockFetch).toHaveBeenCalledOnce();
   });
 
-  it('silently returns when no binding found', async () => {
+  it('silently returns when no binding found for this bot', async () => {
     const mockFirst = vi.fn().mockResolvedValue(null);
     const mockBind = vi.fn().mockReturnValue({ first: mockFirst });
     const mockPrepare = vi.fn().mockReturnValue({ bind: mockBind });
@@ -91,7 +91,7 @@ describe('routeInbound()', () => {
       DAEMON_BRIDGE: { idFromName: vi.fn(), get: vi.fn() } as unknown as DurableObjectNamespace,
     };
 
-    await routeInbound(makeMsg(), env as never);
+    await routeInbound(makeMsg({ botId: 'bot-1' }), env as never, 'bot-1');
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });

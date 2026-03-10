@@ -29,10 +29,7 @@ CREATE TABLE team_invites (
   created_at INTEGER NOT NULL
 );
 
--- Add optional team ownership to servers
-ALTER TABLE servers ADD COLUMN team_id TEXT REFERENCES teams(id);
-
--- Indexes
+-- Indexes (team_id already in servers from 0001_initial)
 CREATE INDEX idx_team_members_user ON team_members(user_id);
 CREATE INDEX idx_team_members_team ON team_members(team_id);
 CREATE INDEX idx_team_invites_token ON team_invites(token);

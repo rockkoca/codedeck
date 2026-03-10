@@ -1,18 +1,28 @@
 import { useEffect, useRef, useCallback } from 'preact/hooks';
 import { Terminal } from 'xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import type { WsClient } from '../ws-client.js';
 import type { TerminalDiff } from '../types.js';
 
 interface Props {
   sessionName: string;
+  ws: WsClient | null;
   onDiff?: (applyDiff: (diff: TerminalDiff) => void) => void;
+  onLatency?: (ms: number) => void;
 }
 
-export function TerminalView({ sessionName, onDiff }: Props) {
+export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const linesRef = useRef<string[]>([]);
+  const wsRef = useRef(ws);
+  wsRef.current = ws;
+  const onLatencyRef = useRef(onLatency);
+  onLatencyRef.current = onLatency;
+
+  // Latency tracking: record when last input was sent, compute on next diff
+  const lastInputAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     const term = new Terminal({
@@ -28,6 +38,7 @@ export function TerminalView({ sessionName, onDiff }: Props) {
       convertEol: true,
       scrollback: 5000,
       allowTransparency: false,
+      cursorBlink: true,
     });
 
     const fitAddon = new FitAddon();
@@ -37,6 +48,17 @@ export function TerminalView({ sessionName, onDiff }: Props) {
       term.open(containerRef.current);
       fitAddon.fit();
     }
+
+    // Forward all keyboard input to the tmux session; record send time for latency
+    term.onData((data) => {
+      lastInputAtRef.current = Date.now();
+      wsRef.current?.sendInput(sessionName, data);
+    });
+
+    // Sync terminal dimensions to tmux on every resize (mobile viewport changes too)
+    term.onResize(({ cols, rows }) => {
+      wsRef.current?.sendResize(sessionName, cols, rows);
+    });
 
     termRef.current = term;
     fitRef.current = fitAddon;
@@ -56,18 +78,21 @@ export function TerminalView({ sessionName, onDiff }: Props) {
     const term = termRef.current;
     if (!term) return;
 
-    // Apply line-level diffs to the local line buffer, then redraw
+    // Measure round-trip latency from last keypress to this diff arriving
+    if (lastInputAtRef.current !== null) {
+      onLatencyRef.current?.(Date.now() - lastInputAtRef.current);
+      lastInputAtRef.current = null;
+    }
+
     const lines = linesRef.current;
     for (const [lineIdx, content] of diff.lines) {
       lines[lineIdx] = content;
     }
-
-    // Ensure array length matches row count
+    while (lines.length < diff.rows) lines.push('');
     linesRef.current = lines.slice(0, diff.rows);
 
-    // Write full frame to terminal (simplest approach for reliability)
-    term.reset();
-    term.write(linesRef.current.join('\r\n'));
+    // Full-frame rewrite: clear screen, move to home, write all lines with ANSI intact
+    term.write('\x1b[2J\x1b[H' + linesRef.current.join('\r\n'));
   }, []);
 
   useEffect(() => {

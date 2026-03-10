@@ -85,6 +85,81 @@ describe('RateLimiter', () => {
     expect(body.retryAfter).toBeGreaterThan(0);
   });
 
+  it('POST /jti-consume returns consumed:false on first use', async () => {
+    const store = new Map<string, unknown>();
+    const mockState = {
+      storage: {
+        get: (key: string) => Promise.resolve(store.get(key)),
+        put: (key: string, val: unknown) => { store.set(key, val); return Promise.resolve(); },
+        list: () => Promise.resolve(new Map()),
+        delete: () => Promise.resolve(),
+      },
+    } as any;
+    const limiter = new RateLimiter(mockState, {} as any);
+    const req = new Request('https://dummy/jti-consume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jti: 'ticket-abc' }),
+    });
+    const res = await limiter.fetch(req);
+    expect(res.status).toBe(200);
+    const body = await res.json() as { consumed: boolean };
+    expect(body.consumed).toBe(false);
+  });
+
+  it('POST /jti-consume returns consumed:true on second use (replay blocked)', async () => {
+    const store = new Map<string, unknown>();
+    const mockState = {
+      storage: {
+        get: (key: string) => Promise.resolve(store.get(key)),
+        put: (key: string, val: unknown) => { store.set(key, val); return Promise.resolve(); },
+        list: () => Promise.resolve(new Map()),
+        delete: () => Promise.resolve(),
+      },
+    } as any;
+    const limiter = new RateLimiter(mockState, {} as any);
+    const makeReq = () => new Request('https://dummy/jti-consume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jti: 'ticket-xyz' }),
+    });
+
+    // First use
+    const res1 = await limiter.fetch(makeReq());
+    const body1 = await res1.json() as { consumed: boolean };
+    expect(body1.consumed).toBe(false);
+
+    // Replay attempt
+    const res2 = await limiter.fetch(makeReq());
+    const body2 = await res2.json() as { consumed: boolean };
+    expect(body2.consumed).toBe(true);
+  });
+
+  it('POST /jti-consume is not shadowed by default type=msg routing', async () => {
+    // Regression: without ?type= param, type defaults to "msg" — ensure /jti-consume
+    // path-based routing takes priority and returns { consumed } not { allowed }
+    const store = new Map<string, unknown>();
+    const mockState = {
+      storage: {
+        get: (key: string) => Promise.resolve(store.get(key)),
+        put: (key: string, val: unknown) => { store.set(key, val); return Promise.resolve(); },
+        list: () => Promise.resolve(new Map()),
+        delete: () => Promise.resolve(),
+      },
+    } as any;
+    const limiter = new RateLimiter(mockState, {} as any);
+    const req = new Request('https://dummy/jti-consume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jti: 'no-type-param' }),
+    });
+    const res = await limiter.fetch(req);
+    const body = await res.json() as Record<string, unknown>;
+    // Must have 'consumed' key, NOT 'allowed' key
+    expect('consumed' in body).toBe(true);
+    expect('allowed' in body).toBe(false);
+  });
+
   it('records auth_fail and returns locked state after threshold', async () => {
     // Pre-fill 4 attempts so the 5th triggers lockout
     const storeKey = 'auth:ip-1';

@@ -70,7 +70,7 @@ export function extractFromText(text: string): ExtractedObservation {
   if (errors.length > 0) parts.push(`Errors: ${errors.join('; ')}`);
   if (parts.length === 0) parts.push(text.slice(0, 200));
 
-  return { content: parts.join(' | '), filesModified, commandsRun, errors };
+  return { content: parts.join(' | '), filesModified, commandsRun, errors, sessionName: '' };
 }
 
 export function buildObservation(

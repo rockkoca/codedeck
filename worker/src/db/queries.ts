@@ -117,6 +117,35 @@ export async function updateServerStatus(db: D1Database, id: string, status: str
   await db.prepare('UPDATE servers SET status = ? WHERE id = ?').bind(status, id).run();
 }
 
+/**
+ * Get all servers accessible to a user: owned servers + team servers, deduplicated.
+ */
+export async function getServersByUserId(db: D1Database, userId: string): Promise<DbServer[]> {
+  // Own servers
+  const ownResult = await db.prepare(
+    'SELECT * FROM servers WHERE user_id = ? ORDER BY created_at DESC',
+  ).bind(userId).all<DbServer>();
+
+  // Team servers: find teams the user belongs to, then servers belonging to those teams
+  const teamResult = await db.prepare(
+    `SELECT s.* FROM servers s
+     JOIN team_members tm ON s.team_id = tm.team_id
+     WHERE tm.user_id = ? AND s.user_id != ?
+     ORDER BY s.created_at DESC`,
+  ).bind(userId, userId).all<DbServer>();
+
+  // Deduplicate by id
+  const seen = new Set<string>();
+  const servers: DbServer[] = [];
+  for (const s of [...ownResult.results, ...teamResult.results]) {
+    if (!seen.has(s.id)) {
+      seen.add(s.id);
+      servers.push(s);
+    }
+  }
+  return servers;
+}
+
 // ── Channel bindings ──────────────────────────────────────────────────────
 
 export async function upsertChannelBinding(
@@ -127,12 +156,13 @@ export async function upsertChannelBinding(
   channelId: string,
   bindingType: string,
   target: string,
+  botId: string,
 ): Promise<void> {
   await db
     .prepare(
-      'INSERT INTO channel_bindings (id, server_id, platform, channel_id, binding_type, target, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform, channel_id, server_id) DO UPDATE SET binding_type = excluded.binding_type, target = excluded.target',
+      'INSERT INTO channel_bindings (id, server_id, platform, channel_id, binding_type, target, bot_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(platform, channel_id, bot_id) DO UPDATE SET binding_type = excluded.binding_type, target = excluded.target, server_id = excluded.server_id',
     )
-    .bind(id, serverId, platform, channelId, bindingType, target, Date.now())
+    .bind(id, serverId, platform, channelId, bindingType, target, botId, Date.now())
     .run();
 }
 
@@ -149,17 +179,22 @@ export async function getChannelBinding(
 }
 
 /**
- * Find a channel binding by platform + channelId without knowing the server.
- * Used for inbound webhook routing where the server is unknown.
+ * Find a channel binding by platform + channelId + botId.
+ * botId makes the lookup deterministic: each bot maps to exactly one binding per channel,
+ * eliminating ambiguity when a user has the same channel bound to multiple servers.
+ * Cross-tenant isolation is guaranteed because botId is already authenticated in webhook.ts.
  */
 export async function findChannelBindingByPlatformChannel(
   db: D1Database,
   platform: string,
   channelId: string,
+  botId: string,
 ): Promise<DbChannelBinding | null> {
   return db
-    .prepare('SELECT * FROM channel_bindings WHERE platform = ? AND channel_id = ? LIMIT 1')
-    .bind(platform, channelId)
+    .prepare(
+      'SELECT * FROM channel_bindings WHERE platform = ? AND channel_id = ? AND bot_id = ?',
+    )
+    .bind(platform, channelId, botId)
     .first<DbChannelBinding>();
 }
 

@@ -36,6 +36,16 @@ export interface AgentDriver {
   isOverlay(lines: string[]): boolean;
 
   /**
+   * Optional: Called after session launch to auto-dismiss startup prompts
+   * (trust folder, settings errors, update dialogs, etc.).
+   * Should return once the agent is ready (idle prompt visible) or after timeout.
+   */
+  postLaunch?(
+    capturePane: () => Promise<string[]>,
+    sendKey: (key: string) => Promise<void>,
+  ): Promise<void>;
+
+  /**
    * Capture the last agent response cleanly.
    * CC: send /copy and read tmux buffer. Others: use capture-pane.
    * @param capturePane - function to get current pane lines

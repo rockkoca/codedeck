@@ -3,18 +3,20 @@
  * Protects JWT storage with Face ID / Touch ID / fingerprint.
  * Falls back gracefully on web (no-op).
  */
-import { Capacitor } from '@capacitor/core';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isNative = (): boolean => typeof (globalThis as any).Capacitor?.isNativePlatform === 'function' && (globalThis as any).Capacitor.isNativePlatform();
 
 const AUTH_KEY = 'deck_auth';
 
 /** Store API key securely — biometric-protected on native, localStorage on web */
 export async function storeAuthKey(apiKey: string): Promise<void> {
-  if (!Capacitor.isNativePlatform()) {
+  if (!isNative()) {
     localStorage.setItem(AUTH_KEY, apiKey);
     return;
   }
   try {
-    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth') as any;
     await BiometricAuth.setCredentials({
       username: 'deck_user',
       password: apiKey,
@@ -28,11 +30,12 @@ export async function storeAuthKey(apiKey: string): Promise<void> {
 
 /** Retrieve API key — prompts biometric on native */
 export async function getAuthKey(): Promise<string | null> {
-  if (!Capacitor.isNativePlatform()) {
+  if (!isNative()) {
     return localStorage.getItem(AUTH_KEY);
   }
   try {
-    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth') as any;
 
     // Check availability first
     const avail = await BiometricAuth.checkBiometry();
@@ -60,9 +63,10 @@ export async function getAuthKey(): Promise<string | null> {
 /** Clear stored auth key */
 export async function clearAuthKey(): Promise<void> {
   localStorage.removeItem(AUTH_KEY);
-  if (!Capacitor.isNativePlatform()) return;
+  if (!isNative()) return;
   try {
-    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth') as any;
     await BiometricAuth.deleteCredentials({
       username: 'deck_user',
       server: 'codedeck',

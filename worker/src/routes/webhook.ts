@@ -101,7 +101,7 @@ webhookRoutes.post('/:platform/:botId', async (c) => {
 
   // Route to connected daemon via DaemonBridge
   try {
-    await routeInbound(msg, c.env);
+    await routeInbound(msg, c.env, botId);
   } catch (err) {
     logger.error({ platform, botId, channelId: msg.channelId, err }, 'routeInbound failed');
     return c.json({ error: 'routing_error' }, 500);

@@ -1,0 +1,118 @@
+import { useState, useEffect, useRef } from 'preact/hooks';
+import { apiFetch } from '../api.js';
+
+interface KeyInfo {
+  id: string;
+  label: string | null;
+  createdAt: number;
+  revokedAt: number | null;
+}
+
+interface Props {
+  keys: KeyInfo[];
+  onKeyCreated: () => void;
+  onDeviceAppeared: () => void;
+}
+
+export function GettingStarted({ keys, onKeyCreated, onDeviceAppeared }: Props) {
+  const existingKey = keys.find((k) => !k.revokedAt);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const hasBindUrl = !!(apiKey || existingKey);
+
+  // Poll for devices once we have a key
+  useEffect(() => {
+    if (!hasBindUrl) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await apiFetch<{ servers: unknown[] }>('/api/server');
+        if (res.servers.length > 0) onDeviceAppeared();
+      } catch { /* ignore */ }
+    }, 5000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [hasBindUrl, onDeviceAppeared]);
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const res = await apiFetch<{ apiKey: string }>('/api/auth/user/me/keys', {
+        method: 'POST',
+        body: JSON.stringify({ label: 'first-key' }),
+      });
+      setApiKey(res.apiKey);
+      onKeyCreated();
+    } catch (err) {
+      console.error('Failed to generate key:', err);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const bindCmd = apiKey
+    ? `codedeck bind ${window.location.origin}/bind/${apiKey}`
+    : existingKey
+      ? `# Retrieve your API key from the API Keys section below,\n# then run: codedeck bind ${window.location.origin}/bind/<your-api-key>`
+      : '';
+
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 12, padding: 24, marginBottom: 24 }}>
+      <h2 style={{ fontSize: 20, margin: '0 0 4px' }}>Connect a Device</h2>
+      <p style={{ color: '#94a3b8', marginBottom: 24, fontSize: 14, margin: '0 0 24px' }}>
+        Run the Codedeck daemon on your machine in two steps.
+      </p>
+
+      {/* Step 1 */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontWeight: 600, marginBottom: 10, color: hasBindUrl ? '#94a3b8' : '#e2e8f0', fontSize: 15 }}>
+          {hasBindUrl ? '✓ Step 1: API Key ready' : 'Step 1: Generate an API Key'}
+        </div>
+        {!hasBindUrl && (
+          <button class="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+            {generating ? 'Generating...' : 'Generate Key'}
+          </button>
+        )}
+      </div>
+
+      {/* Step 2 */}
+      <div style={{ opacity: hasBindUrl ? 1 : 0.4 }}>
+        <div style={{ fontWeight: 600, marginBottom: 10, color: '#e2e8f0', fontSize: 15 }}>
+          Step 2: Run this command on your machine
+        </div>
+        {hasBindUrl && (
+          <div style={{ background: '#0f172a', borderRadius: 8, padding: 14 }}>
+            <pre style={{ margin: 0, color: '#e2e8f0', fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              {bindCmd}
+            </pre>
+            {apiKey && (
+              <button
+                class="btn btn-secondary"
+                style={{ marginTop: 10, fontSize: 11 }}
+                onClick={() => handleCopy(`codedeck bind ${window.location.origin}/bind/${apiKey}`)}
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            )}
+            <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>
+              This installs the daemon and sets it up to run automatically on login (macOS).
+              <br />Don't have codedeck installed? Run: <code style={{ color: '#94a3b8' }}>npm i -g codedeck</code>
+            </div>
+          </div>
+        )}
+        {hasBindUrl && (
+          <div style={{ marginTop: 16, fontSize: 13, color: '#64748b' }}>
+            Waiting for your device to appear...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

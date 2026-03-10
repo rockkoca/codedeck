@@ -21,6 +21,13 @@ export class RateLimiter implements DurableObject {
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
+
+    // Path-based routing takes priority over type-based routing
+    if (url.pathname === '/jti-consume' && req.method === 'POST') {
+      const body = await req.json() as { jti: string };
+      return Response.json(await this.consumeJti(body.jti));
+    }
+
     const key = url.searchParams.get('key') ?? 'default';
     const type = url.searchParams.get('type') ?? 'msg';
 
@@ -79,6 +86,25 @@ export class RateLimiter implements DurableObject {
 
     await this.state.storage.put(storeKey, data);
     return { locked: !!data.lockedUntil && data.lockedUntil > Date.now(), lockedUntil: data.lockedUntil };
+  }
+
+  private async consumeJti(jti: string): Promise<{ consumed: boolean }> {
+    const storeKey = `jti:${jti}`;
+    const existing = await this.state.storage.get<number>(storeKey);
+    if (existing) {
+      return { consumed: true }; // already used
+    }
+    // Mark as consumed, set alarm for cleanup (30s TTL)
+    await this.state.storage.put(storeKey, Date.now() + 30_000);
+    // Clean up expired jti entries
+    const allEntries = await this.state.storage.list<number>({ prefix: 'jti:' });
+    const now = Date.now();
+    const expired: string[] = [];
+    for (const [key, expiresAt] of allEntries) {
+      if (expiresAt < now) expired.push(key);
+    }
+    if (expired.length > 0) await this.state.storage.delete(expired);
+    return { consumed: false }; // first use, now consumed
   }
 
   private async checkAuthLockout(key: string): Promise<{ locked: boolean; lockedUntil?: number }> {

@@ -1,13 +1,37 @@
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
-import { createUser, getUserById, upsertPlatformIdentity } from '../db/queries.js';
-import { randomHex, sha256Hex, signJwt } from '../security/crypto.js';
+import { createUser, getUserById } from '../db/queries.js';
+import { randomHex, sha256Hex, signJwt, verifyJwt } from '../security/crypto.js';
 import { checkIdempotency, recordIdempotency } from '../security/replay.js';
 import { logAudit } from '../security/audit.js';
 import { recordAuthFailure, checkAuthLockout } from '../security/lockout.js';
 import { z } from 'zod';
 
 export const authRoutes = new Hono<{ Bindings: Env }>();
+
+// ── Shared auth helper ────────────────────────────────────────────────────
+// Resolves the authenticated user ID from Bearer token (JWT or API key).
+async function resolveUserId(c: { req: { header(name: string): string | undefined }; env: Env }): Promise<string | null> {
+  const auth = c.req.header('Authorization');
+  if (!auth?.startsWith('Bearer ')) return null;
+  const bearerToken = auth.slice(7);
+
+  // Try JWT first (web session tokens) — reject single-use ws-ticket tokens
+  const jwt = await verifyJwt(bearerToken, c.env.JWT_SIGNING_KEY);
+  if (jwt && typeof jwt.sub === 'string' && jwt.type !== 'ws-ticket') {
+    const user = await getUserById(c.env.DB, jwt.sub);
+    if (user) return user.id;
+  }
+
+  // Fall back to API key check
+  const keyHash = await sha256Hex(bearerToken);
+  const row = await c.env.DB.prepare(
+    'SELECT user_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL',
+  ).bind(keyHash).first<{ user_id: string }>();
+  if (row) return row.user_id;
+
+  return null;
+}
 
 // POST /api/auth/register — create a new user and issue initial API key
 authRoutes.post('/register', async (c) => {
@@ -39,36 +63,37 @@ authRoutes.post('/register', async (c) => {
   return c.body(responseBody, 201, { 'Content-Type': 'application/json' });
 });
 
-// GET /api/auth/user/:id
+// GET /api/auth/user/:id — requires auth, only accessible for own user ID
 authRoutes.get('/user/:id', async (c) => {
-  const user = await getUserById(c.env.DB, c.req.param('id'));
+  const authedUserId = await resolveUserId(c);
+  if (!authedUserId) return c.json({ error: 'unauthorized' }, 401);
+
+  const requestedId = c.req.param('id');
+  if (authedUserId !== requestedId) return c.json({ error: 'forbidden' }, 403);
+
+  const user = await getUserById(c.env.DB, requestedId);
   if (!user) return c.json({ error: 'not_found' }, 404);
   return c.json(user);
 });
 
-// POST /api/auth/link — link a platform identity to a user
-const linkSchema = z.object({
-  userId: z.string(),
-  platform: z.string(),
-  platformUserId: z.string(),
-});
+// Platform identity linking is handled exclusively through verified OAuth flows
+// (e.g., github-auth.ts). No public endpoint is exposed to prevent identity pre-claiming.
 
-authRoutes.post('/link', async (c) => {
-  const body = await c.req.json().catch(() => null);
-  const parsed = linkSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
-
-  const { userId, platform, platformUserId } = parsed.data;
-  await upsertPlatformIdentity(c.env.DB, randomHex(16), userId, platform, platformUserId);
-  return c.json({ ok: true });
-});
-
-// GET /api/auth/user/me — get authenticated user (using Bearer API key)
+// GET /api/auth/user/me — get authenticated user (Bearer API key or JWT)
 authRoutes.get('/user/me', async (c) => {
   const auth = c.req.header('Authorization');
   if (!auth?.startsWith('Bearer ')) return c.json({ error: 'unauthorized' }, 401);
-  const apiKey = auth.slice(7);
-  const keyHash = await sha256Hex(apiKey);
+  const bearerToken = auth.slice(7);
+
+  // Try JWT first (web session tokens) — reject single-use ws-ticket tokens
+  const jwt = await verifyJwt(bearerToken, c.env.JWT_SIGNING_KEY);
+  if (jwt && typeof jwt.sub === 'string' && jwt.type !== 'ws-ticket') {
+    const user = await getUserById(c.env.DB, jwt.sub);
+    if (user) return c.json(user);
+  }
+
+  // Fall back to API key check
+  const keyHash = await sha256Hex(bearerToken);
   const row = await c.env.DB.prepare(
     'SELECT user_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL',
   ).bind(keyHash).first<{ user_id: string }>();
@@ -80,7 +105,12 @@ authRoutes.get('/user/me', async (c) => {
 
 // POST /api/user/:id/rotate-key — generate new API key, 24-hour grace for old key
 authRoutes.post('/user/:id/rotate-key', async (c) => {
+  const authedUserId = await resolveUserId(c);
+  if (!authedUserId) return c.json({ error: 'unauthorized' }, 401);
+
   const userId = c.req.param('id');
+  if (authedUserId !== userId) return c.json({ error: 'forbidden' }, 403);
+
   const user = await getUserById(c.env.DB, userId);
   if (!user) return c.json({ error: 'not_found' }, 404);
 
@@ -104,7 +134,12 @@ authRoutes.post('/user/:id/rotate-key', async (c) => {
 
 // DELETE /api/user/:id/key — revoke all API keys immediately
 authRoutes.delete('/user/:id/key', async (c) => {
+  const authedUserId = await resolveUserId(c);
+  if (!authedUserId) return c.json({ error: 'unauthorized' }, 401);
+
   const userId = c.req.param('id');
+  if (authedUserId !== userId) return c.json({ error: 'forbidden' }, 403);
+
   const user = await getUserById(c.env.DB, userId);
   if (!user) return c.json({ error: 'not_found' }, 404);
 
@@ -116,6 +151,92 @@ authRoutes.delete('/user/:id/key', async (c) => {
   await logAudit({ userId, action: 'auth.revoke_keys', ip: c.req.header('CF-Connecting-IP') }, c.env.DB);
 
   return c.json({ ok: true, revokedAt: now });
+});
+
+// POST /api/auth/user/me/keys — create a new API key for the authenticated user
+authRoutes.post('/user/me/keys', async (c) => {
+  const userId = await resolveUserId(c);
+  if (!userId) return c.json({ error: 'unauthorized' }, 401);
+
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const label = typeof body.label === 'string' ? body.label : null;
+
+  const rawKey = `deck_${randomHex(32)}`;
+  const keyHash = await sha256Hex(rawKey);
+  const keyId = randomHex(16);
+  const now = Date.now();
+
+  await c.env.DB.prepare(
+    'INSERT INTO api_keys (id, user_id, key_hash, label, created_at) VALUES (?, ?, ?, ?, ?)',
+  ).bind(keyId, userId, keyHash, label, now).run();
+
+  await logAudit({ userId, action: 'auth.create_key', ip: c.req.header('CF-Connecting-IP') }, c.env.DB);
+
+  return c.json({ id: keyId, apiKey: rawKey, label, createdAt: now }, 201);
+});
+
+// GET /api/auth/user/me/keys — list all API keys for the authenticated user (no raw key)
+authRoutes.get('/user/me/keys', async (c) => {
+  const userId = await resolveUserId(c);
+  if (!userId) return c.json({ error: 'unauthorized' }, 401);
+
+  const result = await c.env.DB.prepare(
+    'SELECT id, label, created_at, revoked_at FROM api_keys WHERE user_id = ? ORDER BY created_at DESC',
+  ).bind(userId).all<{ id: string; label: string | null; created_at: number; revoked_at: number | null }>();
+
+  const keys = result.results.map((r) => ({
+    id: r.id,
+    label: r.label,
+    createdAt: r.created_at,
+    revokedAt: r.revoked_at,
+  }));
+
+  return c.json({ keys });
+});
+
+// DELETE /api/auth/user/me/keys/:keyId — revoke a specific API key
+authRoutes.delete('/user/me/keys/:keyId', async (c) => {
+  const userId = await resolveUserId(c);
+  if (!userId) return c.json({ error: 'unauthorized' }, 401);
+
+  const keyId = c.req.param('keyId');
+
+  // Verify ownership
+  const key = await c.env.DB.prepare(
+    'SELECT id FROM api_keys WHERE id = ? AND user_id = ?',
+  ).bind(keyId, userId).first<{ id: string }>();
+
+  if (!key) return c.json({ error: 'not_found' }, 404);
+
+  const now = Date.now();
+  await c.env.DB.prepare(
+    'UPDATE api_keys SET revoked_at = ? WHERE id = ? AND user_id = ?',
+  ).bind(now, keyId, userId).run();
+
+  await logAudit({ userId, action: 'auth.revoke_key', ip: c.req.header('CF-Connecting-IP') }, c.env.DB);
+
+  return c.json({ ok: true, revokedAt: now });
+});
+
+// POST /api/auth/ws-ticket — issue a short-lived WebSocket ticket
+const wsTicketSchema = z.object({ serverId: z.string() });
+
+authRoutes.post('/ws-ticket', async (c) => {
+  const userId = await resolveUserId(c);
+  if (!userId) return c.json({ error: 'unauthorized' }, 401);
+
+  const body = await c.req.json().catch(() => null);
+  const parsed = wsTicketSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
+
+  const jti = randomHex(16);
+  const ticket = await signJwt(
+    { sub: userId, type: 'ws-ticket', sid: parsed.data.serverId, jti },
+    c.env.JWT_SIGNING_KEY,
+    15, // 15 seconds
+  );
+
+  return c.json({ ticket });
 });
 
 // POST /api/auth/refresh — refresh JWT access token

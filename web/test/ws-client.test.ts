@@ -91,6 +91,9 @@ describe('WsClient', () => {
     client.connect();
     lastWs!.emit('open');
 
+    // open dispatches a synthetic session.event — clear it
+    handler.mockClear();
+
     const msg = { type: 'terminal.diff', diff: { sessionName: 's1', timestamp: 1, lines: [], cols: 80, rows: 24 } };
     lastWs!.emit('message', { data: JSON.stringify(msg) });
 
@@ -104,6 +107,9 @@ describe('WsClient', () => {
     client.onMessage(handler);
     client.connect();
     lastWs!.emit('open');
+
+    // open dispatches a synthetic session.event — clear it
+    handler.mockClear();
 
     lastWs!.emit('message', { data: JSON.stringify({ type: 'pong' }) });
 

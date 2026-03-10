@@ -44,6 +44,14 @@ export function loadQueue(): QueuedMessage[] {
   }
 }
 
+function saveQueue(queue: QueuedMessage[]): void {
+  try {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  } catch {
+    // Storage full — ignore
+  }
+}
+
 /** Clear the message queue */
 export function clearQueue(): void {
   localStorage.removeItem(QUEUE_KEY);

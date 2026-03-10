@@ -70,16 +70,15 @@ export class Mem0Backend implements MemoryBackend {
     }));
   }
 
-  async getProjectContext(projectName: string): Promise<string> {
+  async getProjectContext(projectName: string): Promise<MemorySearchResult[]> {
     const res = await fetch(`${API_BASE}/memories/?user_id=${encodeURIComponent(projectName)}`, {
       headers: this.headers(),
     });
-    if (!res.ok) return '';
+    if (!res.ok) return [];
     const data = (await res.json()) as Array<{ memory: string }>;
     return (data ?? [])
       .slice(0, 10)
-      .map((r) => r.memory)
-      .join('\n');
+      .map((r) => ({ content: r.memory, score: 1, timestamp: Date.now() }));
   }
 
   async summarizeSession(sessionName: string, projectName: string, screenContent: string): Promise<void> {

@@ -10,6 +10,7 @@ export type OutboundSender = (msg: OutboundPayload) => Promise<void>;
 
 export interface OutboundPayload {
   platform: string;
+  botId: string;
   channelId: string;
   content: string;
   replyToId?: string;
@@ -44,7 +45,7 @@ const lastScreens = new Map<string, string>();
 export async function captureAndDiff(sessionName: string): Promise<string | null> {
   let current: string;
   try {
-    current = await capturePane(sessionName);
+    current = (await capturePane(sessionName)).join('\n');
   } catch (err) {
     logger.debug({ sessionName, err }, 'capturePane failed');
     return null;
@@ -96,6 +97,7 @@ export async function onAgentIdle(
     try {
       await sendOutbound({
         platform: binding.platform,
+        botId: binding.botId,
         channelId: binding.channelId,
         content: cleaned,
         formatting: detectFormatting(cleaned),

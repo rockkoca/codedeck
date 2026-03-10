@@ -9,6 +9,8 @@ export type MessageHandler = (msg: ServerMessage) => void;
 export type ServerMessage =
   | { type: 'terminal.diff'; diff: TerminalDiff }
   | { type: 'session.event'; event: string; session: string; state: string }
+  | { type: 'session.error'; project: string; message: string }
+  | { type: 'session_list'; sessions: Array<{ name: string; project: string; role: string; agentType: string; state: string }> }
   | { type: 'outbound'; platform: string; channelId: string; content: string }
   | { type: 'error'; message: string }
   | { type: 'pong' };
@@ -40,7 +42,7 @@ export class WsClient {
 
   connect(): void {
     if (this.ws) return;
-    this.openSocket();
+    void this.openSocket();
   }
 
   disconnect(): void {
@@ -76,12 +78,49 @@ export class WsClient {
     this.send({ type: `session.${command}`, ...payload });
   }
 
-  private openSocket(): void {
+  /** Send raw keyboard input (from xterm onData) to a tmux session. */
+  sendInput(sessionName: string, data: string): void {
+    this.send({ type: 'session.input', sessionName, data });
+  }
+
+  /** Notify the daemon that the terminal viewport has been resized. */
+  sendResize(sessionName: string, cols: number, rows: number): void {
+    this.send({ type: 'session.resize', sessionName, cols, rows });
+  }
+
+  /** Request the current session list from the daemon. */
+  requestSessionList(): void {
+    this.send({ type: 'get_sessions' });
+  }
+
+  private async openSocket(): Promise<void> {
     const wsUrl = this.baseUrl
       .replace(/^http/, 'ws')
       .replace(/\/$/, '');
 
-    const url = `${wsUrl}/api/server/${this.serverId}/ws?token=${encodeURIComponent(this.token)}`;
+    // Get a short-lived ws-ticket before connecting
+    let ticket: string;
+    try {
+      const res = await fetch(`${this.baseUrl}/api/auth/ws-ticket`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.token}`,
+        },
+        body: JSON.stringify({ serverId: this.serverId }),
+      });
+      if (!res.ok) {
+        this.scheduleReconnect();
+        return;
+      }
+      const data = await res.json() as { ticket: string };
+      ticket = data.ticket;
+    } catch {
+      this.scheduleReconnect();
+      return;
+    }
+
+    const url = `${wsUrl}/api/server/${this.serverId}/terminal?ticket=${encodeURIComponent(ticket)}`;
 
     this.ws = new WebSocket(url);
 
@@ -118,7 +157,7 @@ export class WsClient {
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempt, RECONNECT_MAX_MS);
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
-      this.openSocket();
+      void this.openSocket();
     }, delay);
   }
 
