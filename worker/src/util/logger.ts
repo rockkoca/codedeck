@@ -12,13 +12,13 @@ const SENSITIVE_KEY_PATTERNS = [
   /_secret$/i,
   /^password$/i,
   /^authorization$/i,
-  /^rcc_/i,
+  /^deck_/i,
   /^api_key$/i,
 ];
 
-// Patterns that match sensitive values (like the rcc_ prefix in actual values)
+// Patterns that match sensitive values (like the deck_ prefix in actual values)
 const SENSITIVE_VALUE_PATTERNS = [
-  /^rcc_[0-9a-f]{32,}$/i,  // API key values
+  /^deck_[0-9a-f]{32,}$/i,  // API key values
 ];
 
 const REDACTED = '[REDACTED]';

@@ -36,7 +36,7 @@ export function getDriver(type: AgentType): AgentDriver {
 }
 
 export function sessionName(project: string, role: 'brain' | `w${number}`): string {
-  return `rcc_${project}_${role}`;
+  return `deck_${project}_${role}`;
 }
 
 /** Start all sessions for a project (brain + workers). */

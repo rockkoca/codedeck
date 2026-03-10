@@ -29,18 +29,18 @@ describe('sha256Hex', () => {
 
 // Test API key format produced by auth register route
 describe('API key format', () => {
-  it('rcc_ prefix check: key starts with rcc_', () => {
-    // Simulate the key generation pattern from auth.ts: `rcc_${randomHex(32)}`
+  it('deck_ prefix check: key starts with deck_', () => {
+    // Simulate the key generation pattern from auth.ts: `deck_${randomHex(32)}`
     // randomHex(32) = 64 hex chars
-    const fakeKey = 'rcc_' + 'a'.repeat(64);
-    expect(fakeKey.startsWith('rcc_')).toBe(true);
+    const fakeKey = 'deck_' + 'a'.repeat(64);
+    expect(fakeKey.startsWith('deck_')).toBe(true);
     expect(fakeKey.length).toBeGreaterThanOrEqual(36);
   });
 
-  it('rcc_ key is at least 68 chars (rcc_ + 64 hex chars)', () => {
+  it('deck_ key is at least 69 chars (deck_ + 64 hex chars)', () => {
     // randomHex(32) produces 64 hex chars
-    const fakeKey = 'rcc_' + '0'.repeat(64);
-    expect(fakeKey.length).toBe(68);
+    const fakeKey = 'deck_' + '0'.repeat(64);
+    expect(fakeKey.length).toBe(69);
   });
 });
 

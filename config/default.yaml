@@ -17,11 +17,11 @@ agents:
     - opencode
 
 sessions:
-  storePath: ~/.chat-cli/sessions.json
-  signalDir: /tmp/chat-cli/signals
+  storePath: ~/.codedeck/sessions.json
+  signalDir: /tmp/codedeck/signals
 
 projects:
-  storePath: ~/.chat-cli/projects.json
+  storePath: ~/.codedeck/projects.json
 
 autofix:
   defaultCoder: claude-code
@@ -44,7 +44,7 @@ memory:
 server:
   cfWorkerUrl: ${CF_WORKER_URL}
   apiKey: ${CF_API_KEY}
-  credentialsPath: ~/.chat-cli/server.json
+  credentialsPath: ~/.codedeck/server.json
 
 log:
   level: info

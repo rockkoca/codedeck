@@ -64,7 +64,7 @@ export async function setupOpenCodePlugin(
   const signalFile = path.join(SIGNAL_DIR, `${sessionName}.idle.json`);
   const tmpFile = `${signalFile}.tmp`;
 
-  const pluginContent = `// OpenCode idle signal plugin for remote-chat-cli
+  const pluginContent = `// OpenCode idle signal plugin for codedeck
 import { writeFileSync, mkdirSync, renameSync } from 'fs';
 
 export default {

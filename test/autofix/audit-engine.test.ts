@@ -34,8 +34,8 @@ function makeTask(overrides = {}) {
   return createTask({
     title: 'Fix bug #1',
     description: 'A description of the bug',
-    coderSession: 'rcc_proj_w1',
-    auditorSession: 'rcc_proj_brain',
+    coderSession: 'deck_proj_w1',
+    auditorSession: 'deck_proj_brain',
     projectName: 'proj',
     maxDiscussionRounds: 3,
     ...overrides,
@@ -75,7 +75,7 @@ describe('AuditEngine', () => {
       // sendKeys should have been called on the auditor session with a review prompt
       expect(mockSendKeys).toHaveBeenCalled();
       const [calledSession] = mockSendKeys.mock.calls[0];
-      expect(calledSession).toBe('rcc_proj_brain');
+      expect(calledSession).toBe('deck_proj_brain');
     });
 
     it('transitions task to implementing state when output contains APPROVED:', async () => {
@@ -144,7 +144,7 @@ describe('AuditEngine', () => {
       // sendKeys should be called twice: once to auditor with review prompt, once to coder with findings
       expect(mockSendKeys).toHaveBeenCalledTimes(2);
       const [coderSession, findingsMsg] = mockSendKeys.mock.calls[1];
-      expect(coderSession).toBe('rcc_proj_w1');
+      expect(coderSession).toBe('deck_proj_w1');
       expect(findingsMsg).toContain('findings');
     });
 
@@ -238,7 +238,7 @@ describe('AuditEngine', () => {
 
       expect(mockSendKeys).toHaveBeenCalled();
       const [calledSession] = mockSendKeys.mock.calls[0];
-      expect(calledSession).toBe('rcc_proj_brain');
+      expect(calledSession).toBe('deck_proj_brain');
     });
   });
 });

@@ -13,19 +13,19 @@ describe('ClaudeCodeDriver', () => {
   });
 
   it('buildLaunchCommand includes --dangerously-skip-permissions', () => {
-    const cmd = driver.buildLaunchCommand('rcc_proj_brain');
+    const cmd = driver.buildLaunchCommand('deck_proj_brain');
     expect(cmd).toContain('claude');
     expect(cmd).toContain('--dangerously-skip-permissions');
   });
 
   it('buildLaunchCommand with cwd changes directory first', () => {
-    const cmd = driver.buildLaunchCommand('rcc_proj_brain', { cwd: '/home/user/proj' });
+    const cmd = driver.buildLaunchCommand('deck_proj_brain', { cwd: '/home/user/proj' });
     expect(cmd).toContain('cd');
     expect(cmd).toContain('/home/user/proj');
   });
 
   it('buildResumeCommand includes -c flag', () => {
-    const cmd = driver.buildResumeCommand('rcc_proj_brain');
+    const cmd = driver.buildResumeCommand('deck_proj_brain');
     expect(cmd).toContain('-c');
   });
 
@@ -73,12 +73,12 @@ describe('CodexDriver', () => {
   });
 
   it('buildLaunchCommand includes codex', () => {
-    const cmd = driver.buildLaunchCommand('rcc_proj_w1');
+    const cmd = driver.buildLaunchCommand('deck_proj_w1');
     expect(cmd).toContain('codex');
   });
 
   it('buildResumeCommand returns resume command', () => {
-    const cmd = driver.buildResumeCommand('rcc_proj_w1');
+    const cmd = driver.buildResumeCommand('deck_proj_w1');
     expect(cmd).toBeTruthy();
   });
 
@@ -103,12 +103,12 @@ describe('OpenCodeDriver', () => {
   });
 
   it('buildLaunchCommand includes opencode', () => {
-    const cmd = driver.buildLaunchCommand('rcc_proj_w1');
+    const cmd = driver.buildLaunchCommand('deck_proj_w1');
     expect(cmd).toContain('opencode');
   });
 
   it('buildResumeCommand returns a resume command', () => {
-    const cmd = driver.buildResumeCommand('rcc_proj_w1');
+    const cmd = driver.buildResumeCommand('deck_proj_w1');
     expect(cmd).toBeTruthy();
   });
 });

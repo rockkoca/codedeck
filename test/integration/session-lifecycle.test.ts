@@ -11,7 +11,7 @@ const SKIP = process.env.SKIP_TMUX_TESTS === '1';
 const describeOrSkip = SKIP ? describe.skip : describe;
 
 describeOrSkip('session lifecycle integration', () => {
-  const sessionName = `rcc_lifecycle_${Date.now()}`;
+  const sessionName = `deck_lifecycle_${Date.now()}`;
 
   afterAll(async () => {
     try { await exec(`tmux kill-session -t ${sessionName}`); } catch {}
@@ -25,7 +25,7 @@ describeOrSkip('session lifecycle integration', () => {
 
     // With a real implementation, the session-manager would detect this
     // and call restartSession(). We verify the detection logic here.
-    const exists = await sessionExists(`rcc_test_ghost_${Date.now()}`);
+    const exists = await sessionExists(`deck_test_ghost_${Date.now()}`);
     expect(exists).toBe(false);
   });
 

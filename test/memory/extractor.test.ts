@@ -7,7 +7,7 @@ describe('extractFromScreenDiff()', () => {
   ● Write file src/auth/middleware.ts
   ● Read file src/config.ts
     `;
-    const obs = extractFromScreenDiff(diff, 'rcc_test_w1');
+    const obs = extractFromScreenDiff(diff, 'deck_test_w1');
     expect(obs.filesModified).toContain('src/auth/middleware.ts');
   });
 
@@ -16,7 +16,7 @@ describe('extractFromScreenDiff()', () => {
   $ npm test
   $ git add -A
     `;
-    const obs = extractFromScreenDiff(diff, 'rcc_test_w1');
+    const obs = extractFromScreenDiff(diff, 'deck_test_w1');
     expect(obs.commandsRun.length).toBeGreaterThan(0);
   });
 
@@ -25,17 +25,17 @@ describe('extractFromScreenDiff()', () => {
   Error: Cannot find module 'zod'
   error TS2307: Cannot find module './types.js'
     `;
-    const obs = extractFromScreenDiff(diff, 'rcc_test_w1');
+    const obs = extractFromScreenDiff(diff, 'deck_test_w1');
     expect(obs.errors.length).toBeGreaterThan(0);
   });
 
   it('includes session name', () => {
-    const obs = extractFromScreenDiff('some output', 'rcc_myproject_w1');
-    expect(obs.sessionName).toBe('rcc_myproject_w1');
+    const obs = extractFromScreenDiff('some output', 'deck_myproject_w1');
+    expect(obs.sessionName).toBe('deck_myproject_w1');
   });
 
   it('handles empty diff', () => {
-    const obs = extractFromScreenDiff('', 'rcc_test_w1');
+    const obs = extractFromScreenDiff('', 'deck_test_w1');
     expect(obs.filesModified).toEqual([]);
     expect(obs.commandsRun).toEqual([]);
     expect(obs.errors).toEqual([]);

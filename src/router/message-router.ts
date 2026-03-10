@@ -151,7 +151,7 @@ async function handleBind(
     await ctx.sendOutbound(
       msg.channelId,
       msg.platform,
-      `Project "${projectName}" has no active brain session. Start it first with: chat-cli project start ${projectName}`,
+      `Project "${projectName}" has no active brain session. Start it first with: codedeck project start ${projectName}`,
     );
     return;
   }
@@ -171,7 +171,7 @@ async function handleCommand(
   ctx: RouterContext,
 ): Promise<void> {
   const { projectName } = binding;
-  const brainSessionName = `rcc_${projectName}_brain`;
+  const brainSessionName = `deck_${projectName}_brain`;
 
   switch (command.name) {
     case 'status': {
@@ -203,7 +203,7 @@ async function handleCommand(
 
     case 'screen': {
       const sessionName = command.args[0]
-        ? `rcc_${projectName}_${command.args[0]}`
+        ? `deck_${projectName}_${command.args[0]}`
         : brainSessionName;
       const session = getSession(sessionName);
       if (!session) {
@@ -270,7 +270,7 @@ async function forwardToBrain(
   binding: ChannelBinding,
   ctx: RouterContext,
 ): Promise<void> {
-  const brainSessionName = `rcc_${binding.projectName}_brain`;
+  const brainSessionName = `deck_${binding.projectName}_brain`;
   await forwardTextToBrain(brainSessionName, msg.content, ctx);
 }
 

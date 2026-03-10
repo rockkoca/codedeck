@@ -12,8 +12,8 @@ function makeTask(stateOverride: AutoFixTask['state'] = 'planning'): AutoFixTask
   const t = createTask({
     title: 'Fix bug',
     description: 'desc',
-    coderSession: 'rcc_proj_w1',
-    auditorSession: 'rcc_proj_brain',
+    coderSession: 'deck_proj_w1',
+    auditorSession: 'deck_proj_brain',
     projectName: 'proj',
   });
   return { ...t, state: stateOverride };
@@ -31,7 +31,7 @@ describe('fastPathDecision', () => {
   it('planning → send_to_worker', () => {
     const d = fastPathDecision(makeTask('planning'));
     expect(d?.action).toBe('send_to_worker');
-    expect(d?.target).toBe('rcc_proj_w1');
+    expect(d?.target).toBe('deck_proj_w1');
     expect(d?.message).toBeTruthy();
   });
 
@@ -85,9 +85,9 @@ describe('parseDecision', () => {
   });
 
   it('parses with optional fields', () => {
-    const d = parseDecision('{"action":"send_to_worker","target":"rcc_proj_w1","message":"Do this"}');
+    const d = parseDecision('{"action":"send_to_worker","target":"deck_proj_w1","message":"Do this"}');
     expect(d?.action).toBe('send_to_worker');
-    expect(d?.target).toBe('rcc_proj_w1');
+    expect(d?.target).toBe('deck_proj_w1');
     expect(d?.message).toBe('Do this');
   });
 
@@ -100,8 +100,8 @@ describe('executeDecision', () => {
   it('send_to_worker calls sendToSession', async () => {
     const executors = { ...noopExecutors, sendToSession: vi.fn().mockResolvedValue(undefined) };
     const task = makeTask('planning');
-    await executeDecision({ action: 'send_to_worker', target: 'rcc_proj_w1', message: 'Do task' }, task, executors);
-    expect(executors.sendToSession).toHaveBeenCalledWith('rcc_proj_w1', 'Do task');
+    await executeDecision({ action: 'send_to_worker', target: 'deck_proj_w1', message: 'Do task' }, task, executors);
+    expect(executors.sendToSession).toHaveBeenCalledWith('deck_proj_w1', 'Do task');
   });
 
   it('audit with design_review state calls runDesignReview', async () => {

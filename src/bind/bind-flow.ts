@@ -5,7 +5,7 @@ import { createInterface } from 'readline/promises';
 import { loadConfig } from '../config.js';
 import logger from '../util/logger.js';
 
-const CREDS_DIR = join(homedir(), '.chat-cli');
+const CREDS_DIR = join(homedir(), '.codedeck');
 const CREDS_PATH = join(CREDS_DIR, 'server.json');
 
 interface ServerCredentials {
@@ -21,7 +21,7 @@ export async function bindFlow(serverName: string): Promise<void> {
   const workerUrl = config.cf?.workerUrl;
 
   if (!workerUrl) {
-    console.error('CF_WORKER_URL not set. Add it to ~/.chat-cli/config.yaml or .env');
+    console.error('CF_WORKER_URL not set. Add it to ~/.codedeck/config.yaml or .env');
     process.exit(1);
   }
 

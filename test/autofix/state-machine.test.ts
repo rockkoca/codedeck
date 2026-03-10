@@ -10,8 +10,8 @@ function makeTask(overrides = {}) {
   return createTask({
     title: 'Fix bug #42',
     description: 'Description of bug',
-    coderSession: 'rcc_proj_w1',
-    auditorSession: 'rcc_proj_brain',
+    coderSession: 'deck_proj_w1',
+    auditorSession: 'deck_proj_brain',
     projectName: 'proj',
     maxDiscussionRounds: 3,
     ...overrides,

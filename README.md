@@ -1,30 +1,30 @@
-# remote-chat-cli
+# codedeck
 
 Remote control AI coding agents (Claude Code, Codex, OpenCode) via Discord, Telegram, Feishu, web terminal, and native mobile apps.
 
 ## Install
 
 ```bash
-npm install -g remote-chat-cli
+npm install -g codedeck
 ```
 
 ## Quick Start
 
 ```bash
 # Start the daemon
-chat-cli start
+codedeck start
 
 # Bind to Cloudflare central server
-chat-cli bind
+codedeck bind
 
 # Check status
-chat-cli status
+codedeck status
 
 # Send a message to an agent session
-chat-cli send --session rcc_myapp_w1 "fix the auth bug"
+codedeck send --session deck_myapp_w1 "fix the auth bug"
 
 # Run auto-fix with two agents
-chat-cli autofix --project myapp "fix the authentication timeout bug"
+codedeck autofix --project myapp "fix the authentication timeout bug"
 ```
 
 ## Requirements
@@ -35,4 +35,4 @@ chat-cli autofix --project myapp "fix the authentication timeout bug"
 
 ## Documentation
 
-See [design.md](openspec/changes/remote-chat-cli/design.md) for architecture decisions.
+See [design.md](openspec/changes/codedeck/design.md) for architecture decisions.

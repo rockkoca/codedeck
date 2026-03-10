@@ -17,10 +17,10 @@ describe('Crypto utilities (auth security)', () => {
     expect(h1).not.toBe(h2);
   });
 
-  it('API key format is rcc_ prefixed', () => {
-    // API keys generated as `rcc_${randomHex(32)}`
-    const mockKey = 'rcc_' + 'a'.repeat(64);
-    expect(mockKey.startsWith('rcc_')).toBe(true);
+  it('API key format is deck_ prefixed', () => {
+    // API keys generated as `deck_${randomHex(32)}`
+    const mockKey = 'deck_' + 'a'.repeat(64);
+    expect(mockKey.startsWith('deck_')).toBe(true);
     expect(mockKey.length).toBeGreaterThan(30);
   });
 

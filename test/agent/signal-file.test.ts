@@ -7,7 +7,7 @@ import { vi } from 'vitest';
 let tempDir: string;
 
 beforeEach(() => {
-  tempDir = mkdtempSync(join(tmpdir(), 'rcc-signal-test-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'deck-signal-test-'));
 });
 
 afterEach(() => {
@@ -39,15 +39,15 @@ describe('signal file handling', () => {
     const { mkdir } = await import('fs/promises');
     await mkdir(SIGNAL_DIR, { recursive: true });
 
-    await writeIdleSignal({ session: 'rcc_test_w99', timestamp: 99999 });
-    const signal = await checkIdleSignal('rcc_test_w99');
+    await writeIdleSignal({ session: 'deck_test_w99', timestamp: 99999 });
+    const signal = await checkIdleSignal('deck_test_w99');
     expect(signal).not.toBeNull();
     expect(signal?.timestamp).toBe(99999);
   });
 
   it('checkIdleSignal returns null for missing session', async () => {
     const { checkIdleSignal } = await import('../../src/agent/signal.js');
-    const result = await checkIdleSignal('rcc_nonexistent_w999');
+    const result = await checkIdleSignal('deck_nonexistent_w999');
     expect(result).toBeNull();
   });
 
@@ -56,9 +56,9 @@ describe('signal file handling', () => {
     const { mkdir } = await import('fs/promises');
     await mkdir(SIGNAL_DIR, { recursive: true });
 
-    await writeIdleSignal({ session: 'rcc_consume_w1', timestamp: 0 });
-    await checkIdleSignal('rcc_consume_w1'); // consume
-    const second = await checkIdleSignal('rcc_consume_w1');
+    await writeIdleSignal({ session: 'deck_consume_w1', timestamp: 0 });
+    await checkIdleSignal('deck_consume_w1'); // consume
+    const second = await checkIdleSignal('deck_consume_w1');
     expect(second).toBeNull();
   });
 
@@ -67,11 +67,11 @@ describe('signal file handling', () => {
     const { mkdir } = await import('fs/promises');
     await mkdir(SIGNAL_DIR, { recursive: true });
 
-    await writeIdleSignal({ session: 'rcc_proj_wa', timestamp: 111 });
-    await writeIdleSignal({ session: 'rcc_proj_wb', timestamp: 222 });
+    await writeIdleSignal({ session: 'deck_proj_wa', timestamp: 111 });
+    await writeIdleSignal({ session: 'deck_proj_wb', timestamp: 222 });
 
-    const wa = await checkIdleSignal('rcc_proj_wa');
-    const wb = await checkIdleSignal('rcc_proj_wb');
+    const wa = await checkIdleSignal('deck_proj_wa');
+    const wb = await checkIdleSignal('deck_proj_wb');
     expect(wa?.timestamp).toBe(111);
     expect(wb?.timestamp).toBe(222);
   });

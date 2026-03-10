@@ -5,7 +5,7 @@
  */
 import { Capacitor } from '@capacitor/core';
 
-const AUTH_KEY = 'rcc_auth';
+const AUTH_KEY = 'deck_auth';
 
 /** Store API key securely — biometric-protected on native, localStorage on web */
 export async function storeAuthKey(apiKey: string): Promise<void> {
@@ -16,9 +16,9 @@ export async function storeAuthKey(apiKey: string): Promise<void> {
   try {
     const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth');
     await BiometricAuth.setCredentials({
-      username: 'rcc_user',
+      username: 'deck_user',
       password: apiKey,
-      server: 'remote-chat-cli',
+      server: 'codedeck',
     });
   } catch {
     // Biometric not available — fall back to localStorage
@@ -48,8 +48,8 @@ export async function getAuthKey(): Promise<string | null> {
     });
 
     const creds = await BiometricAuth.getCredentials({
-      username: 'rcc_user',
-      server: 'remote-chat-cli',
+      username: 'deck_user',
+      server: 'codedeck',
     });
     return creds.password ?? null;
   } catch {
@@ -64,8 +64,8 @@ export async function clearAuthKey(): Promise<void> {
   try {
     const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth');
     await BiometricAuth.deleteCredentials({
-      username: 'rcc_user',
-      server: 'remote-chat-cli',
+      username: 'deck_user',
+      server: 'codedeck',
     });
   } catch {
     // ignore

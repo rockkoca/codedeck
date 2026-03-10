@@ -1,8 +1,8 @@
 /**
  * Auto-fix pipeline CLI entry point.
  * Usage:
- *   chat-cli autofix --project <name> --coder claude-code --auditor codex "task description"
- *   chat-cli autofix --project <name> --tracker github|gitlab [--continuous]
+ *   codedeck autofix --project <name> --coder claude-code --auditor codex "task description"
+ *   codedeck autofix --project <name> --tracker github|gitlab [--continuous]
  */
 import type { Command } from 'commander';
 import { AuditEngine } from './audit-engine.js';

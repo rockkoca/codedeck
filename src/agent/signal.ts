@@ -1,7 +1,7 @@
 /**
  * Idle signal file detection — port of ucc.py check_idle_signal_fn pattern.
  *
- * Each agent writes to /tmp/chat-cli/signals/<session-name>.idle.json
+ * Each agent writes to /tmp/codedeck/signals/<session-name>.idle.json
  * via atomic rename (write to .tmp, then mv) to prevent partial reads.
  * Reading the file also deletes it to prevent duplicate triggers.
  */
@@ -10,7 +10,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 
-export const SIGNAL_DIR = '/tmp/chat-cli/signals';
+export const SIGNAL_DIR = '/tmp/codedeck/signals';
 
 export interface IdleSignal {
   session: string;
@@ -59,7 +59,7 @@ export async function writeIdleSignal(signal: IdleSignal): Promise<void> {
 // ─── CC Stop Hook setup ───────────────────────────────────────────────────────
 
 const CC_HOOK_SCRIPT_NAME = 'cc_stop_hook.sh';
-const CC_HOOK_SCRIPT_PATH = path.join(os.homedir(), '.chat-cli', CC_HOOK_SCRIPT_NAME);
+const CC_HOOK_SCRIPT_PATH = path.join(os.homedir(), '.codedeck', CC_HOOK_SCRIPT_NAME);
 const CC_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
 /**
@@ -72,7 +72,7 @@ export async function setupCCStopHook(): Promise<void> {
   await fs.writeFile(
     CC_HOOK_SCRIPT_PATH,
     `#!/bin/bash
-# CC Stop hook — writes idle signal for remote-chat-cli
+# CC Stop hook — writes idle signal for codedeck
 SESSION_NAME="$1"
 if [ -z "$SESSION_NAME" ]; then
   SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null || echo "unknown")

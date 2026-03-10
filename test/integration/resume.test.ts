@@ -9,20 +9,20 @@ import { OpenCodeDriver } from '../../src/agent/drivers/opencode.js';
 describe('resume command building', () => {
   it('CC uses -c flag for resume', () => {
     const driver = new ClaudeCodeDriver();
-    const cmd = driver.buildResumeCommand('rcc_proj_brain');
+    const cmd = driver.buildResumeCommand('deck_proj_brain');
     expect(cmd).toContain('-c');
   });
 
   it('Codex builds a resume command', () => {
     const driver = new CodexDriver();
-    const cmd = driver.buildResumeCommand('rcc_proj_w1');
+    const cmd = driver.buildResumeCommand('deck_proj_w1');
     expect(cmd).toBeTruthy();
     expect(typeof cmd).toBe('string');
   });
 
   it('OpenCode uses -c flag for resume', () => {
     const driver = new OpenCodeDriver();
-    const cmd = driver.buildResumeCommand('rcc_proj_w1');
+    const cmd = driver.buildResumeCommand('deck_proj_w1');
     expect(cmd).toContain('-c');
   });
 });

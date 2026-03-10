@@ -4,8 +4,8 @@
  * - Queues messages sent while disconnected for replay on reconnect
  */
 
-const LAST_FRAME_KEY = (session: string) => `rcc_frame_${session}`;
-const QUEUE_KEY = 'rcc_offline_queue';
+const LAST_FRAME_KEY = (session: string) => `deck_frame_${session}`;
+const QUEUE_KEY = 'deck_offline_queue';
 
 interface QueuedMessage {
   sessionName: string;

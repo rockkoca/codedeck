@@ -1,6 +1,6 @@
 # Integration Testing Checklist
 
-Manual end-to-end acceptance tests for the full remote-chat-cli system.
+Manual end-to-end acceptance tests for the full codedeck system.
 These scenarios require a real deployment (CF Worker, daemon, platform bot credentials).
 
 ---
@@ -8,7 +8,7 @@ These scenarios require a real deployment (CF Worker, daemon, platform bot crede
 ## 14.4 Discord → Brain → Worker → Discord
 
 **Prerequisites:**
-- Daemon running locally with `chat-cli start`
+- Daemon running locally with `codedeck start`
 - CF Worker deployed with `wrangler deploy`
 - Discord bot token configured, guild connected
 - Brain session active (`@brain`), at least one worker (`@w1`)

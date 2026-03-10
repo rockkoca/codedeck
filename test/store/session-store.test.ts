@@ -8,7 +8,7 @@ import { vi } from 'vitest';
 let tempDir: string;
 
 beforeEach(() => {
-  tempDir = mkdtempSync(join(tmpdir(), 'rcc-test-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'deck-test-'));
   vi.stubEnv('HOME', tempDir);
 });
 
@@ -28,7 +28,7 @@ describe('session-store', () => {
   it('upsert and retrieve a session', async () => {
     const { upsertSession, getSession } = await import('../../src/store/session-store.js');
     upsertSession({
-      name: 'rcc_test_brain',
+      name: 'deck_test_brain',
       project: 'test',
       role: 'brain',
       agentType: 'claude-code',
@@ -36,7 +36,7 @@ describe('session-store', () => {
       pid: 1234,
       startedAt: Date.now(),
     });
-    const s = getSession('rcc_test_brain');
+    const s = getSession('deck_test_brain');
     expect(s).not.toBeNull();
     expect(s?.project).toBe('test');
     expect(s?.role).toBe('brain');
@@ -45,7 +45,7 @@ describe('session-store', () => {
   it('update session state', async () => {
     const { upsertSession, updateSessionState, getSession } = await import('../../src/store/session-store.js');
     upsertSession({
-      name: 'rcc_p2_w1',
+      name: 'deck_p2_w1',
       project: 'p2',
       role: 'w1',
       agentType: 'codex',
@@ -53,14 +53,14 @@ describe('session-store', () => {
       pid: 5678,
       startedAt: Date.now(),
     });
-    updateSessionState('rcc_p2_w1', 'running');
-    expect(getSession('rcc_p2_w1')?.state).toBe('running');
+    updateSessionState('deck_p2_w1', 'running');
+    expect(getSession('deck_p2_w1')?.state).toBe('running');
   });
 
   it('remove session', async () => {
     const { upsertSession, removeSession, getSession } = await import('../../src/store/session-store.js');
     upsertSession({
-      name: 'rcc_del_brain',
+      name: 'deck_del_brain',
       project: 'del',
       role: 'brain',
       agentType: 'claude-code',
@@ -68,8 +68,8 @@ describe('session-store', () => {
       pid: 9999,
       startedAt: Date.now(),
     });
-    removeSession('rcc_del_brain');
-    expect(getSession('rcc_del_brain')).toBeUndefined();
+    removeSession('deck_del_brain');
+    expect(getSession('deck_del_brain')).toBeUndefined();
   });
 
   it('list returns all sessions', async () => {

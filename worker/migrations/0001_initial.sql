@@ -38,7 +38,7 @@ CREATE TABLE pending_binds (
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY,
   server_id TEXT NOT NULL REFERENCES servers(id),
-  name TEXT NOT NULL,                 -- tmux session name e.g. rcc_myapp_w1
+  name TEXT NOT NULL,                 -- tmux session name e.g. deck_myapp_w1
   project_name TEXT NOT NULL,
   role TEXT NOT NULL,                 -- 'brain', 'w1', 'w2', ...
   agent_type TEXT NOT NULL,

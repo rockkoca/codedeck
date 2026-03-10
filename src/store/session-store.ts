@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 
-const STORE_DIR = join(homedir(), '.chat-cli');
+const STORE_DIR = join(homedir(), '.codedeck');
 const STORE_PATH = join(STORE_DIR, 'sessions.json');
 const DEBOUNCE_MS = 500;
 

@@ -21,7 +21,7 @@ authRoutes.post('/register', async (c) => {
   const userId = randomHex(16);
   await createUser(c.env.DB, userId);
 
-  const rawKey = `rcc_${randomHex(32)}`;
+  const rawKey = `deck_${randomHex(32)}`;
   const keyHash = await sha256Hex(rawKey);
   const now = Date.now();
   await c.env.DB.prepare(
@@ -91,7 +91,7 @@ authRoutes.post('/user/:id/rotate-key', async (c) => {
   ).bind(graceExpiry, userId).run();
 
   // Issue new key
-  const rawKey = `rcc_${randomHex(32)}`;
+  const rawKey = `deck_${randomHex(32)}`;
   const keyHash = await sha256Hex(rawKey);
   await c.env.DB.prepare(
     'INSERT INTO api_keys (id, user_id, key_hash, created_at) VALUES (?, ?, ?, ?)',

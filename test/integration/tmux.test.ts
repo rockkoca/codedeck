@@ -22,7 +22,7 @@ async function tmuxAvailable(): Promise<boolean> {
 }
 
 describeOrSkip('tmux integration', async () => {
-  const sessionName = `rcc_test_tmux_${Date.now()}`;
+  const sessionName = `deck_test_tmux_${Date.now()}`;
 
   beforeAll(async () => {
     const available = await tmuxAvailable();
@@ -46,7 +46,7 @@ describeOrSkip('tmux integration', async () => {
   });
 
   it('send-keys to session', async () => {
-    await exec(`tmux send-keys -t ${sessionName} 'echo hello_rcc_test' Enter`);
+    await exec(`tmux send-keys -t ${sessionName} 'echo hello_deck_test' Enter`);
     // Give bash time to process
     await new Promise((r) => setTimeout(r, 500));
   });

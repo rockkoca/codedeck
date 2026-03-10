@@ -35,7 +35,7 @@ app.route('/api/bot', botRoutes);
 app.route('/webhook', webhookRoutes);
 
 // Health check
-app.get('/api/health', (c) => c.json({ service: 'remote-chat-cli-worker', status: 'ok' }));
+app.get('/api/health', (c) => c.json({ service: 'codedeck-worker', status: 'ok' }));
 
 // Serve web UI static assets (built to ../web/dist, referenced via ASSETS binding in wrangler.toml)
 // Any non-API route falls through to the SPA index.html

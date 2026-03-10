@@ -54,7 +54,7 @@ describe.skipIf(SKIP)('Memory injection into agent prompts', () => {
     const basePrompt = 'How do I configure the session store?';
     const fakeMemories = [
       { id: 'mem-1', content: 'Session store uses debounced JSON writes', score: 0.92 },
-      { id: 'mem-2', content: 'Store path is ~/.chat-cli/sessions.json', score: 0.85 },
+      { id: 'mem-2', content: 'Store path is ~/.codedeck/sessions.json', score: 0.85 },
     ];
 
     const enrichedPrompt = buildPromptWithMemory(basePrompt, fakeMemories);

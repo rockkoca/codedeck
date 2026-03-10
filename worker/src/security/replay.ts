@@ -6,7 +6,7 @@
  * - Feishu: SHA-256 includes timestamp + nonce
  * - Telegram: secret token (no timestamp — relies on HTTPS + secret)
  *
- * Internal daemon↔CF API calls use X-RCC-Timestamp (5-minute window).
+ * Internal daemon↔CF API calls use X-Deck-Timestamp (5-minute window).
  * WebSocket messages include monotonic seq numbers.
  * State-changing ops use Idempotency-Key stored in D1 idempotency_records (24h TTL).
  */
@@ -16,11 +16,11 @@ import type { Env } from '../types.js';
 const TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Verify X-RCC-Timestamp header for internal API calls.
+ * Verify X-Deck-Timestamp header for internal API calls.
  * Rejects if timestamp is outside the 5-minute window.
  */
 export function verifyTimestamp(req: Request): boolean {
-  const ts = req.headers.get('X-RCC-Timestamp');
+  const ts = req.headers.get('X-Deck-Timestamp');
   if (!ts) return false;
 
   const tsMs = parseInt(ts, 10);

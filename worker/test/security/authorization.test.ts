@@ -61,7 +61,7 @@ describe('requireAuth', () => {
   });
 
   it('returns 401 when Bearer token is not found in DB', async () => {
-    const c = mockContext('Bearer rcc_invalidkey', { first: null });
+    const c = mockContext('Bearer deck_invalidkey', { first: null });
     const next = vi.fn();
     const middleware = requireAuth();
 
@@ -72,7 +72,7 @@ describe('requireAuth', () => {
   });
 
   it('calls next when valid API key is found', async () => {
-    const c = mockContext('Bearer rcc_validkey123', { first: { user_id: 'u1' } });
+    const c = mockContext('Bearer deck_validkey123', { first: { user_id: 'u1' } });
     const next = vi.fn().mockResolvedValue(undefined);
     const middleware = requireAuth();
 

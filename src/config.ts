@@ -5,7 +5,7 @@ import yaml from 'yaml';
 
 const DEFAULT_CONFIG_PATH = join(new URL('../config/default.yaml', import.meta.url).pathname);
 function userConfigPath(): string {
-  return join(homedir(), '.chat-cli', 'config.yaml');
+  return join(homedir(), '.codedeck', 'config.yaml');
 }
 
 export interface Config {
@@ -117,7 +117,7 @@ export async function loadConfig(): Promise<Config> {
     config.cf = {
       workerUrl: s.cfWorkerUrl,
       apiKey: s.cfApiKey ?? s.apiKey,
-      credentialsPath: s.credentialsPath ?? join(homedir(), '.chat-cli', 'server.json'),
+      credentialsPath: s.credentialsPath ?? join(homedir(), '.codedeck', 'server.json'),
     };
     delete config.server;
   }

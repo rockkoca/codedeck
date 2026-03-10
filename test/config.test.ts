@@ -7,7 +7,7 @@ import { vi } from 'vitest';
 let tempDir: string;
 
 beforeEach(() => {
-  tempDir = mkdtempSync(join(tmpdir(), 'rcc-config-test-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'deck-config-test-'));
   vi.stubEnv('HOME', tempDir);
   vi.resetModules();
 });
@@ -29,9 +29,9 @@ describe('loadConfig()', () => {
 
   it('expands ${ENV_VAR} in config values', async () => {
     vi.stubEnv('MY_TEST_TOKEN', 'test-value-123');
-    mkdirSync(join(tempDir, '.chat-cli'), { recursive: true });
+    mkdirSync(join(tempDir, '.codedeck'), { recursive: true });
     writeFileSync(
-      join(tempDir, '.chat-cli', 'config.yaml'),
+      join(tempDir, '.codedeck', 'config.yaml'),
       'cf:\n  apiKey: ${MY_TEST_TOKEN}\n',
     );
     const { loadConfig } = await import('../src/config.js');
@@ -44,9 +44,9 @@ describe('loadConfig()', () => {
     vi.stubEnv('UNSET_VAR_XYZ', '');
     delete process.env['UNSET_VAR_XYZ'];
 
-    mkdirSync(join(tempDir, '.chat-cli'), { recursive: true });
+    mkdirSync(join(tempDir, '.codedeck'), { recursive: true });
     writeFileSync(
-      join(tempDir, '.chat-cli', 'config.yaml'),
+      join(tempDir, '.codedeck', 'config.yaml'),
       'cf:\n  workerUrl: ${UNSET_VAR_XYZ:-https://fallback.workers.dev}\n',
     );
 
@@ -56,9 +56,9 @@ describe('loadConfig()', () => {
   });
 
   it('expands ~/ paths to home directory', async () => {
-    mkdirSync(join(tempDir, '.chat-cli'), { recursive: true });
+    mkdirSync(join(tempDir, '.codedeck'), { recursive: true });
     writeFileSync(
-      join(tempDir, '.chat-cli', 'config.yaml'),
+      join(tempDir, '.codedeck', 'config.yaml'),
       'someDir: ~/mydir\n',
     );
     const { loadConfig } = await import('../src/config.js');
@@ -67,9 +67,9 @@ describe('loadConfig()', () => {
   });
 
   it('deep merges user config over defaults', async () => {
-    mkdirSync(join(tempDir, '.chat-cli'), { recursive: true });
+    mkdirSync(join(tempDir, '.codedeck'), { recursive: true });
     writeFileSync(
-      join(tempDir, '.chat-cli', 'config.yaml'),
+      join(tempDir, '.codedeck', 'config.yaml'),
       'cf:\n  workerUrl: https://my.workers.dev\n',
     );
     const { loadConfig } = await import('../src/config.js');

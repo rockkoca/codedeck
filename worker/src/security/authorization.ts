@@ -23,8 +23,8 @@ async function resolveAuth(c: Context<{ Bindings: Env }>): Promise<AuthContext |
 
   const token = authHeader.slice(7);
 
-  // Try API key lookup (rcc_ prefix)
-  if (token.startsWith('rcc_')) {
+  // Try API key lookup (deck_ prefix)
+  if (token.startsWith('deck_')) {
     const keyHash = await sha256Hex(token);
     const now = Date.now();
     const row = await c.env.DB.prepare(

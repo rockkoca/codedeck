@@ -37,7 +37,7 @@ export async function initPushNotifications(
     // Navigate based on action data (e.g., to specific session)
     const data = action.notification.data as Record<string, string> | undefined;
     if (data?.sessionName) {
-      window.dispatchEvent(new CustomEvent('rcc:navigate', { detail: { sessionName: data.sessionName } }));
+      window.dispatchEvent(new CustomEvent('deck:navigate', { detail: { sessionName: data.sessionName } }));
     }
   });
 }

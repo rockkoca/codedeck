@@ -20,7 +20,7 @@ Place required assets here before submitting to App Store / Google Play.
 - **Keywords**: AI, terminal, Claude, agent, remote, SSH, coding assistant
 - **Category**: Developer Tools
 - **Privacy URL**: (your privacy policy URL)
-- **Support URL**: https://github.com/yourusername/remote-chat-cli
+- **Support URL**: https://github.com/yourusername/codedeck
 
 ## Android (Google Play Console)
 

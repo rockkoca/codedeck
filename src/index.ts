@@ -8,7 +8,7 @@ import { bindFlow } from './bind/bind-flow.js';
 import logger from './util/logger.js';
 
 const program = new Command()
-  .name('chat-cli')
+  .name('codedeck')
   .description('Remote AI coding agent controller')
   .version('0.1.0');
 
@@ -76,7 +76,7 @@ program
 program
   .command('send')
   .description('Send a message to a session')
-  .argument('<session>', 'Session name (e.g. rcc_myapp_brain) or project:role (e.g. myapp:w1)')
+  .argument('<session>', 'Session name (e.g. deck_myapp_brain) or project:role (e.g. myapp:w1)')
   .argument('<message...>', 'Message text')
   .action(async (session: string, messageParts: string[]) => {
     const message = messageParts.join(' ');

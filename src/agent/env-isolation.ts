@@ -33,7 +33,7 @@ const BLOCKED_PATTERNS = [
   /credential/i,
   /api_/i,
   /auth/i,
-  /^rcc/i,
+  /^deck/i,
   /^jwt/i,
 ];
 
