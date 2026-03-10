@@ -84,6 +84,12 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
             disabled={starting}
             onInput={(e) => { setProject((e.target as HTMLInputElement).value); setError(''); }}
             autoFocus
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellcheck={false}
+            data-lpignore="true"
+            data-1p-ignore
           />
         </div>
 
@@ -95,6 +101,12 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
             value={dir}
             disabled={starting}
             onInput={(e) => setDir((e.target as HTMLInputElement).value)}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellcheck={false}
+            data-lpignore="true"
+            data-1p-ignore
           />
         </div>
 

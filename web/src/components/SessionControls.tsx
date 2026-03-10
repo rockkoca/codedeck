@@ -50,7 +50,7 @@ export function SessionControls({ ws, activeSession, latencyMs }: Props) {
   return (
     <div class="controls">
       <input
-        type="text"
+        type="search"
         placeholder={disabled ? 'Not connected' : `Send to ${activeSession?.name ?? 'session'}…`}
         value={input}
         onInput={(e) => setInput((e.target as HTMLInputElement).value)}
@@ -61,6 +61,8 @@ export function SessionControls({ ws, activeSession, latencyMs }: Props) {
         autoCorrect="off"
         autoCapitalize="off"
         spellcheck={false}
+        data-lpignore="true"
+        data-1p-ignore
       />
       <button
         class="btn btn-primary"
