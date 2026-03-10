@@ -1,13 +1,10 @@
-import type { DaemonBridge } from '../durable-objects/DaemonBridge.js';
-import type { RateLimiter } from '../durable-objects/RateLimiter.js';
-
 export interface Env {
   // D1 database
   DB: D1Database;
 
   // Durable Objects
-  DAEMON_BRIDGE: DurableObjectNamespace<DaemonBridge>;
-  RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
+  DAEMON_BRIDGE: DurableObjectNamespace;
+  RATE_LIMITER: DurableObjectNamespace;
 
   // Secrets (set via wrangler secret put)
   JWT_SIGNING_KEY: string;

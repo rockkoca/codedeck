@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
-import { createUser, getUserById, upsertPlatformIdentity, getUserByPlatformId } from '../db/queries.js';
-import { randomHex, sha256Hex, signJwt, verifyJwt } from '../security/crypto.js';
+import { createUser, getUserById, upsertPlatformIdentity } from '../db/queries.js';
+import { randomHex, sha256Hex, signJwt } from '../security/crypto.js';
 import { checkIdempotency, recordIdempotency } from '../security/replay.js';
 import { logAudit } from '../security/audit.js';
 import { recordAuthFailure, checkAuthLockout } from '../security/lockout.js';
@@ -75,7 +75,7 @@ authRoutes.get('/user/me', async (c) => {
   if (!row) return c.json({ error: 'unauthorized' }, 401);
   const user = await getUserById(c.env.DB, row.user_id);
   if (!user) return c.json({ error: 'not_found' }, 404);
-  return c.json({ id: row.user_id, ...user });
+  return c.json(user);
 });
 
 // POST /api/user/:id/rotate-key — generate new API key, 24-hour grace for old key

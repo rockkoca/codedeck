@@ -67,7 +67,7 @@ function canPerform(role: Role, op: Operation): boolean {
  * Sets c.var.userId and c.var.role.
  */
 export function requireAuth() {
-  return async (c: Context<{ Bindings: Env }>, next: Next) => {
+  return async (c: Context<{ Bindings: Env }>, next: Next): Promise<Response | void> => {
     const auth = await resolveAuth(c);
     if (!auth) return c.json({ error: 'unauthorized' }, 401);
 
@@ -85,7 +85,7 @@ export function requireRole(minRole: Role) {
     : minRole === 'admin' ? 'admin'
     : 'read';
 
-  return async (c: Context<{ Bindings: Env }>, next: Next) => {
+  return async (c: Context<{ Bindings: Env }>, next: Next): Promise<Response | void> => {
     const auth = await resolveAuth(c);
     if (!auth) return c.json({ error: 'unauthorized' }, 401);
 
@@ -120,7 +120,7 @@ export const requireOwner = () => requireRole('owner');
  * Sets c.var.teamRole to the user's team role.
  */
 export function requireTeamRole(minRole: 'owner' | 'admin' | 'member' = 'member', paramName = 'id') {
-  return async (c: Context<{ Bindings: Env }>, next: Next) => {
+  return async (c: Context<{ Bindings: Env }>, next: Next): Promise<Response | void> => {
     const auth = await resolveAuth(c);
     if (!auth) return c.json({ error: 'unauthorized' }, 401);
 

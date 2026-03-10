@@ -5,8 +5,6 @@
 import type { Env } from '../types.js';
 import logger from '../util/logger.js';
 
-const LOCKOUT_DURATION_S = 15 * 60; // 15 minutes
-
 /**
  * Record an auth failure for an identity (user_id or IP).
  * Returns whether the identity is now locked out.

@@ -48,7 +48,7 @@ export interface PushPayload {
  * Falls back gracefully if FCM_SERVER_KEY is not configured.
  */
 export async function dispatchPush(payload: PushPayload, env: Env): Promise<void> {
-  const fcmKey = (env as Record<string, string>).FCM_SERVER_KEY;
+  const fcmKey = (env as unknown as Record<string, string>).FCM_SERVER_KEY;
   if (!fcmKey) {
     logger.debug({ userId: payload.userId }, 'FCM not configured — skipping push');
     return;

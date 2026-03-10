@@ -12,18 +12,15 @@ interface QueuedMessage {
 }
 
 export class DaemonBridge implements DurableObject {
-  private state: DurableObjectState;
   private env: Env;
   private ws: WebSocket | null = null;
   private authenticated = false;
-  private serverId: string | null = null;
   private queue: QueuedMessage[] = [];
   private authTimer?: ReturnType<typeof setTimeout>;
   private idleTimer?: ReturnType<typeof setTimeout>;
   private browserSockets: Set<WebSocket> = new Set();
 
-  constructor(state: DurableObjectState, env: Env) {
-    this.state = state;
+  constructor(_state: DurableObjectState, env: Env) {
     this.env = env;
   }
 
@@ -113,8 +110,7 @@ export class DaemonBridge implements DurableObject {
             const hash = await sha256Hex(msg.token);
             if (hash === server.token_hash) {
               this.authenticated = true;
-              this.serverId = msg.serverId;
-              clearTimeout(this.authTimer);
+              if (this.authTimer !== undefined) clearTimeout(this.authTimer);
               ws.send(JSON.stringify({ type: 'auth_ok' }));
               this.resetIdleTimer(ws);
               // Drain queued messages

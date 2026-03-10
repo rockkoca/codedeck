@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import type { BotConfig, InboundMessage, OutboundMessage } from '../platform/types.js';
 import { getHandler } from '../platform/registry.js';
-import { findChannelBindingByPlatformChannel, getServerById } from '../db/queries.js';
+import { findChannelBindingByPlatformChannel } from '../db/queries.js';
 import { sha256Hex, decryptBotConfig } from '../security/crypto.js';
 import logger from '../util/logger.js';
 

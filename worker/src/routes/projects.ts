@@ -2,7 +2,7 @@
  * CF Worker routes for project management.
  * These relay project config operations to the daemon and proxy tracker API calls.
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Env } from '../types.js';
 import { requireAuth, checkServerTeamAccess } from '../security/authorization.js';
 import { getServerById } from '../db/queries.js';
@@ -15,7 +15,7 @@ export const projectRoutes = new Hono<{ Bindings: Env }>();
 // GET /api/server/:id/projects — list projects
 projectRoutes.get('/:id/projects', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
-  const serverId = c.req.param('id');
+  const serverId = c.req.param('id')!;
 
   const server = await getServerById(c.env.DB, serverId);
   if (!server) return c.json({ error: 'not_found' }, 404);
@@ -29,7 +29,7 @@ projectRoutes.get('/:id/projects', requireAuth(), async (c) => {
 // POST /api/server/:id/projects — add project
 projectRoutes.post('/:id/projects', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
-  const serverId = c.req.param('id');
+  const serverId = c.req.param('id')!;
 
   const server = await getServerById(c.env.DB, serverId);
   if (!server) return c.json({ error: 'not_found' }, 404);
@@ -46,8 +46,8 @@ projectRoutes.post('/:id/projects', requireAuth(), async (c) => {
 // PUT /api/server/:id/projects/:name — update project settings
 projectRoutes.put('/:id/projects/:name', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
-  const serverId = c.req.param('id');
-  const projectName = c.req.param('name');
+  const serverId = c.req.param('id')!;
+  const projectName = c.req.param('name')!;
 
   const hasAccess = await checkServerTeamAccess(c, serverId, userId);
   if (!hasAccess) return c.json({ error: 'forbidden' }, 403);
@@ -61,8 +61,8 @@ projectRoutes.put('/:id/projects/:name', requireAuth(), async (c) => {
 // GET /api/server/:id/projects/:name — get single project
 projectRoutes.get('/:id/projects/:name', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
-  const serverId = c.req.param('id');
-  const projectName = c.req.param('name');
+  const serverId = c.req.param('id')!;
+  const projectName = c.req.param('name')!;
 
   const hasAccess = await checkServerTeamAccess(c, serverId, userId);
   if (!hasAccess) return c.json({ error: 'forbidden' }, 403);
@@ -75,8 +75,8 @@ projectRoutes.get('/:id/projects/:name', requireAuth(), async (c) => {
 // POST /api/server/:id/projects/:name/autofix — start auto-fix
 projectRoutes.post('/:id/projects/:name/autofix', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
-  const serverId = c.req.param('id');
-  const projectName = c.req.param('name');
+  const serverId = c.req.param('id')!;
+  const projectName = c.req.param('name')!;
 
   const hasAccess = await checkServerTeamAccess(c, serverId, userId);
   if (!hasAccess) return c.json({ error: 'forbidden' }, 403);
@@ -88,8 +88,8 @@ projectRoutes.post('/:id/projects/:name/autofix', requireAuth(), async (c) => {
 // DELETE /api/server/:id/projects/:name/autofix — stop auto-fix
 projectRoutes.delete('/:id/projects/:name/autofix', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
-  const serverId = c.req.param('id');
-  const projectName = c.req.param('name');
+  const serverId = c.req.param('id')!;
+  const projectName = c.req.param('name')!;
 
   const hasAccess = await checkServerTeamAccess(c, serverId, userId);
   if (!hasAccess) return c.json({ error: 'forbidden' }, 403);
@@ -103,8 +103,8 @@ projectRoutes.delete('/:id/projects/:name/autofix', requireAuth(), async (c) => 
 // GET /api/server/:id/projects/:name/issues — proxy tracker API (task 9.20)
 projectRoutes.get('/:id/projects/:name/issues', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
-  const serverId = c.req.param('id');
-  const projectName = c.req.param('name');
+  const serverId = c.req.param('id')!;
+  const projectName = c.req.param('name')!;
 
   const hasAccess = await checkServerTeamAccess(c, serverId, userId);
   if (!hasAccess) return c.json({ error: 'forbidden' }, 403);
@@ -115,7 +115,7 @@ projectRoutes.get('/:id/projects/:name/issues', requireAuth(), async (c) => {
 // POST /api/server/:id/tracker/validate — validate tracker connection (for AddProject form)
 projectRoutes.post('/:id/tracker/validate', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
-  const serverId = c.req.param('id');
+  const serverId = c.req.param('id')!;
 
   const hasAccess = await checkServerTeamAccess(c, serverId, userId);
   if (!hasAccess) return c.json({ error: 'forbidden' }, 403);
@@ -129,7 +129,7 @@ projectRoutes.post('/:id/tracker/validate', requireAuth(), async (c) => {
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 async function relayToDaemon(
-  c: Parameters<Parameters<typeof projectRoutes.get>[1]>[0],
+  c: Context<{ Bindings: Env }>,
   serverId: string,
   method: string,
   path: string,

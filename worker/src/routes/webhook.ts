@@ -27,7 +27,7 @@ webhookRoutes.post('/:platform/:botId', async (c) => {
   }
 
   if (!c.env.BOT_ENCRYPTION_KEY) {
-    logger.error('BOT_ENCRYPTION_KEY is not configured');
+    logger.error({}, 'BOT_ENCRYPTION_KEY is not configured');
     return c.json({ error: 'server_misconfigured' }, 500);
   }
 

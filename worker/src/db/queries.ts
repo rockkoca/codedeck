@@ -1,5 +1,3 @@
-import type { Env } from '../types.js';
-
 // ── Types ─────────────────────────────────────────────────────────────────
 
 export interface DbUser {

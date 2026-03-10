@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Env } from '../types.js';
 import { getServerById } from '../db/queries.js';
 import { requireAuth, checkServerTeamAccess } from '../security/authorization.js';
@@ -44,7 +44,7 @@ sessionMgmtRoutes.post('/:id/session/stop', async (c) => {
 sessionMgmtRoutes.post('/:id/session/send', async (c) => {
   // send allows any authenticated team member — verify server access
   const userId = c.get('userId' as never) as string;
-  const hasAccess = await checkServerTeamAccess(c, c.req.param('id'), userId);
+  const hasAccess = await checkServerTeamAccess(c, c.req.param('id')!, userId);
   if (!hasAccess) return c.json({ error: 'forbidden', reason: 'not_authorized_for_server' }, 403);
   return relayToDaemon(c, 'session.send');
 });
@@ -52,10 +52,10 @@ sessionMgmtRoutes.post('/:id/session/send', async (c) => {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function relayToDaemon(
-  c: Parameters<Parameters<typeof sessionMgmtRoutes.post>[1]>[0],
+  c: Context<{ Bindings: Env }>,
   command: string,
 ) {
-  const serverId = c.req.param('id');
+  const serverId = c.req.param('id')!;
   const server = await getServerById(c.env.DB, serverId);
   if (!server) return c.json({ error: 'not_found' }, 404);
 

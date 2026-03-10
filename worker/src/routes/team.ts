@@ -63,7 +63,7 @@ teamRoutes.post('/:id/invite', requireAuth(), async (c) => {
     .bind(teamId, userId).first<{ role: string }>();
   if (!member) return c.json({ error: 'forbidden' }, 403);
 
-  const body = await c.req.json<{ role?: string; email?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ role?: string; email?: string }>().catch(() => ({} as { role?: string; email?: string }));
   const role = ['admin', 'member'].includes(body.role ?? '') ? body.role : 'member';
 
   const inviteId = randomHex(16);
@@ -109,7 +109,7 @@ teamRoutes.post('/join/:token', requireAuth(), async (c) => {
 teamRoutes.post('/:id/join', requireAuth(), async (c) => {
   const userId = c.get('userId' as never) as string;
   const teamId = c.req.param('id');
-  const body = await c.req.json<{ token?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ token?: string }>().catch(() => ({} as { token?: string }));
   const now = Date.now();
 
   if (body.token) {
