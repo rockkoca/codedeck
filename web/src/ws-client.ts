@@ -1,0 +1,151 @@
+/**
+ * WebSocket client for terminal stream + session commands.
+ * Handles auth, reconnect, and message dispatch.
+ */
+import type { TerminalDiff } from './types.js';
+
+export type MessageHandler = (msg: ServerMessage) => void;
+
+export type ServerMessage =
+  | { type: 'terminal.diff'; diff: TerminalDiff }
+  | { type: 'session.event'; event: string; session: string; state: string }
+  | { type: 'outbound'; platform: string; channelId: string; content: string }
+  | { type: 'error'; message: string }
+  | { type: 'pong' };
+
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+const HEARTBEAT_MS = 25000;
+
+export class WsClient {
+  private ws: WebSocket | null = null;
+  private handlers = new Set<MessageHandler>();
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private token: string;
+  private baseUrl: string;
+  private serverId: string;
+  private _connected = false;
+
+  constructor(baseUrl: string, serverId: string, token: string) {
+    this.baseUrl = baseUrl;
+    this.serverId = serverId;
+    this.token = token;
+  }
+
+  get connected(): boolean {
+    return this._connected;
+  }
+
+  connect(): void {
+    if (this.ws) return;
+    this.openSocket();
+  }
+
+  disconnect(): void {
+    this.clearTimers();
+    if (this.ws) {
+      this.ws.close(1000, 'client disconnect');
+      this.ws = null;
+    }
+    this._connected = false;
+  }
+
+  send(msg: object): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket not connected');
+    }
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  onMessage(handler: MessageHandler): () => void {
+    this.handlers.add(handler);
+    return () => this.handlers.delete(handler);
+  }
+
+  subscribeTerminal(sessionName: string): void {
+    this.send({ type: 'terminal.subscribe', session: sessionName });
+  }
+
+  unsubscribeTerminal(sessionName: string): void {
+    this.send({ type: 'terminal.unsubscribe', session: sessionName });
+  }
+
+  sendSessionCommand(command: 'start' | 'stop' | 'send', payload: object = {}): void {
+    this.send({ type: `session.${command}`, ...payload });
+  }
+
+  private openSocket(): void {
+    const wsUrl = this.baseUrl
+      .replace(/^http/, 'ws')
+      .replace(/\/$/, '');
+
+    const url = `${wsUrl}/api/server/${this.serverId}/ws?token=${encodeURIComponent(this.token)}`;
+
+    this.ws = new WebSocket(url);
+
+    this.ws.addEventListener('open', () => {
+      this._connected = true;
+      this.reconnectAttempt = 0;
+      this.startHeartbeat();
+      this.dispatch({ type: 'session.event', event: 'connected', session: '', state: 'connected' });
+    });
+
+    this.ws.addEventListener('message', (ev) => {
+      try {
+        const msg = JSON.parse(ev.data as string) as ServerMessage;
+        if (msg.type === 'pong') return;
+        this.dispatch(msg);
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    this.ws.addEventListener('close', () => {
+      this._connected = false;
+      this.ws = null;
+      this.clearTimers();
+      this.scheduleReconnect();
+    });
+
+    this.ws.addEventListener('error', () => {
+      this.ws?.close();
+    });
+  }
+
+  private scheduleReconnect(): void {
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempt, RECONNECT_MAX_MS);
+    this.reconnectAttempt++;
+    this.reconnectTimer = setTimeout(() => {
+      this.openSocket();
+    }, delay);
+  }
+
+  private startHeartbeat(): void {
+    this.heartbeatTimer = setInterval(() => {
+      try {
+        this.send({ type: 'ping' });
+      } catch {
+        // ignore
+      }
+    }, HEARTBEAT_MS);
+  }
+
+  private clearTimers(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.reconnectTimer = null;
+    this.heartbeatTimer = null;
+  }
+
+  private dispatch(msg: ServerMessage): void {
+    for (const h of this.handlers) {
+      try {
+        h(msg);
+      } catch {
+        // ignore handler errors
+      }
+    }
+  }
+}

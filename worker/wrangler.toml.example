@@ -1,0 +1,45 @@
+# Copy this to wrangler.toml and fill in your D1 database ID.
+# Set secrets with: wrangler secret put <NAME>
+#
+# Required secrets (never put values here — use `wrangler secret put`):
+#
+#   wrangler secret put JWT_SIGNING_KEY
+#   wrangler secret put DISCORD_BOT_TOKEN
+#   wrangler secret put DISCORD_PUBLIC_KEY
+#   wrangler secret put DISCORD_APP_ID
+#   wrangler secret put TELEGRAM_BOT_TOKEN
+#   wrangler secret put TELEGRAM_WEBHOOK_SECRET
+#   wrangler secret put FEISHU_APP_ID
+#   wrangler secret put FEISHU_APP_SECRET
+#   wrangler secret put FEISHU_ENCRYPT_KEY
+#   wrangler secret put FEISHU_VERIFICATION_TOKEN
+
+name = "remote-chat-cli-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "remote-chat-cli"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[durable_objects.bindings]]
+name = "DAEMON_BRIDGE"
+class_name = "DaemonBridge"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["DaemonBridge", "RateLimiter"]
+
+[vars]
+ENVIRONMENT = "production"
+
+[[triggers.crons]]
+cron = "*/5 * * * *"
+[[triggers.crons]]
+cron = "* * * * *"

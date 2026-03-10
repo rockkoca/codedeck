@@ -1,0 +1,196 @@
+/**
+ * Port of cc_detect.py — multi-sample status detection for CC, Codex, OpenCode.
+ *
+ * Detection order: signal file (instant) → multi-sample polling (fallback).
+ * Status: 'idle' | 'streaming' | 'thinking' | 'tool_running' | 'permission' | 'unknown'
+ */
+
+export type AgentStatus =
+  | 'idle'
+  | 'streaming'
+  | 'thinking'
+  | 'tool_running'
+  | 'permission'
+  | 'unknown';
+
+export type AgentType = 'claude-code' | 'codex' | 'opencode';
+
+// ─── Claude Code patterns ─────────────────────────────────────────────────────
+
+const CC_IDLE_PATTERNS = [
+  /❯\s*$/m,                            // ❯ prompt
+  /✓\s*$/m,                            // completion check
+];
+
+const CC_SPINNER_CHARS = [
+  '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', // braille
+];
+
+const CC_THINKING_PATTERNS = [
+  /\bThinking\b/i,
+  /\bAnalyz/i,
+];
+
+const CC_TOOL_PATTERNS = [
+  /\bRunning\b/i,
+  /\bExecuting\b/i,
+  /ToolUse/,
+  /Bash\(|Read\(|Write\(|Edit\(/,
+];
+
+const CC_PERMISSION_PATTERNS = [
+  /Allow|Deny/,
+  /\[Y\/n\]/i,
+  /Do you want to/i,
+];
+
+// ─── Codex patterns ────────────────────────────────────────────────────────────
+
+const CODEX_IDLE_PATTERNS = [
+  />\s*$/m,                            // > prompt
+  /›\s*$/m,                            // › prompt (alternate)
+  /context_pct:\s*\d+/,               // context indicator (idle state)
+];
+
+const CODEX_SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
+
+const CODEX_THINKING_PATTERNS = [
+  /\bthinking\b/i,
+  /\breasoning\b/i,
+];
+
+const CODEX_TOOL_PATTERNS = [
+  /shell\(/i,
+  /file\(/i,
+];
+
+// ─── OpenCode patterns ─────────────────────────────────────────────────────────
+
+const OC_IDLE_PATTERNS = [
+  /λ\s*$/m,                            // λ prompt
+  />\s*$/m,                            // > prompt (fallback)
+];
+
+const OC_SPINNER_CHARS = ['|', '/', '-', '\\'];
+
+const OC_THINKING_PATTERNS = [
+  /\bthinking\b/i,
+];
+
+const OC_TOOL_PATTERNS = [
+  /\brun\b/i,
+  /\btool\b/i,
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function hasSpinner(lines: string[], spinners: string[]): boolean {
+  // Match spinner chars only when they appear at line boundaries or surrounded by spaces
+  // to avoid false positives from hyphens in words like "my-project"
+  const lastFew = lines.slice(-5).join('\n');
+  return spinners.some((s) => {
+    // For single ASCII chars that could appear in words, require word boundary context
+    if (s.length === 1 && /[-/\\|]/.test(s)) {
+      const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(?:^|\\s)${escaped}(?:\\s|$)`, 'm').test(lastFew);
+    }
+    return lastFew.includes(s);
+  });
+}
+
+function matchesAny(text: string, patterns: RegExp[]): boolean {
+  return patterns.some((p) => p.test(text));
+}
+
+/** Detect agent status from a captured pane snapshot. */
+export function detectStatus(
+  lines: string[],
+  agentType: AgentType
+): AgentStatus {
+  const text = lines.join('\n');
+  const tail = lines.slice(-10).join('\n');
+
+  switch (agentType) {
+    case 'claude-code':
+      if (matchesAny(tail, CC_PERMISSION_PATTERNS)) return 'permission';
+      if (matchesAny(tail, CC_IDLE_PATTERNS) && !hasSpinner(lines, CC_SPINNER_CHARS))
+        return 'idle';
+      if (matchesAny(text, CC_TOOL_PATTERNS)) return 'tool_running';
+      if (hasSpinner(lines, CC_SPINNER_CHARS)) {
+        if (matchesAny(text, CC_THINKING_PATTERNS)) return 'thinking';
+        return 'streaming';
+      }
+      break;
+
+    case 'codex':
+      if (matchesAny(tail, CODEX_IDLE_PATTERNS) && !hasSpinner(lines, CODEX_SPINNER_CHARS))
+        return 'idle';
+      if (matchesAny(text, CODEX_TOOL_PATTERNS)) return 'tool_running';
+      if (hasSpinner(lines, CODEX_SPINNER_CHARS)) {
+        if (matchesAny(text, CODEX_THINKING_PATTERNS)) return 'thinking';
+        return 'streaming';
+      }
+      break;
+
+    case 'opencode':
+      if (matchesAny(tail, OC_IDLE_PATTERNS) && !hasSpinner(lines, OC_SPINNER_CHARS))
+        return 'idle';
+      if (matchesAny(text, OC_TOOL_PATTERNS)) return 'tool_running';
+      if (hasSpinner(lines, OC_SPINNER_CHARS)) {
+        if (matchesAny(text, OC_THINKING_PATTERNS)) return 'thinking';
+        return 'streaming';
+      }
+      break;
+  }
+
+  // No active signals (no spinner, no tool output) → assume idle
+  return 'idle';
+}
+
+export interface MultiSampleOptions {
+  samples?: number;       // default 3
+  intervalMs?: number;    // default 500ms between samples
+}
+
+/**
+ * Multi-sample detection: poll N times and return the most common status.
+ * Handles timing jitter — a single 'unknown' doesn't override a stable 'idle'.
+ */
+export async function detectStatusMulti(
+  captureLines: () => Promise<string[]>,
+  agentType: AgentType,
+  opts?: MultiSampleOptions
+): Promise<AgentStatus> {
+  const samples = opts?.samples ?? 3;
+  const intervalMs = opts?.intervalMs ?? 500;
+
+  const results: AgentStatus[] = [];
+
+  for (let i = 0; i < samples; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, intervalMs));
+    const lines = await captureLines();
+    results.push(detectStatus(lines, agentType));
+  }
+
+  // Count frequencies
+  const freq = new Map<AgentStatus, number>();
+  for (const s of results) freq.set(s, (freq.get(s) ?? 0) + 1);
+
+  // Most common wins; ties broken by priority: idle > streaming > thinking > tool_running > permission > unknown
+  const priority: AgentStatus[] = [
+    'idle', 'streaming', 'thinking', 'tool_running', 'permission', 'unknown',
+  ];
+
+  let best: AgentStatus = 'unknown';
+  let bestCount = 0;
+
+  for (const status of priority) {
+    const count = freq.get(status) ?? 0;
+    if (count > bestCount) {
+      bestCount = count;
+      best = status;
+    }
+  }
+
+  return best;
+}
