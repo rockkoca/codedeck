@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import type { RefObject } from 'preact';
 import type { WsClient } from '../ws-client.js';
 import type { SessionInfo } from '../types.js';
 
@@ -6,9 +7,10 @@ interface Props {
   ws: WsClient | null;
   activeSession: SessionInfo | null;
   latencyMs?: number | null;
+  inputRef?: RefObject<HTMLInputElement>;
 }
 
-export function SessionControls({ ws, activeSession, latencyMs }: Props) {
+export function SessionControls({ ws, activeSession, latencyMs, inputRef }: Props) {
   const [input, setInput] = useState('');
 
   const latencyColor = latencyMs == null ? '#94a3b8'
@@ -49,8 +51,13 @@ export function SessionControls({ ws, activeSession, latencyMs }: Props) {
 
   return (
     <div class="controls">
+      {/* Hidden decoy inputs — tricks iOS into not showing password autofill on the real input */}
+      <input type="text" style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} />
+      <input type="password" style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} />
       <input
-        type="search"
+        ref={inputRef}
+        type="text"
+        inputMode="text"
         placeholder={disabled ? 'Not connected' : `Send to ${activeSession?.name ?? 'session'}…`}
         value={input}
         onInput={(e) => setInput((e.target as HTMLInputElement).value)}

@@ -10,9 +10,11 @@ interface Props {
   ws: WsClient | null;
   onDiff?: (applyDiff: (diff: TerminalDiff) => void) => void;
   onLatency?: (ms: number) => void;
+  /** Called when the user taps the terminal on mobile — use to focus the input box. */
+  onTap?: () => void;
 }
 
-export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
+export function TerminalView({ sessionName, ws, onDiff, onLatency, onTap }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -137,11 +139,21 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
     onDiff?.(applyDiff);
   }, [applyDiff, onDiff]);
 
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   return (
     <div
       ref={containerRef}
       class="terminal-container"
       style={{ flex: 1, overflow: 'hidden' }}
+      onTouchStart={isMobile ? (e) => {
+        // Prevent touch from focusing xterm's internal elements (would pop up keyboard)
+        e.preventDefault();
+      } : undefined}
+      onClick={isMobile ? (e) => {
+        e.preventDefault();
+        onTap?.();
+      } : undefined}
     />
   );
 }

@@ -101,6 +101,7 @@ export function App() {
 
   const wsRef = useRef<WsClient | null>(null);
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Set up WebSocket only when in terminal view with a selected server
   useEffect(() => {
@@ -262,6 +263,7 @@ export function App() {
             ws={wsRef.current}
             onDiff={(apply) => registerDiffApplyer(activeSession, apply)}
             onLatency={setLatencyMs}
+            onTap={() => inputRef.current?.focus()}
           />
         ) : (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
@@ -273,7 +275,7 @@ export function App() {
           </div>
         )}
 
-        <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} latencyMs={latencyMs} />
+        <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} latencyMs={latencyMs} inputRef={inputRef} />
       </main>
 
       {showNewSession && (
