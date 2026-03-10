@@ -10,7 +10,7 @@ interface Props {
 
 export function LoginPage({ onLogin: _onLogin }: Props) {
   const handleGithub = () => {
-    window.location.href = '/api/auth/github';
+    window.location.href = '/api/auth/github?reauth=1';
   };
 
   return (

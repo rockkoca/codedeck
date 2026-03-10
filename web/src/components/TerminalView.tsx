@@ -30,7 +30,7 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
         background: '#0f0f13',
         foreground: '#e2e8f0',
         cursor: '#3b82f6',
-        selectionBackground: '#1d4ed840',
+        selectionBackground: '#1d4ed860',
       },
       fontFamily: "'Cascadia Code', 'Fira Code', 'SF Mono', monospace",
       fontSize: 13,
@@ -39,6 +39,15 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
       scrollback: 5000,
       allowTransparency: false,
       cursorBlink: true,
+    });
+
+    // Copy selected text to clipboard on Ctrl+C / Cmd+C when selection exists
+    term.attachCustomKeyEventHandler((ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key === 'c' && term.hasSelection()) {
+        void navigator.clipboard.writeText(term.getSelection());
+        return false; // prevent sending ^C to tmux when we're copying
+      }
+      return true;
     });
 
     const fitAddon = new FitAddon();

@@ -6,15 +6,23 @@ import { randomHex, signJwt, verifyJwt } from '../security/crypto.js';
 export const githubAuthRoutes = new Hono<{ Bindings: Env }>();
 
 // GET /api/auth/github — redirect to GitHub OAuth
+// ?reauth=1 → forces GitHub login page (prevents auto-login after logout)
 githubAuthRoutes.get('/', async (c): Promise<Response> => {
   const state = await signJwt({ nonce: randomHex(16) }, c.env.JWT_SIGNING_KEY, 600);
-  const params = new URLSearchParams({
+  const oauthParams = new URLSearchParams({
     client_id: c.env.GITHUB_CLIENT_ID,
     redirect_uri: `${c.env.WORKER_URL}/api/auth/github/callback`,
     scope: 'read:user',
     state,
   });
-  return c.redirect(`https://github.com/login/oauth/authorize?${params.toString()}`);
+
+  if (c.req.query('reauth') === '1') {
+    // Route through GitHub's login page — forces account selection / re-authentication
+    const returnTo = `/login/oauth/authorize?${oauthParams.toString()}`;
+    return c.redirect(`https://github.com/login?return_to=${encodeURIComponent(returnTo)}`);
+  }
+
+  return c.redirect(`https://github.com/login/oauth/authorize?${oauthParams.toString()}`);
 });
 
 // GET /api/auth/github/callback — handle OAuth callback
