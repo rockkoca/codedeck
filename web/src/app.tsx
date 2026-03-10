@@ -29,10 +29,15 @@ export function App() {
     }
   });
 
-  const [view, setView] = useState<View>('dashboard');
-  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+  // Persist view + server across refresh
+  const [view, setView] = useState<View>(() =>
+    (localStorage.getItem('rcc_view') as View) ?? 'dashboard',
+  );
+  const [selectedServerId, setSelectedServerId] = useState<string | null>(
+    () => localStorage.getItem('rcc_server'),
+  );
 
-  // Keep layout within the visual viewport on mobile (avoids keyboard covering controls)
+  // Keep layout height within visual viewport on mobile (keyboard-aware)
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -63,10 +68,19 @@ export function App() {
   }, [auth]);
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [activeSession, setActiveSession] = useState<string | null>(null);
+  // Persist active session across refresh
+  const [activeSession, setActiveSessionState] = useState<string | null>(
+    () => localStorage.getItem('rcc_session'),
+  );
   const [showNewSession, setShowNewSession] = useState(false);
   const [connected, setConnected] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+
+  const setActiveSession = useCallback((name: string | null) => {
+    if (name) localStorage.setItem('rcc_session', name);
+    else localStorage.removeItem('rcc_session');
+    setActiveSessionState(name);
+  }, []);
 
   const wsRef = useRef<WsClient | null>(null);
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
@@ -82,7 +96,6 @@ export function App() {
       if (msg.type === 'session.event') {
         if (msg.event === 'connected') {
           setConnected(true);
-          // Request session list immediately so we can restore tabs after refresh
           ws.requestSessionList();
         }
         if (msg.event === 'disconnected') setConnected(false);
@@ -135,14 +148,19 @@ export function App() {
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('rcc_auth');
+    localStorage.removeItem('rcc_view');
+    localStorage.removeItem('rcc_server');
+    localStorage.removeItem('rcc_session');
     setAuth(null);
     setSessions([]);
     setActiveSession(null);
     setView('dashboard');
     setSelectedServerId(null);
-  }, []);
+  }, [setActiveSession]);
 
   const handleSelectServer = useCallback(async (serverId: string) => {
+    localStorage.setItem('rcc_server', serverId);
+    localStorage.setItem('rcc_view', 'terminal');
     setSelectedServerId(serverId);
     setView('terminal');
     // Immediately load sessions from D1 — no need to wait for WS handshake
@@ -161,10 +179,13 @@ export function App() {
   }, []);
 
   const handleBackToDashboard = useCallback(() => {
+    localStorage.setItem('rcc_view', 'dashboard');
+    localStorage.removeItem('rcc_server');
+    localStorage.removeItem('rcc_session');
     setView('dashboard');
     setSelectedServerId(null);
     setActiveSession(null);
-  }, []);
+  }, [setActiveSession]);
 
   const registerDiffApplyer = useCallback((sessionName: string, apply: (d: TerminalDiff) => void) => {
     diffApplyersRef.current.set(sessionName, apply);
@@ -174,7 +195,8 @@ export function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
-  if (view === 'dashboard') {
+  // If we restored terminal view but have no server, go back to dashboard
+  if (view === 'dashboard' || !selectedServerId) {
     return <DashboardPage onSelectServer={handleSelectServer} onLogout={handleLogout} />;
   }
 

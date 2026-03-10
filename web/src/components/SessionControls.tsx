@@ -57,6 +57,10 @@ export function SessionControls({ ws, activeSession, latencyMs }: Props) {
         onKeyDown={handleKeyDown}
         disabled={disabled}
         aria-label="Message input"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellcheck={false}
       />
       <button
         class="btn btn-primary"

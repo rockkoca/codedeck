@@ -53,18 +53,25 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
+    let fitTimer: ReturnType<typeof setTimeout> | null = null;
+
     if (containerRef.current) {
       term.open(containerRef.current);
-      // Defer fit until container has non-zero dimensions (mobile may need a frame to lay out)
-      const doInitialFit = () => {
+      // Defer fit until container has non-zero dimensions (mobile needs a frame to lay out)
+      let fitDone = false;
+      const doFit = () => {
         const el = containerRef.current;
         if (el && el.clientWidth > 0 && el.clientHeight > 0) {
           fitAddon.fit();
-        } else {
-          requestAnimationFrame(doInitialFit);
+          fitDone = true;
         }
       };
-      requestAnimationFrame(doInitialFit);
+      requestAnimationFrame(() => {
+        doFit();
+        if (!fitDone) requestAnimationFrame(() => { doFit(); });
+      });
+      // Fallback: force a fit after 400ms for slow mobile renders
+      fitTimer = setTimeout(() => { if (!fitDone) fitAddon.fit(); }, 400);
     }
 
     // Forward all keyboard input to the tmux session; record send time for latency
@@ -91,6 +98,7 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
     if (containerRef.current) observer.observe(containerRef.current);
 
     return () => {
+      if (fitTimer) clearTimeout(fitTimer);
       observer.disconnect();
       term.dispose();
       termRef.current = null;

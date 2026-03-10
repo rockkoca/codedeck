@@ -34,7 +34,6 @@ body {
 
 /* Terminal */
 .terminal-container { flex: 1; min-height: 0; overflow: hidden; background: #0f0f13; }
-.xterm { height: 100%; overflow: hidden; }
 .xterm-viewport { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
 
 /* Controls — flex-shrink: 0 so keyboard doesn't push it off screen */
