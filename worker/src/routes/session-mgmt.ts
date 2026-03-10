@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
+import { nanoid } from 'nanoid';
 import type { Env } from '../types.js';
-import { getServerById } from '../db/queries.js';
+import { getServerById, getDbSessionsByServer, upsertDbSession, deleteDbSession } from '../db/queries.js';
 import { requireAuth, resolveServerRole } from '../security/authorization.js';
 import logger from '../util/logger.js';
 
@@ -21,6 +22,55 @@ export const sessionMgmtRoutes = new Hono<{ Bindings: Env }>();
 
 // Apply auth middleware globally to all session routes
 sessionMgmtRoutes.use('/*', requireAuth());
+
+// ── Session persistence (daemon syncs these) ───────────────────────────────
+
+/** GET /api/server/:id/sessions — list all sessions for a server (used by daemon on startup) */
+sessionMgmtRoutes.get('/:id/sessions', async (c) => {
+  const userId = c.get('userId' as never) as string;
+  const serverId = c.req.param('id')!;
+  const role = await resolveServerRole(c.env.DB, serverId, userId);
+  if (role === 'none') return c.json({ error: 'forbidden' }, 403);
+
+  const sessions = await getDbSessionsByServer(c.env.DB, serverId);
+  return c.json({ sessions });
+});
+
+/** PUT /api/server/:id/sessions/:name — upsert a session record (daemon → D1) */
+sessionMgmtRoutes.put('/:id/sessions/:name', async (c) => {
+  const userId = c.get('userId' as never) as string;
+  const serverId = c.req.param('id')!;
+  const sessionName = c.req.param('name')!;
+  const role = await resolveServerRole(c.env.DB, serverId, userId);
+  if (role !== 'owner' && role !== 'admin') return c.json({ error: 'forbidden' }, 403);
+
+  let body: Record<string, string>;
+  try {
+    body = await c.req.json() as Record<string, string>;
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const { projectName, projectRole, agentType, projectDir, state } = body;
+  if (!projectName || !projectRole || !agentType || !projectDir || !state) {
+    return c.json({ error: 'missing_fields' }, 400);
+  }
+
+  await upsertDbSession(c.env.DB, nanoid(), serverId, sessionName, projectName, projectRole, agentType, projectDir, state);
+  return c.json({ ok: true });
+});
+
+/** DELETE /api/server/:id/sessions/:name — remove a session record (daemon → D1) */
+sessionMgmtRoutes.delete('/:id/sessions/:name', async (c) => {
+  const userId = c.get('userId' as never) as string;
+  const serverId = c.req.param('id')!;
+  const sessionName = c.req.param('name')!;
+  const role = await resolveServerRole(c.env.DB, serverId, userId);
+  if (role !== 'owner' && role !== 'admin') return c.json({ error: 'forbidden' }, 403);
+
+  await deleteDbSession(c.env.DB, serverId, sessionName);
+  return c.json({ ok: true });
+});
 
 sessionMgmtRoutes.post('/:id/session/start', async (c) => {
   const userId = c.get('userId' as never) as string;

@@ -31,6 +31,18 @@ function emitSessionEvent(event: 'started' | 'stopped' | 'error', session: strin
   try { _onSessionEvent?.(event, session, state); } catch { /* ignore */ }
 }
 
+/** Called after upsert (record provided) or remove (record=null, name provided). */
+type SessionPersistCallback = (record: SessionRecord | null, name: string) => Promise<void>;
+let _onSessionPersist: SessionPersistCallback | null = null;
+
+export function setSessionPersistCallback(cb: SessionPersistCallback): void {
+  _onSessionPersist = cb;
+}
+
+function emitSessionPersist(record: SessionRecord | null, name: string): void {
+  _onSessionPersist?.(record, name).catch((e) => logger.warn({ err: e, name }, 'session persist callback failed'));
+}
+
 export interface ProjectConfig {
   name: string;
   dir: string;
@@ -68,6 +80,7 @@ export async function stopProject(projectName: string): Promise<void> {
   for (const s of sessions) {
     await killSession(s.name).catch(() => {});
     removeSession(s.name);
+    emitSessionPersist(null, s.name);
     emitSessionEvent('stopped', s.name, 'stopped');
   }
 }
@@ -175,7 +188,7 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
   }
 
   if (!skipStore) {
-    upsertSession({
+    const record: SessionRecord = {
       name,
       projectName,
       role,
@@ -186,7 +199,9 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
       restartTimestamps: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    });
+    };
+    upsertSession(record);
+    emitSessionPersist(record, name);
   }
 
   emitSessionEvent('started', name, 'running');

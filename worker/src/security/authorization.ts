@@ -5,6 +5,7 @@
 import type { Context, Next } from 'hono';
 import type { Env } from '../types.js';
 import { sha256Hex, verifyJwt } from './crypto.js';
+import { getServerById } from '../db/queries.js';
 
 export type Role = 'owner' | 'admin' | 'member' | 'unauthenticated';
 
@@ -22,6 +23,17 @@ async function resolveAuth(c: Context<{ Bindings: Env }>): Promise<AuthContext |
   if (!authHeader?.startsWith('Bearer ')) return null;
 
   const token = authHeader.slice(7);
+
+  // Try daemon server-token auth: X-Server-Id header + Bearer <server-token>
+  // Allows the daemon to call REST endpoints without a user JWT.
+  const daemonServerId = c.req.header('X-Server-Id');
+  if (daemonServerId) {
+    const server = await getServerById(c.env.DB, daemonServerId);
+    if (!server) return null;
+    const tokenHash = await sha256Hex(token);
+    if (tokenHash !== server.token_hash) return null;
+    return { userId: server.user_id, role: 'owner' as Role };
+  }
 
   // Try API key lookup (deck_ prefix)
   if (token.startsWith('deck_')) {

@@ -198,6 +198,61 @@ export async function findChannelBindingByPlatformChannel(
     .first<DbChannelBinding>();
 }
 
+// ── Sessions ──────────────────────────────────────────────────────────────
+
+export interface DbSession {
+  id: string;
+  server_id: string;
+  name: string;
+  project_name: string;
+  role: string;
+  agent_type: string;
+  project_dir: string;
+  state: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function getDbSessionsByServer(db: D1Database, serverId: string): Promise<DbSession[]> {
+  const result = await db
+    .prepare('SELECT * FROM sessions WHERE server_id = ? ORDER BY created_at ASC')
+    .bind(serverId)
+    .all<DbSession>();
+  return result.results;
+}
+
+export async function upsertDbSession(
+  db: D1Database,
+  id: string,
+  serverId: string,
+  name: string,
+  projectName: string,
+  role: string,
+  agentType: string,
+  projectDir: string,
+  state: string,
+): Promise<void> {
+  const now = Date.now();
+  await db
+    .prepare(
+      `INSERT INTO sessions (id, server_id, name, project_name, role, agent_type, project_dir, state, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(server_id, name) DO UPDATE SET
+         project_name = excluded.project_name,
+         role = excluded.role,
+         agent_type = excluded.agent_type,
+         project_dir = excluded.project_dir,
+         state = excluded.state,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(id, serverId, name, projectName, role, agentType, projectDir, state, now, now)
+    .run();
+}
+
+export async function deleteDbSession(db: D1Database, serverId: string, name: string): Promise<void> {
+  await db.prepare('DELETE FROM sessions WHERE server_id = ? AND name = ?').bind(serverId, name).run();
+}
+
 // ── Cron jobs ─────────────────────────────────────────────────────────────
 
 export async function getDueCronJobs(db: D1Database): Promise<DbCronJob[]> {

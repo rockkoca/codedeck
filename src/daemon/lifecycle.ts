@@ -1,5 +1,5 @@
-import { loadStore, flushStore, listSessions } from '../store/session-store.js';
-import { restoreFromStore, setSessionEventCallback, restartSession } from '../agent/session-manager.js';
+import { loadStore, flushStore, listSessions, upsertSession, removeSession } from '../store/session-store.js';
+import { restoreFromStore, setSessionEventCallback, setSessionPersistCallback, restartSession } from '../agent/session-manager.js';
 import { sessionExists } from '../agent/tmux.js';
 import { detectMemoryBackend } from '../memory/detector.js';
 import { ServerLink } from './server-link.js';
@@ -25,6 +25,79 @@ export interface DaemonContext {
 
 let ctx: DaemonContext | null = null;
 
+// ── Worker session sync helpers ────────────────────────────────────────────
+
+async function persistSessionToWorker(
+  workerUrl: string,
+  serverId: string,
+  token: string,
+  name: string,
+  record: import('../store/session-store.js').SessionRecord,
+): Promise<void> {
+  try {
+    const res = await fetch(`${workerUrl}/api/server/${serverId}/sessions/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Server-Id': serverId },
+      body: JSON.stringify({
+        projectName: record.projectName,
+        projectRole: record.role,
+        agentType: record.agentType,
+        projectDir: record.projectDir,
+        state: record.state,
+      }),
+    });
+    if (!res.ok) logger.warn({ status: res.status, name }, 'persistSessionToWorker: non-ok response');
+  } catch (e) {
+    logger.warn({ err: e, name }, 'persistSessionToWorker: fetch failed');
+  }
+}
+
+async function deleteSessionFromWorker(workerUrl: string, serverId: string, token: string, name: string): Promise<void> {
+  try {
+    const res = await fetch(`${workerUrl}/api/server/${serverId}/sessions/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}`, 'X-Server-Id': serverId },
+    });
+    if (!res.ok) logger.warn({ status: res.status, name }, 'deleteSessionFromWorker: non-ok response');
+  } catch (e) {
+    logger.warn({ err: e, name }, 'deleteSessionFromWorker: fetch failed');
+  }
+}
+
+/** On startup: pull sessions from D1 and populate the local store so restoreFromStore can rebuild tmux. */
+async function syncSessionsFromWorker(workerUrl: string, serverId: string, token: string): Promise<void> {
+  try {
+    const res = await fetch(`${workerUrl}/api/server/${serverId}/sessions`, {
+      headers: { Authorization: `Bearer ${token}`, 'X-Server-Id': serverId },
+    });
+    if (!res.ok) {
+      logger.warn({ status: res.status }, 'syncSessionsFromWorker: non-ok response');
+      return;
+    }
+    const data = await res.json() as { sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; project_dir: string; state: string }> };
+    let count = 0;
+    for (const s of data.sessions) {
+      if (s.state === 'stopped') continue; // skip stopped sessions
+      upsertSession({
+        name: s.name,
+        projectName: s.project_name,
+        role: s.role as 'brain' | `w${number}`,
+        agentType: s.agent_type,
+        projectDir: s.project_dir,
+        state: s.state as import('../store/session-store.js').SessionState,
+        restarts: 0,
+        restartTimestamps: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      count++;
+    }
+    logger.info({ count }, 'Sessions synced from D1');
+  } catch (e) {
+    logger.warn({ err: e }, 'syncSessionsFromWorker: fetch failed');
+  }
+}
+
 /** Startup sequence: config → store → memory → sessions → server link */
 export async function startup(): Promise<DaemonContext> {
   logger.info('Daemon starting');
@@ -38,13 +111,26 @@ export async function startup(): Promise<DaemonContext> {
   const { backend: memory, mode } = await detectMemoryBackend();
   logger.info({ mode }, 'Memory backend selected');
 
+  const creds = await loadCredentials();
+
+  // No fallback: a valid serverId is required for the WS endpoint (/api/server/:id/ws)
+  // and for the auth handshake. Without stored credentials from `codedeck bind`, we
+  // cannot connect to the CF Worker.
+  const workerUrl = creds?.workerUrl;
+  const serverId = creds?.serverId ?? '';
+  const token = creds?.token ?? '';
+
+  // Sync sessions from D1 before restoring tmux sessions
+  if (creds) {
+    await syncSessionsFromWorker(workerUrl!, serverId, token);
+  }
+
   await restoreFromStore();
   logger.info('Sessions reconciled');
 
   let serverLink: ServerLink | null = null;
-  const creds = await loadCredentials();
   if (creds) {
-    serverLink = new ServerLink({ workerUrl: creds.workerUrl, serverId: creds.serverId, token: creds.token });
+    serverLink = new ServerLink({ workerUrl: workerUrl!, serverId, token });
     serverLink.onMessage((msg) => {
       handleWebCommand(msg, serverLink!);
     });
@@ -56,13 +142,17 @@ export async function startup(): Promise<DaemonContext> {
     if (!serverLink) return;
     try { serverLink.send({ type: 'session_event', event, session, state }); } catch { /* not connected */ }
   });
-  // No fallback: a valid serverId is required for the WS endpoint (/api/server/:id/ws)
-  // and for the auth handshake. Without stored credentials from `codedeck bind`, we
-  // cannot connect to the CF Worker.
 
-  const workerUrl = creds?.workerUrl;
-  const serverId = creds?.serverId ?? '';
-  const token = creds?.token ?? '';
+  // Wire session persist → D1 via Worker API
+  if (creds) {
+    setSessionPersistCallback(async (record, name) => {
+      if (record) {
+        await persistSessionToWorker(workerUrl!, serverId, token, name, record);
+      } else {
+        await deleteSessionFromWorker(workerUrl!, serverId, token, name);
+      }
+    });
+  }
 
   async function persistBinding(platform: string, channelId: string, botId: string, bindingType: string, target: string): Promise<boolean> {
     if (!workerUrl || !serverId || !token) return false;
