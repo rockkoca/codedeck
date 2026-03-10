@@ -26,6 +26,8 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
   const lastInputAtRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
     const term = new Terminal({
       theme: {
         background: '#0f0f13',
@@ -40,6 +42,9 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
       scrollback: 5000,
       allowTransparency: false,
       cursorBlink: true,
+      // On mobile: disable xterm's built-in textarea focus so tapping the
+      // terminal does not pop up the keyboard. Input goes via SessionControls.
+      disableStdin: isMobile,
     });
 
     // Copy selected text to clipboard on Ctrl+C / Cmd+C when selection exists
