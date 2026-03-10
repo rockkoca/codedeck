@@ -67,6 +67,23 @@ export function App() {
     if (auth) configureApi(auth.baseUrl, auth.token);
   }, [auth]);
 
+  // On mount: if restoring terminal view from localStorage, immediately fetch sessions from D1
+  useEffect(() => {
+    if (!auth || !selectedServerId || view !== 'terminal') return;
+    apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string }> }>(
+      `/api/server/${selectedServerId}/sessions`,
+    ).then((data) => {
+      setSessions(data.sessions.map((s) => ({
+        name: s.name,
+        project: s.project_name,
+        role: s.role as SessionInfo['role'],
+        agentType: s.agent_type,
+        state: s.state as SessionInfo['state'],
+      })));
+    }).catch(() => {/* WS fallback */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally runs once on mount only
+
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   // Persist active session across refresh
   const [activeSession, setActiveSessionState] = useState<string | null>(
@@ -132,14 +149,16 @@ export function App() {
     };
   }, [auth, view, selectedServerId]);
 
-  // Subscribe to terminal when session changes
+  // Subscribe to terminal when session changes OR when WS connects
+  // Must depend on `connected` so that restoring from localStorage (where wsRef is null
+  // on first render) still sets up the subscription once the WS actually connects.
   useEffect(() => {
     const ws = wsRef.current;
-    if (!ws || !activeSession) return;
+    if (!ws?.connected || !activeSession) return;
     setLatencyMs(null);
     ws.subscribeTerminal(activeSession);
     return () => ws.unsubscribeTerminal(activeSession);
-  }, [activeSession]);
+  }, [activeSession, connected]);
 
   const handleLogin = useCallback((state: AuthState) => {
     localStorage.setItem('rcc_auth', JSON.stringify(state));
