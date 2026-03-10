@@ -74,7 +74,7 @@ export class WsClient {
     this.send({ type: 'terminal.unsubscribe', session: sessionName });
   }
 
-  sendSessionCommand(command: 'start' | 'stop' | 'send', payload: object = {}): void {
+  sendSessionCommand(command: 'start' | 'stop' | 'send' | 'restart', payload: object = {}): void {
     this.send({ type: `session.${command}`, ...payload });
   }
 

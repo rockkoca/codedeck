@@ -39,6 +39,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
     case 'session.stop':
       void handleStop(cmd);
       break;
+    case 'session.restart':
+      void handleRestart(cmd, serverLink);
+      break;
     case 'session.send':
       void handleSend(cmd);
       break;
@@ -108,6 +111,44 @@ async function handleStart(cmd: Record<string, unknown>, serverLink: ServerLink)
     logger.info({ project }, 'Session started via web');
   } catch (err) {
     logger.error({ project, err }, 'session.start failed');
+    const message = err instanceof Error ? err.message : String(err);
+    try { serverLink.send({ type: 'session.error', project, message }); } catch { /* ignore */ }
+  }
+}
+
+async function handleRestart(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
+  const project = cmd.project as string | undefined;
+  if (!project) {
+    logger.warn('session.restart: missing project name');
+    return;
+  }
+
+  const sessions = listSessions(project);
+  if (!sessions.length) {
+    logger.warn({ project }, 'session.restart: no sessions found for project');
+    return;
+  }
+
+  const brain = sessions.find((s) => s.role === 'brain');
+  if (!brain) {
+    logger.warn({ project }, 'session.restart: no brain session found');
+    return;
+  }
+
+  try {
+    await stopProject(project);
+    const config: ProjectConfig = {
+      name: project,
+      dir: brain.projectDir,
+      brainType: brain.agentType as ProjectConfig['brainType'],
+      workerTypes: sessions
+        .filter((s) => s.role !== 'brain')
+        .map((s) => s.agentType as ProjectConfig['brainType']),
+    };
+    await startProject(config);
+    logger.info({ project }, 'Session restarted via web');
+  } catch (err) {
+    logger.error({ project, err }, 'session.restart failed');
     const message = err instanceof Error ? err.message : String(err);
     try { serverLink.send({ type: 'session.error', project, message }); } catch { /* ignore */ }
   }

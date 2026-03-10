@@ -6,7 +6,7 @@ import { TerminalView } from './components/TerminalView.js';
 import { SessionControls } from './components/SessionControls.js';
 import { NewSessionDialog } from './components/NewSessionDialog.js';
 import { WsClient } from './ws-client.js';
-import { configure as configureApi } from './api.js';
+import { configure as configureApi, apiFetch } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
 
 interface AuthState {
@@ -130,9 +130,22 @@ export function App() {
     setSelectedServerId(null);
   }, []);
 
-  const handleSelectServer = useCallback((serverId: string) => {
+  const handleSelectServer = useCallback(async (serverId: string) => {
     setSelectedServerId(serverId);
     setView('terminal');
+    // Immediately load sessions from D1 — no need to wait for WS handshake
+    try {
+      const data = await apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string }> }>(`/api/server/${serverId}/sessions`);
+      setSessions(data.sessions.map((s) => ({
+        name: s.name,
+        project: s.project_name,
+        role: s.role as SessionInfo['role'],
+        agentType: s.agent_type,
+        state: s.state as SessionInfo['state'],
+      })));
+    } catch {
+      // fallback: WS will populate sessions on connect
+    }
   }, []);
 
   const handleBackToDashboard = useCallback(() => {

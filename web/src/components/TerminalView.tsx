@@ -63,7 +63,13 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
     termRef.current = term;
     fitRef.current = fitAddon;
 
-    const observer = new ResizeObserver(() => fitAddon.fit());
+    const observer = new ResizeObserver(() => {
+      fitAddon.fit();
+      // Re-paint buffered content immediately so resize doesn't flash blank
+      if (linesRef.current.length > 0) {
+        term.write('\x1b[2J\x1b[H' + linesRef.current.join('\r\n'));
+      }
+    });
     if (containerRef.current) observer.observe(containerRef.current);
 
     return () => {

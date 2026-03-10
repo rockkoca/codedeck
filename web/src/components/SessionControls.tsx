@@ -32,9 +32,17 @@ export function SessionControls({ ws, activeSession, latencyMs }: Props) {
     }
   };
 
-  const handleStop = () => {
+  const [confirmRestart, setConfirmRestart] = useState(false);
+
+  const handleRestartClick = () => {
     if (!ws || !activeSession) return;
-    ws.sendSessionCommand('stop', { session: activeSession.name });
+    if (confirmRestart) {
+      ws.sendSessionCommand('restart', { project: activeSession.project });
+      setConfirmRestart(false);
+    } else {
+      setConfirmRestart(true);
+      setTimeout(() => setConfirmRestart(false), 3000);
+    }
   };
 
   const disabled = !ws?.connected || !activeSession;
@@ -58,12 +66,12 @@ export function SessionControls({ ws, activeSession, latencyMs }: Props) {
         Send
       </button>
       <button
-        class="btn btn-danger"
-        onClick={handleStop}
+        class={`btn ${confirmRestart ? 'btn-danger' : 'btn-secondary'}`}
+        onClick={handleRestartClick}
         disabled={disabled}
-        title="Stop session"
+        title={confirmRestart ? 'Click again to confirm restart' : 'Restart session'}
       >
-        Stop
+        {confirmRestart ? 'Confirm?' : 'Restart'}
       </button>
       <span style={{ marginLeft: 8, fontSize: 12, fontFamily: 'monospace', color: latencyColor, minWidth: 56, whiteSpace: 'nowrap' }}>
         ⏱ {latencyMs != null ? `${latencyMs}ms` : '—'}
