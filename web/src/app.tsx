@@ -32,6 +32,18 @@ export function App() {
   const [view, setView] = useState<View>('dashboard');
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
 
+  // Keep layout within the visual viewport on mobile (avoids keyboard covering controls)
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      document.documentElement.style.setProperty('--vvh', `${vv.height}px`);
+    };
+    update();
+    vv.addEventListener('resize', update);
+    return () => vv.removeEventListener('resize', update);
+  }, []);
+
   // Handle OAuth callback token in URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

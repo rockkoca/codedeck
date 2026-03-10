@@ -55,7 +55,16 @@ export function TerminalView({ sessionName, ws, onDiff, onLatency }: Props) {
 
     if (containerRef.current) {
       term.open(containerRef.current);
-      fitAddon.fit();
+      // Defer fit until container has non-zero dimensions (mobile may need a frame to lay out)
+      const doInitialFit = () => {
+        const el = containerRef.current;
+        if (el && el.clientWidth > 0 && el.clientHeight > 0) {
+          fitAddon.fit();
+        } else {
+          requestAnimationFrame(doInitialFit);
+        }
+      };
+      requestAnimationFrame(doInitialFit);
     }
 
     // Forward all keyboard input to the tmux session; record send time for latency
