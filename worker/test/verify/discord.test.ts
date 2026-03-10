@@ -1,5 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DiscordHandler } from '../../src/platform/handlers/discord/index.js';
+import type { BotConfig } from '../../src/platform/types.js';
+
+function makeBotConfig(overrides: Partial<Record<string, string>> = {}): BotConfig {
+  return {
+    botId: 'bot-1',
+    userId: 'user-1',
+    platform: 'discord',
+    config: {
+      botToken: 'Bot test-token',
+      publicKey: 'aabbccdd'.repeat(8),
+      appId: '123456789',
+      ...overrides,
+    },
+  };
+}
 
 function makeRequest(headers: Record<string, string>, body = '{}'): Request {
   return new Request('https://example.com/webhook', {
@@ -19,27 +34,23 @@ describe('DiscordHandler.verifyInbound', () => {
 
   it('returns false when both signature headers are missing', async () => {
     const req = makeRequest({});
-    const env = { DISCORD_PUBLIC_KEY: 'aabbcc' } as any;
-    const result = await handler.verifyInbound(req, env);
+    const result = await handler.verifyInbound(req, makeBotConfig());
     expect(result).toBe(false);
   });
 
   it('returns false when X-Signature-Ed25519 is missing', async () => {
     const req = makeRequest({ 'X-Signature-Timestamp': '12345' });
-    const env = { DISCORD_PUBLIC_KEY: 'aabbcc' } as any;
-    const result = await handler.verifyInbound(req, env);
+    const result = await handler.verifyInbound(req, makeBotConfig());
     expect(result).toBe(false);
   });
 
   it('returns false when X-Signature-Timestamp is missing', async () => {
     const req = makeRequest({ 'X-Signature-Ed25519': 'deadbeef' });
-    const env = { DISCORD_PUBLIC_KEY: 'aabbcc' } as any;
-    const result = await handler.verifyInbound(req, env);
+    const result = await handler.verifyInbound(req, makeBotConfig());
     expect(result).toBe(false);
   });
 
   it('returns false for invalid/garbage signature values', async () => {
-    // Both headers present but signature is invalid — crypto.subtle.verify will fail
     const mockSubtle = {
       importKey: vi.fn().mockResolvedValue({}),
       verify: vi.fn().mockResolvedValue(false),
@@ -50,8 +61,7 @@ describe('DiscordHandler.verifyInbound', () => {
       'X-Signature-Ed25519': 'deadbeef',
       'X-Signature-Timestamp': '12345',
     });
-    const env = { DISCORD_PUBLIC_KEY: 'aabb' } as any;
-    const result = await handler.verifyInbound(req, env);
+    const result = await handler.verifyInbound(req, makeBotConfig());
     expect(result).toBe(false);
   });
 
@@ -66,8 +76,7 @@ describe('DiscordHandler.verifyInbound', () => {
       'X-Signature-Ed25519': 'deadbeef',
       'X-Signature-Timestamp': '12345',
     });
-    const env = { DISCORD_PUBLIC_KEY: 'aabb' } as any;
-    const result = await handler.verifyInbound(req, env);
+    const result = await handler.verifyInbound(req, makeBotConfig());
     expect(result).toBe(true);
   });
 
@@ -82,15 +91,14 @@ describe('DiscordHandler.verifyInbound', () => {
       'X-Signature-Ed25519': 'deadbeef',
       'X-Signature-Timestamp': '12345',
     });
-    const env = { DISCORD_PUBLIC_KEY: 'aabb' } as any;
-    const result = await handler.verifyInbound(req, env);
+    const result = await handler.verifyInbound(req, makeBotConfig());
     expect(result).toBe(false);
   });
 
   it('getCapabilities returns expected Discord config', () => {
     const caps = handler.getCapabilities();
     expect(caps.maxMessageLength).toBe(2000);
-    expect(caps.requiredEnvVars).toContain('DISCORD_PUBLIC_KEY');
+    expect(caps.requiredConfigKeys).toContain('publicKey');
     expect(caps.supportsMarkdown).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import type { BotConfig } from '../platform/types.js';
 import { getHandler } from '../platform/registry.js';
+import { decryptBotConfig } from '../security/crypto.js';
 import { routeInbound } from './outbound.js';
 import logger from '../util/logger.js';
 
@@ -25,20 +26,33 @@ webhookRoutes.post('/:platform/:botId', async (c) => {
     return c.json({ error: 'unknown_platform' }, 404);
   }
 
-  // Load per-user bot config from DB
+  if (!c.env.BOT_ENCRYPTION_KEY) {
+    logger.error('BOT_ENCRYPTION_KEY is not configured');
+    return c.json({ error: 'server_misconfigured' }, 500);
+  }
+
+  // Load per-user bot config from DB and decrypt
   const row = await c.env.DB.prepare(
-    'SELECT id, user_id, platform, config_json FROM platform_bots WHERE id = ? AND platform = ?',
-  ).bind(botId, platform).first<{ id: string; user_id: string; platform: string; config_json: string }>();
+    'SELECT id, user_id, platform, config_encrypted FROM platform_bots WHERE id = ? AND platform = ?',
+  ).bind(botId, platform).first<{ id: string; user_id: string; platform: string; config_encrypted: string }>();
 
   if (!row) {
     return c.json({ error: 'bot_not_found' }, 404);
+  }
+
+  let decryptedConfig: Record<string, string>;
+  try {
+    decryptedConfig = await decryptBotConfig(row.config_encrypted, c.env.BOT_ENCRYPTION_KEY);
+  } catch (err) {
+    logger.error({ botId, err }, 'Failed to decrypt bot config');
+    return c.json({ error: 'server_error' }, 500);
   }
 
   const botConfig: BotConfig = {
     botId: row.id,
     userId: row.user_id,
     platform: row.platform,
-    config: JSON.parse(row.config_json) as Record<string, string>,
+    config: decryptedConfig,
   };
 
   // Verify signature / token using per-bot credentials

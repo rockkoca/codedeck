@@ -7,7 +7,7 @@ CREATE TABLE platform_bots (
   user_id     TEXT NOT NULL REFERENCES users(id),
   platform    TEXT NOT NULL,         -- 'telegram' | 'discord' | 'feishu'
   label       TEXT,                  -- user-friendly name (e.g. "My Telegram Bot")
-  config_json TEXT NOT NULL,         -- JSON: platform-specific credentials
+  config_encrypted TEXT NOT NULL,    -- AES-256-GCM encrypted credentials: base64(iv||ciphertext||authTag)
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );

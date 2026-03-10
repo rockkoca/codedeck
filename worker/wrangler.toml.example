@@ -3,16 +3,12 @@
 #
 # Required secrets (never put values here — use `wrangler secret put`):
 #
-#   wrangler secret put JWT_SIGNING_KEY
-#   wrangler secret put DISCORD_BOT_TOKEN
-#   wrangler secret put DISCORD_PUBLIC_KEY
-#   wrangler secret put DISCORD_APP_ID
-#   wrangler secret put TELEGRAM_BOT_TOKEN
-#   wrangler secret put TELEGRAM_WEBHOOK_SECRET
-#   wrangler secret put FEISHU_APP_ID
-#   wrangler secret put FEISHU_APP_SECRET
-#   wrangler secret put FEISHU_ENCRYPT_KEY
-#   wrangler secret put FEISHU_VERIFICATION_TOKEN
+#   wrangler secret put JWT_SIGNING_KEY      # HMAC-SHA256 key for signing JWTs
+#   wrangler secret put BOT_ENCRYPTION_KEY   # AES-256 key for encrypting bot credentials in D1
+#
+# Platform bot credentials (Telegram, Discord, Feishu) are stored per-user in D1,
+# encrypted with BOT_ENCRYPTION_KEY. Users register their own bots via POST /api/bot.
+# No platform-specific secrets are needed here.
 
 name = "remote-chat-cli-worker"
 main = "src/index.ts"
@@ -38,6 +34,7 @@ new_classes = ["DaemonBridge", "RateLimiter"]
 
 [vars]
 ENVIRONMENT = "production"
+WORKER_URL = "https://your-worker.workers.dev"
 
 [[triggers.crons]]
 cron = "*/5 * * * *"

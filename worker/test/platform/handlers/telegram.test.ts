@@ -1,22 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TelegramHandler } from '../../../src/platform/handlers/telegram/index.js';
-import type { Env } from '../../../src/types.js';
+import type { BotConfig } from '../../../src/platform/types.js';
 
-const makeEnv = (overrides: Partial<Env> = {}): Env => ({
-  DB: {} as Env['DB'],
-  DAEMON_BRIDGE: {} as Env['DAEMON_BRIDGE'],
-  RATE_LIMITER: {} as Env['RATE_LIMITER'],
-  JWT_SIGNING_KEY: 'key',
-  DISCORD_PUBLIC_KEY: '',
-  DISCORD_BOT_TOKEN: '',
-  DISCORD_APP_ID: '',
-  TELEGRAM_BOT_TOKEN: 'tg-bot-token',
-  TELEGRAM_SECRET_TOKEN: 'super-secret',
-  FEISHU_APP_ID: '',
-  FEISHU_APP_SECRET: '',
-  FEISHU_ENCRYPT_KEY: '',
-  FEISHU_VERIFICATION_TOKEN: '',
-  ...overrides,
+const makeBotConfig = (overrides: Partial<Record<string, string>> = {}): BotConfig => ({
+  botId: 'bot-tg',
+  userId: 'user-1',
+  platform: 'telegram',
+  config: {
+    botToken: 'tg-bot-token',
+    webhookSecret: 'super-secret',
+    ...overrides,
+  },
 });
 
 describe('TelegramHandler', () => {
@@ -30,8 +24,8 @@ describe('TelegramHandler', () => {
     it('returns valid capabilities', () => {
       const caps = handler.getCapabilities();
       expect(caps.maxMessageLength).toBe(4096);
-      expect(caps.requiredEnvVars).toContain('TELEGRAM_BOT_TOKEN');
-      expect(caps.requiredEnvVars).toContain('TELEGRAM_SECRET_TOKEN');
+      expect(caps.requiredConfigKeys).toContain('botToken');
+      expect(caps.requiredConfigKeys).toContain('webhookSecret');
     });
   });
 
@@ -42,8 +36,7 @@ describe('TelegramHandler', () => {
         headers: { 'X-Telegram-Bot-Api-Secret-Token': 'super-secret' },
         body: '{}',
       });
-      const result = await handler.verifyInbound(req, makeEnv());
-      expect(result).toBe(true);
+      expect(await handler.verifyInbound(req, makeBotConfig())).toBe(true);
     });
 
     it('rejects request with wrong secret', async () => {
@@ -52,35 +45,37 @@ describe('TelegramHandler', () => {
         headers: { 'X-Telegram-Bot-Api-Secret-Token': 'wrong-secret' },
         body: '{}',
       });
-      const result = await handler.verifyInbound(req, makeEnv());
-      expect(result).toBe(false);
+      expect(await handler.verifyInbound(req, makeBotConfig())).toBe(false);
     });
 
     it('rejects request with no secret header', async () => {
       const req = new Request('https://x', { method: 'POST', body: '{}' });
-      const result = await handler.verifyInbound(req, makeEnv());
-      expect(result).toBe(false);
+      expect(await handler.verifyInbound(req, makeBotConfig())).toBe(false);
+    });
+
+    it('rejects when config has no webhookSecret', async () => {
+      const req = new Request('https://x', {
+        method: 'POST',
+        headers: { 'X-Telegram-Bot-Api-Secret-Token': 'some-secret' },
+        body: '{}',
+      });
+      expect(await handler.verifyInbound(req, makeBotConfig({ webhookSecret: '' }))).toBe(false);
     });
   });
 
   describe('normalizeInbound()', () => {
     it('normalizes a plain text message', async () => {
-      const update = {
-        update_id: 1,
-        message: {
-          message_id: 42,
-          from: { id: 111 },
-          chat: { id: -100, type: 'group' },
-          text: 'hello world',
-        },
-      };
       const req = new Request('https://x', {
         method: 'POST',
-        body: JSON.stringify(update),
+        body: JSON.stringify({
+          update_id: 1,
+          message: { message_id: 42, from: { id: 111 }, chat: { id: -100, type: 'group' }, text: 'hello world' },
+        }),
         headers: { 'Content-Type': 'application/json' },
       });
-      const msg = await handler.normalizeInbound(req);
+      const msg = await handler.normalizeInbound(req, makeBotConfig());
       expect(msg.platform).toBe('telegram');
+      expect(msg.botId).toBe('bot-tg');
       expect(msg.channelId).toBe('-100');
       expect(msg.userId).toBe('111');
       expect(msg.content).toBe('hello world');
@@ -88,21 +83,15 @@ describe('TelegramHandler', () => {
     });
 
     it('detects /commands', async () => {
-      const update = {
-        update_id: 2,
-        message: {
-          message_id: 43,
-          from: { id: 222 },
-          chat: { id: 999, type: 'private' },
-          text: '/start my-project',
-        },
-      };
       const req = new Request('https://x', {
         method: 'POST',
-        body: JSON.stringify(update),
+        body: JSON.stringify({
+          update_id: 2,
+          message: { message_id: 43, from: { id: 222 }, chat: { id: 999, type: 'private' }, text: '/start my-project' },
+        }),
         headers: { 'Content-Type': 'application/json' },
       });
-      const msg = await handler.normalizeInbound(req);
+      const msg = await handler.normalizeInbound(req, makeBotConfig());
       expect(msg.isCommand).toBe(true);
       expect(msg.command).toBe('start');
       expect(msg.args).toEqual(['my-project']);
@@ -115,15 +104,14 @@ describe('TelegramHandler', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       await handler.sendOutbound(
-        { platform: 'telegram', channelId: '-100', content: 'hi' },
-        makeEnv(),
+        { platform: 'telegram', botId: 'bot-tg', channelId: '-100', content: 'hi' },
+        makeBotConfig(),
       );
 
       expect(fetchMock).toHaveBeenCalledOnce();
       const [url] = fetchMock.mock.calls[0];
       expect(url).toContain('api.telegram.org/bot');
       expect(url).toContain('/sendMessage');
-
       vi.unstubAllGlobals();
     });
   });

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { requireAuth } from '../security/authorization.js';
 import { getHandler, listPlatforms } from '../platform/registry.js';
-import { randomHex } from '../security/crypto.js';
+import { randomHex, encryptBotConfig, decryptBotConfig } from '../security/crypto.js';
 import { logAudit } from '../security/audit.js';
 import { z } from 'zod';
 
@@ -18,11 +18,15 @@ const registerSchema = z.object({
 
 /**
  * POST /api/bot — register a new platform bot for the authenticated user.
- * Body: { platform, label?, config: { botToken, webhookSecret, ... } }
- * Returns: { botId, webhookUrl }
+ * Config is encrypted with BOT_ENCRYPTION_KEY before storage.
+ * Returns: { botId, webhookUrl } — never returns credentials.
  */
 botRoutes.post('/', async (c) => {
   const userId = c.get('userId' as never) as string;
+
+  if (!c.env.BOT_ENCRYPTION_KEY) {
+    return c.json({ error: 'server_misconfigured' }, 500);
+  }
 
   const body = await c.req.json().catch(() => null);
   const parsed = registerSchema.safeParse(body);
@@ -30,7 +34,6 @@ botRoutes.post('/', async (c) => {
 
   const { platform, label, config } = parsed.data;
 
-  // Validate that required config keys are present for this platform
   const handler = getHandler(platform);
   if (!handler) return c.json({ error: 'unknown_platform' }, 400);
 
@@ -42,22 +45,23 @@ botRoutes.post('/', async (c) => {
 
   const botId = randomHex(16);
   const now = Date.now();
+  const configEncrypted = await encryptBotConfig(config, c.env.BOT_ENCRYPTION_KEY);
 
   await c.env.DB.prepare(
-    'INSERT INTO platform_bots (id, user_id, platform, label, config_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).bind(botId, userId, platform, label ?? null, JSON.stringify(config), now, now).run();
+    'INSERT INTO platform_bots (id, user_id, platform, label, config_encrypted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).bind(botId, userId, platform, label ?? null, configEncrypted, now, now).run();
 
   await logAudit({ userId, action: 'bot.register', details: { botId, platform } }, c.env.DB);
 
-  const workerUrl = (c.env as Record<string, string>).WORKER_URL ?? 'https://your-worker.example.com';
   return c.json({
     botId,
-    webhookUrl: `${workerUrl}/webhook/${platform}/${botId}`,
+    webhookUrl: `${c.env.WORKER_URL}/webhook/${platform}/${botId}`,
   }, 201);
 });
 
 /**
  * GET /api/bot — list all bots for the authenticated user.
+ * Returns metadata only — never decrypted credentials.
  */
 botRoutes.get('/', async (c) => {
   const userId = c.get('userId' as never) as string;
@@ -66,14 +70,12 @@ botRoutes.get('/', async (c) => {
     'SELECT id, platform, label, created_at FROM platform_bots WHERE user_id = ? ORDER BY created_at DESC',
   ).bind(userId).all<{ id: string; platform: string; label: string | null; created_at: number }>();
 
-  const workerUrl = (c.env as Record<string, string>).WORKER_URL ?? 'https://your-worker.example.com';
-
   return c.json({
     bots: (rows.results ?? []).map((r) => ({
       botId: r.id,
       platform: r.platform,
       label: r.label,
-      webhookUrl: `${workerUrl}/webhook/${r.platform}/${r.id}`,
+      webhookUrl: `${c.env.WORKER_URL}/webhook/${r.platform}/${r.id}`,
       createdAt: r.created_at,
     })),
   });
@@ -112,15 +114,20 @@ botRoutes.delete('/:botId', async (c) => {
 });
 
 /**
- * PATCH /api/bot/:botId — update label or config of an existing bot.
+ * PATCH /api/bot/:botId — update label or merge new config keys into an existing bot.
+ * Decrypts existing config, merges, re-encrypts — plaintext never persisted.
  */
 botRoutes.patch('/:botId', async (c) => {
   const userId = c.get('userId' as never) as string;
   const botId = c.req.param('botId');
 
+  if (!c.env.BOT_ENCRYPTION_KEY) {
+    return c.json({ error: 'server_misconfigured' }, 500);
+  }
+
   const row = await c.env.DB.prepare(
-    'SELECT id, platform, config_json FROM platform_bots WHERE id = ? AND user_id = ?',
-  ).bind(botId, userId).first<{ id: string; platform: string; config_json: string }>();
+    'SELECT id, platform, config_encrypted FROM platform_bots WHERE id = ? AND user_id = ?',
+  ).bind(botId, userId).first<{ id: string; platform: string; config_encrypted: string }>();
 
   if (!row) return c.json({ error: 'not_found' }, 404);
 
@@ -134,12 +141,16 @@ botRoutes.patch('/:botId', async (c) => {
 
   const { label, config } = parsed.data;
 
-  const existing = JSON.parse(row.config_json) as Record<string, string>;
-  const merged = config ? { ...existing, ...config } : existing;
+  let newEncrypted = row.config_encrypted;
+  if (config) {
+    const existing = await decryptBotConfig(row.config_encrypted, c.env.BOT_ENCRYPTION_KEY);
+    const merged = { ...existing, ...config };
+    newEncrypted = await encryptBotConfig(merged, c.env.BOT_ENCRYPTION_KEY);
+  }
 
   await c.env.DB.prepare(
-    'UPDATE platform_bots SET label = COALESCE(?, label), config_json = ?, updated_at = ? WHERE id = ?',
-  ).bind(label ?? null, JSON.stringify(merged), Date.now(), botId).run();
+    'UPDATE platform_bots SET label = COALESCE(?, label), config_encrypted = ?, updated_at = ? WHERE id = ?',
+  ).bind(label ?? null, newEncrypted, Date.now(), botId).run();
 
   return c.json({ ok: true });
 });

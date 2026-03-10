@@ -3,7 +3,7 @@ import type { Env } from '../types.js';
 import type { BotConfig, InboundMessage, OutboundMessage } from '../platform/types.js';
 import { getHandler } from '../platform/registry.js';
 import { getChannelBinding, getServerById } from '../db/queries.js';
-import { sha256Hex } from '../security/crypto.js';
+import { sha256Hex, decryptBotConfig } from '../security/crypto.js';
 import logger from '../util/logger.js';
 
 export const outboundRoutes = new Hono<{ Bindings: Env }>();
@@ -40,17 +40,21 @@ export async function routeInbound(msg: InboundMessage, env: Env): Promise<void>
  * Load bot config from DB by botId.
  */
 async function loadBotConfig(botId: string, env: Env): Promise<BotConfig | null> {
+  if (!env.BOT_ENCRYPTION_KEY) throw new Error('BOT_ENCRYPTION_KEY is not configured');
+
   const row = await env.DB.prepare(
-    'SELECT id, user_id, platform, config_json FROM platform_bots WHERE id = ?',
-  ).bind(botId).first<{ id: string; user_id: string; platform: string; config_json: string }>();
+    'SELECT id, user_id, platform, config_encrypted FROM platform_bots WHERE id = ?',
+  ).bind(botId).first<{ id: string; user_id: string; platform: string; config_encrypted: string }>();
 
   if (!row) return null;
+
+  const config = await decryptBotConfig(row.config_encrypted, env.BOT_ENCRYPTION_KEY);
 
   return {
     botId: row.id,
     userId: row.user_id,
     platform: row.platform,
-    config: JSON.parse(row.config_json) as Record<string, string>,
+    config,
   };
 }
 

@@ -52,7 +52,7 @@ export class TelegramHandler implements PlatformHandler {
     const messageId = String(message.message_id);
 
     // Detect commands: /command[@botname] args
-    const cmdMatch = text.match(/^\\/([a-z0-9_]+)(?:@\\S+)?(?:\\s+(.*))?$/i);
+    const cmdMatch = text.match(/^\/([a-z0-9_]+)(?:@\S+)?(?:\s+(.*))?$/i);
     if (cmdMatch) {
       const command = cmdMatch[1].toLowerCase();
       const argStr = (cmdMatch[2] ?? '').trim();

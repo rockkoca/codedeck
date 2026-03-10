@@ -11,6 +11,7 @@ export interface Env {
 
   // Secrets (set via wrangler secret put)
   JWT_SIGNING_KEY: string;
+  BOT_ENCRYPTION_KEY: string;  // AES-256 key for encrypting platform_bots.config_encrypted
 
   // Vars
   ENVIRONMENT: string;

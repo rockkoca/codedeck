@@ -31,6 +31,7 @@ app.route('/api/cron', cronApiRoutes);
 app.route('/api/outbound', outboundRoutes);
 app.route('/api/server', projectRoutes);
 app.route('/api/push', pushRoutes);
+app.route('/api/bot', botRoutes);
 app.route('/webhook', webhookRoutes);
 
 // Health check
@@ -51,8 +52,6 @@ app.get('*', async (c) => {
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Validate platform handlers on first request (logs warnings for missing env vars)
-    validateHandlers(env as unknown as Record<string, string | undefined>);
     return app.fetch(req, env, ctx);
   },
 
