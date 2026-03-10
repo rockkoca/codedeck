@@ -80,7 +80,7 @@ describe('DiscordHandler', () => {
         method: 'POST',
         headers: {
           'X-Signature-Ed25519': 'aabbccdd'.repeat(8),
-          'X-Signature-Timestamp': '1234567890',
+          'X-Signature-Timestamp': String(Math.floor(Date.now() / 1000)),
         },
         body: '{"type":1}',
       });

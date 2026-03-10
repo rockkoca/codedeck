@@ -29,6 +29,10 @@ export class DiscordHandler implements PlatformHandler {
 
     if (!signature || !timestamp) return false;
 
+    // Reject stale requests (replay protection — 5 minute window)
+    const tsSeconds = parseInt(timestamp, 10);
+    if (isNaN(tsSeconds) || Math.abs(Date.now() / 1000 - tsSeconds) > 300) return false;
+
     const publicKey = config.config.publicKey;
     if (!publicKey) return false;
 

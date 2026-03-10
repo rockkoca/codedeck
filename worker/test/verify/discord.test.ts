@@ -74,7 +74,7 @@ describe('DiscordHandler.verifyInbound', () => {
 
     const req = makeRequest({
       'X-Signature-Ed25519': 'deadbeef',
-      'X-Signature-Timestamp': '12345',
+      'X-Signature-Timestamp': String(Math.floor(Date.now() / 1000)),
     });
     const result = await handler.verifyInbound(req, makeBotConfig());
     expect(result).toBe(true);
@@ -89,7 +89,7 @@ describe('DiscordHandler.verifyInbound', () => {
 
     const req = makeRequest({
       'X-Signature-Ed25519': 'deadbeef',
-      'X-Signature-Timestamp': '12345',
+      'X-Signature-Timestamp': String(Math.floor(Date.now() / 1000)),
     });
     const result = await handler.verifyInbound(req, makeBotConfig());
     expect(result).toBe(false);

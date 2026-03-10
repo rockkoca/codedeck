@@ -150,6 +150,21 @@ export async function getChannelBinding(
     .first<DbChannelBinding>();
 }
 
+/**
+ * Find a channel binding by platform + channelId without knowing the server.
+ * Used for inbound webhook routing where the server is unknown.
+ */
+export async function findChannelBindingByPlatformChannel(
+  db: D1Database,
+  platform: string,
+  channelId: string,
+): Promise<DbChannelBinding | null> {
+  return db
+    .prepare('SELECT * FROM channel_bindings WHERE platform = ? AND channel_id = ? LIMIT 1')
+    .bind(platform, channelId)
+    .first<DbChannelBinding>();
+}
+
 // ── Cron jobs ─────────────────────────────────────────────────────────────
 
 export async function getDueCronJobs(db: D1Database): Promise<DbCronJob[]> {

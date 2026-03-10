@@ -145,6 +145,17 @@ botRoutes.patch('/:botId', async (c) => {
   if (config) {
     const existing = await decryptBotConfig(row.config_encrypted, c.env.BOT_ENCRYPTION_KEY);
     const merged = { ...existing, ...config };
+
+    // Validate that required keys are still present and non-empty after merge
+    const handler = getHandler(row.platform);
+    if (handler) {
+      const { requiredConfigKeys } = handler.getCapabilities();
+      const missing = requiredConfigKeys.filter((k) => !merged[k]);
+      if (missing.length > 0) {
+        return c.json({ error: 'missing_required_config', keys: missing }, 400);
+      }
+    }
+
     newEncrypted = await encryptBotConfig(merged, c.env.BOT_ENCRYPTION_KEY);
   }
 

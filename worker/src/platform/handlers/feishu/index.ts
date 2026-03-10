@@ -35,6 +35,10 @@ export class FeishuHandler implements PlatformHandler {
 
     if (!timestamp || !nonce || !signature) return false;
 
+    // Reject stale requests (replay protection — 5 minute window)
+    const tsSeconds = parseInt(timestamp, 10);
+    if (isNaN(tsSeconds) || Math.abs(Date.now() / 1000 - tsSeconds) > 300) return false;
+
     const raw = encryptKey + timestamp + nonce + body;
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
     const computed = Array.from(new Uint8Array(digest))

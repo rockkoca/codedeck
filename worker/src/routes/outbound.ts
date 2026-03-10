@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import type { BotConfig, InboundMessage, OutboundMessage } from '../platform/types.js';
 import { getHandler } from '../platform/registry.js';
-import { getChannelBinding, getServerById } from '../db/queries.js';
+import { findChannelBindingByPlatformChannel, getServerById } from '../db/queries.js';
 import { sha256Hex, decryptBotConfig } from '../security/crypto.js';
 import logger from '../util/logger.js';
 
@@ -13,7 +13,7 @@ export const outboundRoutes = new Hono<{ Bindings: Env }>();
  * Called by webhook.ts after verification and rate limiting.
  */
 export async function routeInbound(msg: InboundMessage, env: Env): Promise<void> {
-  const binding = await getChannelBinding(env.DB, msg.platform, msg.channelId);
+  const binding = await findChannelBindingByPlatformChannel(env.DB, msg.platform, msg.channelId);
   if (!binding) {
     logger.info({ platform: msg.platform, channelId: msg.channelId }, 'No channel binding found — ignoring');
     return;

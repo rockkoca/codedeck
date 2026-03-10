@@ -155,14 +155,14 @@ export async function checkServerTeamAccess(
   userId: string,
 ): Promise<boolean> {
   const server = await c.env.DB
-    .prepare('SELECT team_id, owner_id FROM servers WHERE id = ?')
+    .prepare('SELECT team_id, user_id FROM servers WHERE id = ?')
     .bind(serverId)
-    .first<{ team_id: string | null; owner_id: string }>();
+    .first<{ team_id: string | null; user_id: string }>();
 
   if (!server) return false;
 
   // Direct owner always has access
-  if (server.owner_id === userId) return true;
+  if (server.user_id === userId) return true;
 
   // If server belongs to a team, check membership
   if (server.team_id) {
