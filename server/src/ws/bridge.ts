@@ -184,6 +184,12 @@ export class WsBridge {
         return;
       }
 
+      // Ping/pong: respond directly, don't forward to daemon
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
+
       // Whitelist check
       if (typeof msg.type !== 'string' || !BROWSER_WHITELIST.has(msg.type)) {
         logger.warn({ serverId: this.serverId, type: msg.type }, 'Browser message type not whitelisted — dropped');
