@@ -39,7 +39,9 @@ import { resolveServerRole } from './security/authorization.js';
 import logger from './util/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const WEB_DIST = join(__dirname, '..', '..', '..', 'web', 'dist');
+// Docker: /app/dist/index.js → /app/web/dist
+// Dev:    server/dist/index.js → web/dist (two levels up from server/dist)
+const WEB_DIST = process.env.WEB_DIST_PATH ?? join(__dirname, '..', '..', 'web', 'dist');
 
 // ── Daemon connection protection ──────────────────────────────────────────────
 const daemonConnectLimiter = new MemoryRateLimiter();
