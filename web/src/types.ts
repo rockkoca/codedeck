@@ -34,6 +34,7 @@ export interface SessionInfo {
   role: 'brain' | `w${number}`;
   agentType: string;
   state: 'running' | 'idle' | 'stopped' | 'error';
+  label?: string | null;
 }
 
 export interface ServerInfo {

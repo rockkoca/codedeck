@@ -15,7 +15,19 @@ interface AuthState {
   baseUrl: string;
 }
 
-type View = 'dashboard' | 'terminal';
+interface ServerInfo {
+  id: string;
+  name: string;
+  status: string;
+  lastHeartbeatAt: number | null;
+  createdAt: number;
+}
+
+function isServerOnline(s: ServerInfo): boolean {
+  if (s.status === 'offline') return false;
+  if (!s.lastHeartbeatAt) return false;
+  return Date.now() - s.lastHeartbeatAt < 2 * 60 * 1000;
+}
 
 export function App() {
   const [auth, setAuth] = useState<AuthState | null>(() => {
@@ -29,13 +41,14 @@ export function App() {
     }
   });
 
-  // Persist view + server across refresh
-  const [view, setView] = useState<View>(() =>
-    (localStorage.getItem('rcc_view') as View) ?? 'dashboard',
-  );
+  const [servers, setServers] = useState<ServerInfo[]>([]);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(
     () => localStorage.getItem('rcc_server'),
   );
+  const [selectedServerName, setSelectedServerName] = useState<string | null>(
+    () => localStorage.getItem('rcc_server_name'),
+  );
+  const [showMobileServerMenu, setShowMobileServerMenu] = useState(false);
 
   // Keep layout height within visual viewport on mobile (keyboard-aware)
   useEffect(() => {
@@ -67,9 +80,41 @@ export function App() {
     if (auth) configureApi(auth.baseUrl, auth.token);
   }, [auth]);
 
-  // On mount: if restoring terminal view from localStorage, immediately fetch sessions from D1
+  // Load servers list whenever auth is available
+  const loadServers = useCallback(async () => {
+    if (!auth) return;
+    try {
+      const data = await apiFetch<{ servers: ServerInfo[] }>('/api/server');
+      setServers(data.servers);
+      // Populate selected server name if missing
+      if (selectedServerId) {
+        const found = data.servers.find((s) => s.id === selectedServerId);
+        if (found && !selectedServerName) {
+          localStorage.setItem('rcc_server_name', found.name);
+          setSelectedServerName(found.name);
+        }
+      }
+    } catch { /* ignore */ }
+  }, [auth, selectedServerId, selectedServerName]);
+
+  useEffect(() => { loadServers(); }, [loadServers]);
+
+  // Rename = update project_name in D1 + local sessions state
+  const handleRenameSession = useCallback(async (sessionName: string, newProjectName: string) => {
+    if (!selectedServerId || !newProjectName) return;
+    // Optimistic update
+    setSessions((prev) => prev.map((s) => s.name === sessionName ? { ...s, project: newProjectName } : s));
+    try {
+      await apiFetch(`/api/server/${selectedServerId}/sessions/${encodeURIComponent(sessionName)}/rename`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: newProjectName }),
+      });
+    } catch { /* best-effort */ }
+  }, [selectedServerId]);
+
+  // On mount: if restoring terminal view, immediately fetch sessions from D1
   useEffect(() => {
-    if (!auth || !selectedServerId || view !== 'terminal') return;
+    if (!auth || !selectedServerId) return;
     apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string }> }>(
       `/api/server/${selectedServerId}/sessions`,
     ).then((data) => {
@@ -85,11 +130,11 @@ export function App() {
   }, []); // intentionally runs once on mount only
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  // Persist active session across refresh
   const [activeSession, setActiveSessionState] = useState<string | null>(
     () => localStorage.getItem('rcc_session'),
   );
   const [showNewSession, setShowNewSession] = useState(false);
+  const [renameRequest, setRenameRequest] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
@@ -101,11 +146,20 @@ export function App() {
 
   const wsRef = useRef<WsClient | null>(null);
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
+  const termFocusFnRef = useRef<(() => void) | null>(null);
+  const termFitFnRef = useRef<(() => void) | null>(null);
+  const termMarkInputFnRef = useRef<(() => void) | null>(null);
 
-  // Set up WebSocket only when in terminal view with a selected server
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const focusTerminal = useCallback(() => {
+    termFitFnRef.current?.();
+    if (!isMobile) termFocusFnRef.current?.();
+  }, [isMobile]);
+
+  // Set up WebSocket only when a server is selected
   useEffect(() => {
-    if (!auth || view !== 'terminal' || !selectedServerId) return;
+    if (!auth || !selectedServerId) return;
 
     const ws = new WsClient(auth.baseUrl, selectedServerId, auth.token);
     wsRef.current = ws;
@@ -148,17 +202,54 @@ export function App() {
       wsRef.current = null;
       setConnected(false);
     };
-  }, [auth, view, selectedServerId]);
+  }, [auth, selectedServerId]);
 
   // Subscribe to terminal when session changes OR when WS connects
-  // Must depend on `connected` so that restoring from localStorage (where wsRef is null
-  // on first render) still sets up the subscription once the WS actually connects.
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws?.connected || !activeSession) return;
     setLatencyMs(null);
     ws.subscribeTerminal(activeSession);
     return () => ws.unsubscribeTerminal(activeSession);
+  }, [activeSession, connected]);
+
+  // Global keyboard passthrough
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const ws = wsRef.current;
+      const session = activeSession;
+      if (!ws?.connected || !session) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName ?? '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (el?.isContentEditable) return;
+
+      let data: string | null = null;
+      if (e.key === 'Enter')     { data = '\r'; }
+      else if (e.key === 'Backspace') { data = '\x7f'; }
+      else if (e.key === 'Tab')  { data = '\t'; e.preventDefault(); }
+      else if (e.key === 'Escape') { data = '\x1b'; }
+      else if (e.key === 'ArrowUp')    { data = '\x1b[A'; }
+      else if (e.key === 'ArrowDown')  { data = '\x1b[B'; }
+      else if (e.key === 'ArrowRight') { data = '\x1b[C'; }
+      else if (e.key === 'ArrowLeft')  { data = '\x1b[D'; }
+      else if (e.key === 'Home')  { data = '\x1b[H'; }
+      else if (e.key === 'End')   { data = '\x1b[F'; }
+      else if (e.key === 'Delete') { data = '\x1b[3~'; }
+      else if (e.ctrlKey && e.key.length === 1) {
+        const code = e.key.toLowerCase().charCodeAt(0) - 96;
+        if (code >= 1 && code <= 26) { data = String.fromCharCode(code); }
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
+        data = e.key;
+      }
+
+      if (data !== null) {
+        e.preventDefault();
+        ws.sendInput(session, data);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
   }, [activeSession, connected]);
 
   const handleLogin = useCallback((state: AuthState) => {
@@ -168,22 +259,23 @@ export function App() {
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('rcc_auth');
-    localStorage.removeItem('rcc_view');
     localStorage.removeItem('rcc_server');
+    localStorage.removeItem('rcc_server_name');
     localStorage.removeItem('rcc_session');
     setAuth(null);
     setSessions([]);
     setActiveSession(null);
-    setView('dashboard');
     setSelectedServerId(null);
   }, [setActiveSession]);
 
-  const handleSelectServer = useCallback(async (serverId: string) => {
+  const handleSelectServer = useCallback(async (serverId: string, serverName?: string) => {
     localStorage.setItem('rcc_server', serverId);
-    localStorage.setItem('rcc_view', 'terminal');
+    if (serverName) { localStorage.setItem('rcc_server_name', serverName); setSelectedServerName(serverName); }
+    setSessions([]);
+    setActiveSession(null);
     setSelectedServerId(serverId);
-    setView('terminal');
-    // Immediately load sessions from D1 — no need to wait for WS handshake
+    setShowMobileServerMenu(false);
+    // Immediately load sessions from D1
     try {
       const data = await apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string }> }>(`/api/server/${serverId}/sessions`);
       setSessions(data.sessions.map((s) => ({
@@ -196,16 +288,30 @@ export function App() {
     } catch {
       // fallback: WS will populate sessions on connect
     }
-  }, []);
+  }, [setActiveSession]);
 
   const handleBackToDashboard = useCallback(() => {
-    localStorage.setItem('rcc_view', 'dashboard');
     localStorage.removeItem('rcc_server');
+    localStorage.removeItem('rcc_server_name');
     localStorage.removeItem('rcc_session');
-    setView('dashboard');
     setSelectedServerId(null);
+    setSelectedServerName(null);
     setActiveSession(null);
+    setShowMobileServerMenu(false);
   }, [setActiveSession]);
+
+  const handleStopProject = useCallback((project: string) => {
+    if (!wsRef.current) return;
+    wsRef.current.sendSessionCommand('stop', { project });
+    setSessions((prev) => prev.filter((s) => s.project !== project));
+    if (sessions.some((s) => s.project === project && s.name === activeSession)) {
+      setActiveSession(null);
+    }
+  }, [sessions, activeSession, setActiveSession]);
+
+  const handleRestartProject = useCallback((project: string, fresh?: boolean) => {
+    wsRef.current?.sendSessionCommand('restart', { project, ...(fresh ? { fresh: true } : {}) });
+  }, []);
 
   const registerDiffApplyer = useCallback((sessionName: string, apply: (d: TerminalDiff) => void) => {
     diffApplyersRef.current.set(sessionName, apply);
@@ -215,33 +321,35 @@ export function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
-  // If we restored terminal view but have no server, go back to dashboard
-  if (view === 'dashboard' || !selectedServerId) {
-    return <DashboardPage onSelectServer={handleSelectServer} onLogout={handleLogout} />;
-  }
-
   const activeSessionInfo = sessions.find((s) => s.name === activeSession) ?? null;
 
   return (
     <div class="layout">
-      {/* Sidebar */}
+      {/* Sidebar — server list */}
       <aside class="sidebar">
-        <div class="sidebar-header">
-          <button class="btn btn-secondary" style={{ marginRight: 8, padding: '4px 8px' }} onClick={handleBackToDashboard}>
-            ←
-          </button>
-          Codedeck
-        </div>
-        <div style={{ padding: '8px 16px 4px', fontSize: 11, color: '#64748b' }}>
-          <span class={`badge ${connected ? 'badge-online' : 'badge-offline'}`}>
-            {connected ? '● Online' : '○ Offline'}
-          </span>
+        <div class="sidebar-header">Codedeck</div>
+        <div class="server-list">
+          {servers.map((server) => {
+            const online = isServerOnline(server);
+            return (
+              <button
+                key={server.id}
+                class={`server-item${server.id === selectedServerId ? ' active' : ''}${online ? '' : ' offline'}`}
+                onClick={() => handleSelectServer(server.id, server.name)}
+              >
+                <span class="server-item-dot" style={{ color: online ? '#4ade80' : '#475569' }}>
+                  {online ? '●' : '○'}
+                </span>
+                {server.name}
+              </button>
+            );
+          })}
+          {servers.length === 0 && (
+            <div style={{ padding: '12px 16px', fontSize: 12, color: '#475569' }}>No devices</div>
+          )}
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ padding: '12px 16px', borderTop: '1px solid #334155' }}>
-          <button class="btn btn-secondary" style={{ width: '100%', marginBottom: 8 }} onClick={() => setShowNewSession(true)}>
-            + New Session
-          </button>
           <button class="btn btn-secondary" style={{ width: '100%', fontSize: 11 }} onClick={handleLogout}>
             Log Out
           </button>
@@ -250,32 +358,83 @@ export function App() {
 
       {/* Main */}
       <main class="main">
-        <SessionTabs
-          sessions={sessions}
-          activeSession={activeSession}
-          onSelect={setActiveSession}
-        />
-
-        {activeSession ? (
-          <TerminalView
-            key={activeSession}
-            sessionName={activeSession}
-            ws={wsRef.current}
-            onDiff={(apply) => registerDiffApplyer(activeSession, apply)}
-            onLatency={setLatencyMs}
-            onTap={() => inputRef.current?.focus()}
-          />
+        {!selectedServerId ? (
+          <DashboardPage onSelectServer={handleSelectServer} onLogout={handleLogout} onServersLoaded={setServers} />
         ) : (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 32 }}>⌨</div>
-            <div>Select a session or start a new one</div>
-            <button class="btn btn-primary" onClick={() => setShowNewSession(true)}>
-              + New Session
-            </button>
-          </div>
-        )}
+          <>
+            {/* Mobile-only server switcher */}
+            <div class="mobile-server-bar">
+              <div class="mobile-server-switcher-wrap">
+                <button
+                  class="mobile-server-btn"
+                  onClick={() => setShowMobileServerMenu((o) => !o)}
+                >
+                  ≡ {selectedServerName ?? 'Server'} ▾
+                </button>
+                {showMobileServerMenu && (
+                  <div class="mobile-server-menu">
+                    <button class="mobile-server-menu-item" onClick={handleBackToDashboard}>
+                      ← Home
+                    </button>
+                    {servers.map((s) => {
+                      const online = isServerOnline(s);
+                      return (
+                        <button
+                          key={s.id}
+                          class={`mobile-server-menu-item${s.id === selectedServerId ? ' active' : ''}`}
+                          onClick={() => handleSelectServer(s.id, s.name)}
+                        >
+                          <span style={{ color: online ? '#4ade80' : '#475569' }}>{online ? '●' : '○'}</span>
+                          {' '}{s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <span class={`badge ${connected ? 'badge-online' : 'badge-offline'}`} style={{ fontSize: 10 }}>
+                {connected ? '● Online' : '○ Offline'}
+              </span>
+            </div>
 
-        <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} latencyMs={latencyMs} inputRef={inputRef} />
+            <SessionTabs
+              sessions={sessions}
+              activeSession={activeSession}
+              onSelect={setActiveSession}
+              onNewSession={() => setShowNewSession(true)}
+              onStopProject={handleStopProject}
+              onRestartProject={handleRestartProject}
+              renameRequest={renameRequest}
+              onRenameHandled={() => setRenameRequest(null)}
+              onRenameSession={handleRenameSession}
+            />
+
+            {activeSession ? (
+              <TerminalView
+                key={activeSession}
+                sessionName={activeSession}
+                ws={wsRef.current}
+                connected={connected}
+                onDiff={(apply) => registerDiffApplyer(activeSession, apply)}
+                onLatency={setLatencyMs}
+                onTap={() => inputRef.current?.focus()}
+                onFocusFn={(fn) => { termFocusFnRef.current = fn; }}
+                onFitFn={(fn) => { termFitFnRef.current = fn; }}
+                onMarkInputFn={(fn) => { termMarkInputFnRef.current = fn; }}
+              />
+            ) : (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 32 }}>⌨</div>
+                <div>Select a session or start a new one</div>
+                <button class="btn btn-primary" onClick={() => setShowNewSession(true)}>
+                  + New Session
+                </button>
+              </div>
+            )}
+
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} latencyMs={latencyMs} inputRef={inputRef} onAfterAction={focusTerminal} onMarkInput={() => termMarkInputFnRef.current?.()} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} />
+          </>
+        )}
       </main>
 
       {showNewSession && (

@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { nanoid } from 'nanoid';
 import type { Env } from '../types.js';
-import { getServerById, getDbSessionsByServer, upsertDbSession, deleteDbSession } from '../db/queries.js';
+import { getServerById, getDbSessionsByServer, upsertDbSession, deleteDbSession, updateSessionLabel, updateProjectName } from '../db/queries.js';
 import { requireAuth, resolveServerRole } from '../security/authorization.js';
 import logger from '../util/logger.js';
 
@@ -57,6 +57,48 @@ sessionMgmtRoutes.put('/:id/sessions/:name', async (c) => {
   }
 
   await upsertDbSession(c.env.DB, nanoid(), serverId, sessionName, projectName, projectRole, agentType, projectDir, state);
+  return c.json({ ok: true });
+});
+
+/** PATCH /api/server/:id/sessions/:name/label — update display label (web client) */
+sessionMgmtRoutes.patch('/:id/sessions/:name/label', async (c) => {
+  const userId = c.get('userId' as never) as string;
+  const serverId = c.req.param('id')!;
+  const sessionName = c.req.param('name')!;
+  const role = await resolveServerRole(c.env.DB, serverId, userId);
+  if (role === 'none') return c.json({ error: 'forbidden' }, 403);
+
+  let body: { label?: string | null };
+  try {
+    body = await c.req.json() as { label?: string | null };
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const label = typeof body.label === 'string' && body.label.trim() ? body.label.trim() : null;
+  await updateSessionLabel(c.env.DB, serverId, sessionName, label);
+  return c.json({ ok: true });
+});
+
+/** PATCH /api/server/:id/sessions/:name/rename — update project display name */
+sessionMgmtRoutes.patch('/:id/sessions/:name/rename', async (c) => {
+  const userId = c.get('userId' as never) as string;
+  const serverId = c.req.param('id')!;
+  const sessionName = c.req.param('name')!;
+  const role = await resolveServerRole(c.env.DB, serverId, userId);
+  if (role === 'none') return c.json({ error: 'forbidden' }, 403);
+
+  let body: { name?: string };
+  try {
+    body = await c.req.json() as { name?: string };
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const newName = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!newName) return c.json({ error: 'name_required' }, 400);
+
+  await updateProjectName(c.env.DB, serverId, sessionName, newName);
   return c.json({ ok: true });
 });
 

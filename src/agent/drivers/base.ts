@@ -4,7 +4,8 @@ export type DeleteBufferFn = () => Promise<void>;
 
 export interface LaunchOptions {
   cwd?: string;
-  resumeFirst?: boolean; // try to resume before starting fresh
+  /** When true, start a fresh session without resuming the last conversation. */
+  fresh?: boolean;
 }
 
 export interface AgentDriver {

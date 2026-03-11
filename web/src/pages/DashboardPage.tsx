@@ -5,8 +5,9 @@ import { GettingStarted } from '../components/GettingStarted.js';
 import { apiFetch } from '../api.js';
 
 interface Props {
-  onSelectServer: (serverId: string) => void;
+  onSelectServer: (serverId: string, serverName: string) => void;
   onLogout: () => void;
+  onServersLoaded?: (servers: ServerInfo[]) => void;
 }
 
 interface ServerInfo {
@@ -24,7 +25,7 @@ interface KeyInfo {
   revokedAt: number | null;
 }
 
-export function DashboardPage({ onSelectServer, onLogout }: Props) {
+export function DashboardPage({ onSelectServer, onLogout, onServersLoaded }: Props) {
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [keys, setKeys] = useState<KeyInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +37,7 @@ export function DashboardPage({ onSelectServer, onLogout }: Props) {
         apiFetch<{ keys: KeyInfo[] }>('/api/auth/user/me/keys'),
       ]);
       setServers(serverRes.servers);
+      onServersLoaded?.(serverRes.servers);
       setKeys(keyRes.keys);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);

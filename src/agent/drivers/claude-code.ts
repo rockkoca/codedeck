@@ -20,10 +20,11 @@ const STARTUP_PROMPTS: Array<{
   { pattern: /trust.*folder|do you trust/i, keys: ['Enter'], label: 'trust-folder' },
   // Update available / Press enter to continue
   { pattern: /update available|press enter to continue/i, keys: ['Enter'], label: 'update' },
-  // Bypass Permissions dialog — cursor is on "No, exit", need Down to reach "Yes, I accept"
-  { pattern: /bypass permissions/i, keys: ['Down', 'Enter'], label: 'bypass-perms' },
-  // Settings error — cursor is on "Exit and fix manually", need Down to reach "Continue without these settings"
-  { pattern: /settings.*error|error.*settings/i, keys: ['Down', 'Enter'], label: 'settings-error' },
+  // "Bypass Permissions mode" dialog — "No, exit" is selected, Down selects "Yes, I accept"
+  // Pattern matches "bypass" alone since tmux may split "Bypass\nPermissions" across lines
+  { pattern: /yes.*i accept|no.*exit.*bypass|bypass/i, keys: ['Down', 'Enter'], label: 'bypass-perms' },
+  // "Files with errors are skipped" / settings dialog — "Exit and fix" selected, Down → "Continue without these settings"
+  { pattern: /continue without these settings|files with errors are skipped|invalid settings/i, keys: ['Down', 'Enter'], label: 'settings-error' },
   // Generic "[Y/n]" confirmation — Enter for default yes
   { pattern: /\[Y\/n\]/i, keys: ['Enter'], label: 'confirm' },
 ];
@@ -35,12 +36,15 @@ export class ClaudeCodeDriver implements AgentDriver {
 
   buildLaunchCommand(_sessionName: string, opts?: LaunchOptions): string {
     const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
-    return `${cwd}claude --dangerously-skip-permissions`;
+    if (opts?.fresh) {
+      return `${cwd}claude --dangerously-skip-permissions`;
+    }
+    // Default: resume last conversation; fall back to fresh if no history
+    return `${cwd}claude --dangerously-skip-permissions -c || claude --dangerously-skip-permissions`;
   }
 
   buildResumeCommand(_sessionName: string, opts?: LaunchOptions): string {
-    const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
-    return `${cwd}claude --dangerously-skip-permissions -c`;
+    return this.buildLaunchCommand(_sessionName, opts);
   }
 
   async postLaunch(
@@ -62,10 +66,8 @@ export class ClaudeCodeDriver implements AgentDriver {
 
       const screen = lines.join('\n');
 
-      // Check if agent is ready (idle prompt visible) — stop polling
-      if (screen.includes(this.promptChar)) return;
-
-      // Try each startup prompt pattern
+      // Check startup prompts FIRST — dialogs contain ❯ in their menu cursors,
+      // so checking for idle ❯ before this would cause a false-positive early exit.
       let handled = false;
       for (const { pattern, keys } of STARTUP_PROMPTS) {
         if (pattern.test(screen)) {
@@ -78,14 +80,13 @@ export class ClaudeCodeDriver implements AgentDriver {
         }
       }
 
-      // If idle prompt appeared after handling, stop
       if (handled) {
         await new Promise((r) => setTimeout(r, 500));
-        try {
-          const refreshed = await capturePane();
-          if (refreshed.join('\n').includes(this.promptChar)) return;
-        } catch { /* continue polling */ }
+        continue; // re-poll — may be more dialogs, or idle prompt
       }
+
+      // No dialog matched — check if agent is idle
+      if (screen.includes(this.promptChar)) return;
     }
   }
 

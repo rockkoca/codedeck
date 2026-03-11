@@ -9,13 +9,15 @@ export class CodexDriver implements AgentDriver {
 
   buildLaunchCommand(_sessionName: string, opts?: LaunchOptions): string {
     const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
-    return `${cwd}codex -s danger-full-access`;
+    if (opts?.fresh) {
+      return `${cwd}codex -s danger-full-access`;
+    }
+    // Default: resume last session; fall back to fresh if no history
+    return `${cwd}codex -s danger-full-access resume --last || codex -s danger-full-access`;
   }
 
   buildResumeCommand(_sessionName: string, opts?: LaunchOptions): string {
-    const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
-    // Try resume --last; caller should fallback to fresh start on non-zero exit
-    return `${cwd}codex -s danger-full-access resume --last`;
+    return this.buildLaunchCommand(_sessionName, opts);
   }
 
   detectStatus(lines: string[]): AgentStatus {

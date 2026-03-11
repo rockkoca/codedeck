@@ -70,10 +70,13 @@ export async function bindFlow(bindUrl: string, deviceName?: string): Promise<vo
   // Install tmux if missing
   await ensureTmux();
 
-  // Install launch agent (macOS)
+  // Install system service
   if (process.platform === 'darwin') {
     await installLaunchAgent();
     console.log('\nDaemon installed as a launch agent — starts automatically on login.');
+  } else if (process.platform === 'linux') {
+    await installSystemdService();
+    console.log('\nDaemon installed as a systemd user service — starts automatically on login.');
   } else {
     console.log('\nRun "codedeck start" to start the daemon.');
   }
@@ -150,6 +153,38 @@ async function installLaunchAgent(): Promise<void> {
   try { execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null`, { stdio: 'ignore' }); } catch { /* ok */ }
   execSync(`launchctl load -w "${PLIST_PATH}"`);
   console.log(`Launch agent loaded: ${PLIST_PATH}`);
+}
+
+async function installSystemdService(): Promise<void> {
+  const nodeExec = process.execPath;
+  const script = process.argv[1];
+  const logPath = join(CREDS_DIR, 'daemon.log');
+  const serviceDir = join(homedir(), '.config', 'systemd', 'user');
+  const servicePath = join(serviceDir, 'codedeck.service');
+
+  const unit = `[Unit]
+Description=Codedeck Daemon
+After=network.target
+
+[Service]
+ExecStart=${nodeExec} ${script} start
+Restart=always
+RestartSec=5
+Environment=PATH=${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}
+Environment=HOME=${homedir()}
+StandardOutput=append:${logPath}
+StandardError=append:${logPath}
+
+[Install]
+WantedBy=default.target
+`;
+
+  await mkdir(serviceDir, { recursive: true });
+  await writeFile(servicePath, unit, 'utf8');
+
+  execSync('systemctl --user daemon-reload', { stdio: 'inherit' });
+  execSync('systemctl --user enable --now codedeck', { stdio: 'inherit' });
+  console.log(`Systemd user service installed: ${servicePath}`);
 }
 
 export async function loadCredentials(): Promise<ServerCredentials | null> {

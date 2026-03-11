@@ -11,12 +11,15 @@ export class OpenCodeDriver implements AgentDriver {
 
   buildLaunchCommand(_sessionName: string, opts?: LaunchOptions): string {
     const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
-    return `${cwd}opencode`;
+    if (opts?.fresh) {
+      return `${cwd}opencode`;
+    }
+    // Default: resume last conversation; fall back to fresh if no history
+    return `${cwd}opencode -c || opencode`;
   }
 
   buildResumeCommand(_sessionName: string, opts?: LaunchOptions): string {
-    const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
-    return `${cwd}opencode -c`;
+    return this.buildLaunchCommand(_sessionName, opts);
   }
 
   detectStatus(lines: string[]): AgentStatus {

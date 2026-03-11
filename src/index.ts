@@ -6,6 +6,10 @@ import { loadStore, listSessions } from './store/session-store.js';
 import { sendKeys } from './agent/tmux.js';
 import { bindFlow } from './bind/bind-flow.js';
 import logger from './util/logger.js';
+import { execSync } from 'child_process';
+import { homedir } from 'os';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 
 const program = new Command()
   .name('codedeck')
@@ -96,6 +100,55 @@ program
   .action(async (url: string, deviceName?: string) => {
     await bindFlow(url, deviceName);
   });
+
+program
+  .command('service')
+  .description('Manage the codedeck system service')
+  .addCommand(
+    new Command('restart')
+      .description('Rebuild and restart the codedeck daemon service')
+      .option('--no-build', 'Skip rebuild step')
+      .action(async (opts: { build: boolean }) => {
+        const projectRoot = resolve(process.argv[1], '../..'); // dist/index.js → project root
+
+        if (opts.build) {
+          console.log('Building...');
+          try {
+            execSync('npm run build', { cwd: projectRoot, stdio: 'inherit' });
+          } catch {
+            console.error('Build failed, aborting restart.');
+            process.exit(1);
+          }
+        }
+
+        const platform = process.platform;
+
+        if (platform === 'darwin') {
+          const plist = resolve(homedir(), 'Library/LaunchAgents/cc.codedeck.daemon.plist');
+          if (!existsSync(plist)) {
+            console.error(`Plist not found: ${plist}`);
+            process.exit(1);
+          }
+          console.log('Restarting via launchctl...');
+          execSync(`launchctl unload "${plist}"`, { stdio: 'inherit' });
+          execSync(`launchctl load "${plist}"`, { stdio: 'inherit' });
+          console.log('Done.');
+        } else if (platform === 'linux') {
+          const userService = resolve(homedir(), '.config/systemd/user/codedeck.service');
+          const isUserService = existsSync(userService);
+          console.log('Restarting via systemd...');
+          if (isUserService) {
+            execSync('systemctl --user daemon-reload && systemctl --user restart codedeck', { stdio: 'inherit' });
+          } else {
+            execSync('sudo systemctl daemon-reload && sudo systemctl restart codedeck', { stdio: 'inherit' });
+          }
+          console.log('Done.');
+        } else {
+          console.error(`Unsupported platform: ${platform}`);
+          process.exit(1);
+        }
+      }),
+  );
 
 program.parseAsync(process.argv).catch((err) => {
   logger.error({ err }, 'Fatal error');

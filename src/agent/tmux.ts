@@ -120,6 +120,7 @@ const XTERM_KEY_MAP: Record<string, string> = {
   '\x1b[1~': 'Home','\x1b[3~': 'DC',
   '\x1b[4~': 'End', '\x1b[5~': 'PPage',
   '\x1b[6~': 'NPage','\x1b[2~': 'IC',
+  '\x1b[Z': 'BTab',
   '\r': 'Enter',    '\x7f': 'BSpace',
   '\x1b': 'Escape',
   '\x1bOP': 'F1',   '\x1bOQ': 'F2',

@@ -8,7 +8,7 @@ interface ServerInfo {
 
 interface Props {
   servers: ServerInfo[];
-  onSelectServer: (serverId: string) => void;
+  onSelectServer: (serverId: string, serverName: string) => void;
 }
 
 function isOnline(server: ServerInfo): boolean {
@@ -44,7 +44,7 @@ export function ServerList({ servers, onSelectServer }: Props) {
                 Added {new Date(s.createdAt).toLocaleDateString()}
               </div>
               {online && (
-                <button class="btn btn-primary" style={{ width: '100%' }} onClick={() => onSelectServer(s.id)}>
+                <button class="btn btn-primary" style={{ width: '100%' }} onClick={() => onSelectServer(s.id, s.name)}>
                   Connect
                 </button>
               )}

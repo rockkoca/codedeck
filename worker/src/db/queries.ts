@@ -209,6 +209,7 @@ export interface DbSession {
   agent_type: string;
   project_dir: string;
   state: string;
+  label: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -238,7 +239,6 @@ export async function upsertDbSession(
       `INSERT INTO sessions (id, server_id, name, project_name, role, agent_type, project_dir, state, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(server_id, name) DO UPDATE SET
-         project_name = excluded.project_name,
          role = excluded.role,
          agent_type = excluded.agent_type,
          project_dir = excluded.project_dir,
@@ -251,6 +251,20 @@ export async function upsertDbSession(
 
 export async function deleteDbSession(db: D1Database, serverId: string, name: string): Promise<void> {
   await db.prepare('DELETE FROM sessions WHERE server_id = ? AND name = ?').bind(serverId, name).run();
+}
+
+export async function updateSessionLabel(db: D1Database, serverId: string, name: string, label: string | null): Promise<void> {
+  await db
+    .prepare('UPDATE sessions SET label = ?, updated_at = ? WHERE server_id = ? AND name = ?')
+    .bind(label, Date.now(), serverId, name)
+    .run();
+}
+
+export async function updateProjectName(db: D1Database, serverId: string, sessionName: string, projectName: string): Promise<void> {
+  await db
+    .prepare('UPDATE sessions SET project_name = ?, updated_at = ? WHERE server_id = ? AND name = ?')
+    .bind(projectName, Date.now(), serverId, sessionName)
+    .run();
 }
 
 // ── Cron jobs ─────────────────────────────────────────────────────────────

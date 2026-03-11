@@ -48,6 +48,8 @@ export interface ProjectConfig {
   dir: string;
   brainType: AgentType;
   workerTypes: AgentType[]; // one entry per worker slot
+  /** When true, start fresh sessions without resuming last conversation. */
+  fresh?: boolean;
 }
 
 export function getDriver(type: AgentType): AgentDriver {
@@ -64,13 +66,13 @@ export function sessionName(project: string, role: 'brain' | `w${number}`): stri
 
 /** Start all sessions for a project (brain + workers). */
 export async function startProject(config: ProjectConfig): Promise<void> {
-  const { name, dir, brainType, workerTypes } = config;
+  const { name, dir, brainType, workerTypes, fresh } = config;
 
-  await launchSession({ name: sessionName(name, 'brain'), projectName: name, role: 'brain', agentType: brainType, projectDir: dir });
+  await launchSession({ name: sessionName(name, 'brain'), projectName: name, role: 'brain', agentType: brainType, projectDir: dir, fresh });
 
   for (let i = 0; i < workerTypes.length; i++) {
     const role = `w${i + 1}` as `w${number}`;
-    await launchSession({ name: sessionName(name, role), projectName: name, role, agentType: workerTypes[i], projectDir: dir });
+    await launchSession({ name: sessionName(name, role), projectName: name, role, agentType: workerTypes[i], projectDir: dir, fresh });
   }
 }
 
@@ -143,10 +145,12 @@ interface LaunchOpts {
   projectDir: string;
   skipStore?: boolean;
   extraEnv?: Record<string, string>;
+  /** When true, start fresh without resuming last conversation. */
+  fresh?: boolean;
 }
 
 export async function launchSession(opts: LaunchOpts): Promise<void> {
-  const { name, projectName, role, agentType, projectDir, skipStore, extraEnv } = opts;
+  const { name, projectName, role, agentType, projectDir, skipStore, extraEnv, fresh } = opts;
   const driver = getDriver(agentType);
 
   // Configure agent-specific hooks/signals
@@ -162,29 +166,9 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
 
   const exists = await sessionExists(name);
   if (!exists) {
-    // On restart (skipStore=true), try resume first so agents can continue their conversation.
-    // On first launch, go straight to buildLaunchCommand — resume commands may hang waiting
-    // for interactive input when there is no prior conversation.
-    let launched = false;
-
-    if (skipStore) {
-      const resumeCmd = driver.buildResumeCommand(name, { cwd: projectDir, resumeFirst: true });
-      if (resumeCmd) {
-        try {
-          await newSession(name, resumeCmd, { cwd: projectDir, env: extraEnv });
-          launched = true;
-          logger.info({ session: name, agentType }, 'Resumed session');
-        } catch {
-          await killSession(name).catch(() => {});
-        }
-      }
-    }
-
-    if (!launched) {
-      const launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir });
-      await newSession(name, launchCmd, { cwd: projectDir, env: extraEnv });
-      logger.info({ session: name, agentType }, 'Started fresh session');
-    }
+    const launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh });
+    await newSession(name, launchCmd, { cwd: projectDir, env: extraEnv });
+    logger.info({ session: name, agentType }, 'Launched session');
   }
 
   if (!skipStore) {

@@ -118,6 +118,7 @@ async function handleStart(cmd: Record<string, unknown>, serverLink: ServerLink)
 
 async function handleRestart(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
   const project = cmd.project as string | undefined;
+  const fresh = cmd.fresh === true;
   if (!project) {
     logger.warn('session.restart: missing project name');
     return;
@@ -144,9 +145,10 @@ async function handleRestart(cmd: Record<string, unknown>, serverLink: ServerLin
       workerTypes: sessions
         .filter((s) => s.role !== 'brain')
         .map((s) => s.agentType as ProjectConfig['brainType']),
+      fresh,
     };
     await startProject(config);
-    logger.info({ project }, 'Session restarted via web');
+    logger.info({ project, fresh }, 'Session restarted via web');
   } catch (err) {
     logger.error({ project, err }, 'session.restart failed');
     const message = err instanceof Error ? err.message : String(err);

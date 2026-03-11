@@ -29,6 +29,7 @@ export class WsClient {
   private baseUrl: string;
   private serverId: string;
   private _connected = false;
+  private _connecting = false;
 
   constructor(baseUrl: string, serverId: string, token: string) {
     this.baseUrl = baseUrl;
@@ -94,6 +95,9 @@ export class WsClient {
   }
 
   private async openSocket(): Promise<void> {
+    if (this._connecting) return;
+    this._connecting = true;
+
     const wsUrl = this.baseUrl
       .replace(/^http/, 'ws')
       .replace(/\/$/, '');
@@ -110,12 +114,14 @@ export class WsClient {
         body: JSON.stringify({ serverId: this.serverId }),
       });
       if (!res.ok) {
+        this._connecting = false;
         this.scheduleReconnect();
         return;
       }
       const data = await res.json() as { ticket: string };
       ticket = data.ticket;
     } catch {
+      this._connecting = false;
       this.scheduleReconnect();
       return;
     }
@@ -123,6 +129,7 @@ export class WsClient {
     const url = `${wsUrl}/api/server/${this.serverId}/terminal?ticket=${encodeURIComponent(ticket)}`;
 
     this.ws = new WebSocket(url);
+    this._connecting = false;
 
     this.ws.addEventListener('open', () => {
       this._connected = true;
@@ -142,9 +149,13 @@ export class WsClient {
     });
 
     this.ws.addEventListener('close', () => {
+      const wasConnected = this._connected;
       this._connected = false;
       this.ws = null;
       this.clearTimers();
+      if (wasConnected) {
+        this.dispatch({ type: 'session.event', event: 'disconnected', session: '', state: 'disconnected' });
+      }
       this.scheduleReconnect();
     });
 
