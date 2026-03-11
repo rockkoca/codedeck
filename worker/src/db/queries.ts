@@ -267,6 +267,35 @@ export async function updateProjectName(db: D1Database, serverId: string, sessio
     .run();
 }
 
+// ── Quick data ────────────────────────────────────────────────────────────
+
+export interface QuickData {
+  history: string[];
+  commands: string[];
+  phrases: string[];
+}
+
+const EMPTY_QUICK_DATA: QuickData = { history: [], commands: [], phrases: [] };
+
+export async function getQuickData(db: D1Database, userId: string): Promise<QuickData> {
+  const row = await db.prepare('SELECT data FROM user_quick_data WHERE user_id = ?').bind(userId).first<{ data: string }>();
+  if (!row) return { ...EMPTY_QUICK_DATA };
+  try {
+    return JSON.parse(row.data) as QuickData;
+  } catch {
+    return { ...EMPTY_QUICK_DATA };
+  }
+}
+
+export async function upsertQuickData(db: D1Database, userId: string, data: QuickData): Promise<void> {
+  await db
+    .prepare(
+      'INSERT INTO user_quick_data (user_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at',
+    )
+    .bind(userId, JSON.stringify(data), Date.now())
+    .run();
+}
+
 // ── Cron jobs ─────────────────────────────────────────────────────────────
 
 export async function getDueCronJobs(db: D1Database): Promise<DbCronJob[]> {

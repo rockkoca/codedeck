@@ -2,22 +2,23 @@ import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import type { WsClient } from '../ws-client.js';
 import type { SessionInfo } from '../types.js';
+import { QuickInputPanel } from './QuickInputPanel.js';
+import type { UseQuickDataResult } from './QuickInputPanel.js';
 
 interface Props {
   ws: WsClient | null;
   activeSession: SessionInfo | null;
-  latencyMs?: number | null;
   inputRef?: RefObject<HTMLDivElement>;
   /** Called after each shortcut/action button click — use to restore focus to xterm on desktop. */
   onAfterAction?: () => void;
-  /** Called before sending input — starts latency timer. */
-  onMarkInput?: () => void;
   /** Called when stop is confirmed — immediately removes tab from state. */
   onStopProject?: (project: string) => void;
   /** Called when Rename is selected in the menu. */
   onRenameSession?: () => void;
   /** Display name (rename label) for the active session — shown in placeholder. */
   sessionDisplayName?: string | null;
+  /** Quick data hook result from parent (loaded once at app level). */
+  quickData: UseQuickDataResult;
 }
 
 type MenuAction = 'restart' | 'new' | 'stop';
@@ -46,27 +47,27 @@ function loadModel(): ModelChoice {
   return 'sonnet';
 }
 
-export function SessionControls({ ws, activeSession, latencyMs, inputRef, onAfterAction, onMarkInput, onStopProject, onRenameSession, sessionDisplayName }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData }: Props) {
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [model, setModel] = useState<ModelChoice>(loadModel);
   const [confirm, setConfirm] = useState<MenuAction | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
+  const quickWrapRef = useRef<HTMLDivElement>(null);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Internal ref for contenteditable — also written to the external inputRef
   const divRef = useRef<HTMLDivElement>(null);
+  // History navigation state
+  const histIdxRef = useRef(-1);   // -1 = not navigating; 0 = most recent
+  const draftRef = useRef('');      // saved unsent text while navigating
 
   // Keep external inputRef in sync so parent can call .focus()
   useEffect(() => {
     if (inputRef) (inputRef as { current: HTMLDivElement | null }).current = divRef.current;
   });
-
-  const latencyColor = latencyMs == null ? '#94a3b8'
-    : latencyMs < 150 ? '#22c55e'
-    : latencyMs < 400 ? '#f59e0b'
-    : '#ef4444';
 
   const disabled = !ws?.connected || !activeSession;
   const isClaudeCode = activeSession?.agentType === 'claude-code';
@@ -89,19 +90,81 @@ export function SessionControls({ ws, activeSession, latencyMs, inputRef, onAfte
 
   const getText = () => (divRef.current?.textContent ?? '').trim();
 
+  const fillInput = (text: string) => {
+    if (divRef.current) {
+      divRef.current.textContent = text;
+      // Place cursor at end
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(divRef.current);
+      range.collapse(false);
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      divRef.current.focus();
+    }
+    setHasText(!!text.trim());
+  };
+
   const handleSend = useCallback(() => {
     const text = getText();
     if (!text || !ws || !activeSession) return;
-    onMarkInput?.();
+    quickData.recordHistory(text, activeSession.name);
     ws.sendSessionCommand('send', { sessionName: activeSession.name, text });
     if (divRef.current) divRef.current.textContent = '';
     setHasText(false);
-  }, [ws, activeSession, onMarkInput]);
+    histIdxRef.current = -1;
+    draftRef.current = '';
+  }, [ws, activeSession, quickData]);
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       handleSend();
+      return;
+    }
+
+    const history = activeSession
+      ? (quickData.data.sessionHistory[activeSession.name] ?? [])
+      : [];
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && history.length > 0) {
+      // Only intercept when caret is on first/last line to avoid breaking multiline editing
+      const sel = window.getSelection();
+      const atTop = !sel || sel.anchorOffset === 0;
+      const atBottom = !sel || sel.anchorOffset === (divRef.current?.textContent?.length ?? 0);
+
+      if (e.key === 'ArrowUp' && atTop) {
+        e.preventDefault();
+        if (histIdxRef.current === -1) {
+          // Save current draft before navigating
+          draftRef.current = divRef.current?.textContent ?? '';
+        }
+        const next = Math.min(histIdxRef.current + 1, history.length - 1);
+        if (next !== histIdxRef.current || histIdxRef.current === -1) {
+          histIdxRef.current = next;
+          fillInput(history[next]);
+        }
+        return;
+      }
+
+      if (e.key === 'ArrowDown' && atBottom) {
+        e.preventDefault();
+        if (histIdxRef.current === -1) return;
+        const next = histIdxRef.current - 1;
+        if (next < 0) {
+          histIdxRef.current = -1;
+          fillInput(draftRef.current);
+        } else {
+          histIdxRef.current = next;
+          fillInput(history[next]);
+        }
+        return;
+      }
+    }
+
+    // Any other key while navigating: exit history nav but keep text
+    if (histIdxRef.current !== -1 && e.key !== 'Shift' && !e.metaKey && !e.ctrlKey) {
+      histIdxRef.current = -1;
+      draftRef.current = '';
     }
   };
 
@@ -115,7 +178,6 @@ export function SessionControls({ ws, activeSession, latencyMs, inputRef, onAfte
 
   const handleShortcut = (data: string) => {
     if (!ws || !activeSession) return;
-    onMarkInput?.();
     ws.sendInput(activeSession.name, data);
     onAfterAction?.();
   };
@@ -207,6 +269,34 @@ export function SessionControls({ ws, activeSession, latencyMs, inputRef, onAfte
 
       {/* Main input row */}
       <div class="controls">
+        {/* Quick input trigger — left of input */}
+        <div class="qp-trigger-wrap" ref={quickWrapRef}>
+          <button
+            class="qp-trigger"
+            title="快捷输入"
+            onClick={() => setQuickOpen((o) => !o)}
+          >
+            ⚡
+          </button>
+          <QuickInputPanel
+            open={quickOpen}
+            onClose={() => setQuickOpen(false)}
+            onSelect={fillInput}
+            agentType={activeSession?.agentType ?? 'claude-code'}
+            sessionName={activeSession?.name ?? ''}
+            data={quickData.data}
+            loaded={quickData.loaded}
+            onAddCommand={quickData.addCommand}
+            onAddPhrase={quickData.addPhrase}
+            onRemoveCommand={quickData.removeCommand}
+            onRemovePhrase={quickData.removePhrase}
+            onRemoveHistory={quickData.removeHistory}
+            onRemoveSessionHistory={quickData.removeSessionHistory}
+            onClearHistory={quickData.clearHistory}
+            onClearSessionHistory={quickData.clearSessionHistory}
+          />
+        </div>
+
         {/*
           contenteditable div — iOS does NOT show the password/keychain autofill bar
           for contenteditable elements, unlike <input> or <textarea>.
@@ -273,10 +363,6 @@ export function SessionControls({ ws, activeSession, latencyMs, inputRef, onAfte
             </div>
           )}
         </div>
-
-        <span style={{ marginLeft: 4, fontSize: 12, fontFamily: 'monospace', color: latencyColor, minWidth: 40, whiteSpace: 'nowrap' }}>
-          {latencyMs != null ? `${latencyMs}ms` : '—'}
-        </span>
       </div>
     </div>
   );

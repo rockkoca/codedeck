@@ -26,6 +26,14 @@ export async function capturePaneVisible(session: string): Promise<string> {
   return tmuxExec(`capture-pane -e -p -t ${session}`);
 }
 
+/**
+ * Capture scrollback history (above the visible area) with ANSI colors.
+ * -S -N starts N lines before visible top; -E -1 ends at the line before visible row 0.
+ */
+export async function capturePaneHistory(session: string, lines = 1000): Promise<string> {
+  return tmuxExec(`capture-pane -e -p -t ${session} -S -${lines} -E -1`);
+}
+
 /** Send a string of keys to a tmux pane (newline = Enter). */
 export async function sendKeys(session: string, keys: string): Promise<void> {
   const escaped = keys.replace(/'/g, "'\\''");

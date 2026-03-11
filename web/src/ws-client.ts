@@ -8,6 +8,7 @@ export type MessageHandler = (msg: ServerMessage) => void;
 
 export type ServerMessage =
   | { type: 'terminal.diff'; diff: TerminalDiff }
+  | { type: 'terminal.history'; sessionName: string; content: string }
   | { type: 'session.event'; event: string; session: string; state: string }
   | { type: 'session.error'; project: string; message: string }
   | { type: 'session_list'; sessions: Array<{ name: string; project: string; role: string; agentType: string; state: string }> }
@@ -30,6 +31,10 @@ export class WsClient {
   private serverId: string;
   private _connected = false;
   private _connecting = false;
+  private _destroyed = false;
+  private _pingLatency: number | null = null;
+  private _pingSentAt: number | null = null;
+  private _onLatency: ((ms: number) => void) | null = null;
 
   constructor(baseUrl: string, serverId: string, token: string) {
     this.baseUrl = baseUrl;
@@ -41,12 +46,23 @@ export class WsClient {
     return this._connected;
   }
 
+  get pingLatency(): number | null {
+    return this._pingLatency;
+  }
+
+  /** Register a callback for latency updates (called on every pong). */
+  onLatency(fn: ((ms: number) => void) | null): void {
+    this._onLatency = fn;
+  }
+
   connect(): void {
     if (this.ws) return;
     void this.openSocket();
   }
 
   disconnect(): void {
+    this._destroyed = true;
+    this._connecting = false;
     this.clearTimers();
     if (this.ws) {
       this.ws.close(1000, 'client disconnect');
@@ -141,7 +157,14 @@ export class WsClient {
     this.ws.addEventListener('message', (ev) => {
       try {
         const msg = JSON.parse(ev.data as string) as ServerMessage;
-        if (msg.type === 'pong') return;
+        if (msg.type === 'pong') {
+          if (this._pingSentAt !== null) {
+            this._pingLatency = Date.now() - this._pingSentAt;
+            this._pingSentAt = null;
+            this._onLatency?.(this._pingLatency);
+          }
+          return;
+        }
         this.dispatch(msg);
       } catch {
         // ignore parse errors
@@ -151,12 +174,13 @@ export class WsClient {
     this.ws.addEventListener('close', () => {
       const wasConnected = this._connected;
       this._connected = false;
+      this._connecting = false; // reset in case ticket fetch was in-flight
       this.ws = null;
       this.clearTimers();
       if (wasConnected) {
         this.dispatch({ type: 'session.event', event: 'disconnected', session: '', state: 'disconnected' });
       }
-      this.scheduleReconnect();
+      if (!this._destroyed) this.scheduleReconnect();
     });
 
     this.ws.addEventListener('error', () => {
@@ -165,16 +189,23 @@ export class WsClient {
   }
 
   private scheduleReconnect(): void {
+    if (this._destroyed) return;
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempt, RECONNECT_MAX_MS);
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {
-      void this.openSocket();
+      if (!this._destroyed) void this.openSocket();
     }, delay);
   }
 
   private startHeartbeat(): void {
+    // Send first ping immediately to get initial latency
+    try {
+      this._pingSentAt = Date.now();
+      this.send({ type: 'ping' });
+    } catch { /* ignore */ }
     this.heartbeatTimer = setInterval(() => {
       try {
+        this._pingSentAt = Date.now();
         this.send({ type: 'ping' });
       } catch {
         // ignore

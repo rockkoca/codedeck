@@ -4,6 +4,8 @@ import type { SessionInfo } from '../types.js';
 interface Props {
   sessions: SessionInfo[];
   activeSession: string | null;
+  connected?: boolean;
+  latencyMs?: number | null;
   onSelect: (name: string) => void;
   onNewSession: () => void;
   onStopProject: (project: string) => void;
@@ -23,7 +25,7 @@ const AGENT_BADGE: Record<string, { label: string; color: string }> = {
   'opencode':    { label: 'oc', color: '#059669' },
 };
 
-export function SessionTabs({ sessions, activeSession, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession }: Props) {
+export function SessionTabs({ sessions, activeSession, connected, latencyMs, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession }: Props) {
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
@@ -127,6 +129,19 @@ export function SessionTabs({ sessions, activeSession, onSelect, onNewSession, o
       })}
 
       <button class="tab-add-btn" onClick={onNewSession} title="New session">＋</button>
+      <span class="tab-ws-status" title={connected ? (latencyMs != null ? `${latencyMs}ms` : 'Connected') : 'Disconnected'}>
+        <span style={{ color: connected ? '#4ade80' : '#ef4444', fontSize: 8 }}>●</span>
+        {connected && latencyMs != null && (
+          <span style={{
+            marginLeft: 3,
+            fontSize: 10,
+            fontFamily: 'monospace',
+            color: latencyMs < 150 ? '#4ade80' : latencyMs < 400 ? '#f59e0b' : '#ef4444',
+          }}>
+            {latencyMs}ms
+          </span>
+        )}
+      </span>
 
       {ctx && (
         <div ref={menuRef} class="tab-context-menu" style={{ left: menuX, top: menuY }}>

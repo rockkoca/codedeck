@@ -138,7 +138,7 @@ export class DaemonBridge implements DurableObject {
       }
 
       // Forward and normalize messages for browser viewers
-      const BROWSER_FORWARD = ['terminal_update', 'session_event', 'session.error', 'session_list'];
+      const BROWSER_FORWARD = ['terminal_update', 'terminal.history', 'session_event', 'session.error', 'session_list'];
       if (BROWSER_FORWARD.includes(msg.type as string)) {
         let browserData = data;
         if (msg.type === 'terminal_update') {

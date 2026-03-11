@@ -4,6 +4,7 @@ import { DashboardPage } from './pages/DashboardPage.js';
 import { SessionTabs } from './components/SessionTabs.js';
 import { TerminalView } from './components/TerminalView.js';
 import { SessionControls } from './components/SessionControls.js';
+import { useQuickData } from './components/QuickInputPanel.js';
 import { NewSessionDialog } from './components/NewSessionDialog.js';
 import { WsClient } from './ws-client.js';
 import { configure as configureApi, apiFetch } from './api.js';
@@ -137,6 +138,7 @@ export function App() {
   const [renameRequest, setRenameRequest] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const quickData = useQuickData();
 
   const setActiveSession = useCallback((name: string | null) => {
     if (name) localStorage.setItem('rcc_session', name);
@@ -146,10 +148,10 @@ export function App() {
 
   const wsRef = useRef<WsClient | null>(null);
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
+  const historyApplyersRef = useRef<Map<string, (content: string) => void>>(new Map());
   const inputRef = useRef<HTMLDivElement>(null);
   const termFocusFnRef = useRef<(() => void) | null>(null);
   const termFitFnRef = useRef<(() => void) | null>(null);
-  const termMarkInputFnRef = useRef<(() => void) | null>(null);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const focusTerminal = useCallback(() => {
@@ -192,15 +194,22 @@ export function App() {
         const apply = diffApplyersRef.current.get(msg.diff.sessionName);
         apply?.(msg.diff);
       }
+      if (msg.type === 'terminal.history') {
+        const applyHistory = historyApplyersRef.current.get(msg.sessionName);
+        applyHistory?.(msg.content);
+      }
     });
 
+    ws.onLatency((ms) => setLatencyMs(ms));
     ws.connect();
 
     return () => {
       unsub();
+      ws.onLatency(null);
       ws.disconnect();
       wsRef.current = null;
       setConnected(false);
+      setLatencyMs(null);
     };
   }, [auth, selectedServerId]);
 
@@ -208,7 +217,6 @@ export function App() {
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws?.connected || !activeSession) return;
-    setLatencyMs(null);
     ws.subscribeTerminal(activeSession);
     return () => ws.unsubscribeTerminal(activeSession);
   }, [activeSession, connected]);
@@ -317,6 +325,10 @@ export function App() {
     diffApplyersRef.current.set(sessionName, apply);
   }, []);
 
+  const registerHistoryApplyer = useCallback((sessionName: string, apply: (content: string) => void) => {
+    historyApplyersRef.current.set(sessionName, apply);
+  }, []);
+
   if (!auth) {
     return <LoginPage onLogin={handleLogin} />;
   }
@@ -400,6 +412,8 @@ export function App() {
             <SessionTabs
               sessions={sessions}
               activeSession={activeSession}
+              connected={connected}
+              latencyMs={latencyMs}
               onSelect={setActiveSession}
               onNewSession={() => setShowNewSession(true)}
               onStopProject={handleStopProject}
@@ -416,11 +430,9 @@ export function App() {
                 ws={wsRef.current}
                 connected={connected}
                 onDiff={(apply) => registerDiffApplyer(activeSession, apply)}
-                onLatency={setLatencyMs}
-                onTap={() => inputRef.current?.focus()}
+                onHistory={(apply) => registerHistoryApplyer(activeSession, apply)}
                 onFocusFn={(fn) => { termFocusFnRef.current = fn; }}
                 onFitFn={(fn) => { termFitFnRef.current = fn; }}
-                onMarkInputFn={(fn) => { termMarkInputFnRef.current = fn; }}
               />
             ) : (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
@@ -432,7 +444,7 @@ export function App() {
               </div>
             )}
 
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} latencyMs={latencyMs} inputRef={inputRef} onAfterAction={focusTerminal} onMarkInput={() => termMarkInputFnRef.current?.()} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} />
           </>
         )}
       </main>

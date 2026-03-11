@@ -13,6 +13,7 @@ import { cronApiRoutes } from './routes/cron-api.js';
 import { projectRoutes } from './routes/projects.js';
 import { pushRoutes } from './routes/push.js';
 import { botRoutes } from './routes/bot.js';
+import { quickDataRoutes } from './routes/quick-data.js';
 import { healthCheckCron } from './cron/health-check.js';
 import { jobDispatchCron } from './cron/job-dispatch.js';
 
@@ -34,6 +35,7 @@ app.route('/api/outbound', outboundRoutes);
 app.route('/api/server', projectRoutes);
 app.route('/api/push', pushRoutes);
 app.route('/api/bot', botRoutes);
+app.route('/api/quick-data', quickDataRoutes);
 app.route('/webhook', webhookRoutes);
 
 // Health check

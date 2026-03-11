@@ -3,7 +3,7 @@
  * Used by the web terminal viewer for real-time session display.
  * Features idle detection: drops to 1 FPS after 2s of no changes.
  */
-import { capturePaneVisible } from '../agent/tmux.js';
+import { capturePaneVisible, capturePaneHistory } from '../agent/tmux.js';
 import { getPaneSize } from '../agent/tmux.js';
 import logger from '../util/logger.js';
 
@@ -21,9 +21,16 @@ export interface TerminalDiff {
   rows: number;
 }
 
+export interface TerminalHistory {
+  sessionName: string;
+  /** Scrollback lines above visible area, with ANSI codes */
+  content: string;
+}
+
 export interface StreamSubscriber {
   sessionName: string;
   send: (diff: TerminalDiff) => void;
+  sendHistory?: (history: TerminalHistory) => void;
   onError?: (err: Error) => void;
 }
 
@@ -48,6 +55,19 @@ export class TerminalStreamer {
       this.startCapture(sessionName);
     }
     this.subscribers.get(sessionName)!.add(subscriber);
+
+    // Send scrollback history snapshot once on subscribe
+    if (subscriber.sendHistory) {
+      void capturePaneHistory(sessionName, 2000).then((content) => {
+        // Trim empty trailing lines from history
+        const trimmed = content.replace(/\n+$/, '');
+        if (trimmed) {
+          try {
+            subscriber.sendHistory!({ sessionName, content: trimmed });
+          } catch { /* ignore */ }
+        }
+      }).catch(() => { /* ignore — history is best-effort */ });
+    }
 
     return () => this.unsubscribe(subscriber);
   }

@@ -251,6 +251,13 @@ function handleSubscribe(cmd: Record<string, unknown>, serverLink: ServerLink): 
         // not connected — will be cleaned up by onError
       }
     },
+    sendHistory: (history) => {
+      try {
+        serverLink.send({ type: 'terminal.history', sessionName: history.sessionName, content: history.content });
+      } catch {
+        // not connected
+      }
+    },
     onError: () => {
       activeSubscriptions.delete(session);
     },

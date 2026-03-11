@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'preact/hooks';
+import { useEffect, useRef, useCallback, useState } from 'preact/hooks';
 import { Terminal } from 'xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import 'xterm/css/xterm.css';
@@ -10,29 +10,20 @@ interface Props {
   ws: WsClient | null;
   connected?: boolean;
   onDiff?: (applyDiff: (diff: TerminalDiff) => void) => void;
-  onLatency?: (ms: number) => void;
-  /** Called when the user taps the terminal on mobile — use to focus the input box. */
-  onTap?: () => void;
+  onHistory?: (applyHistory: (content: string) => void) => void;
   /** Receives a function that focuses the xterm terminal — call it to restore keyboard to xterm. */
   onFocusFn?: (fn: () => void) => void;
   /** Receives a function that fits the terminal to its container and syncs size to tmux. */
   onFitFn?: (fn: () => void) => void;
-  /** Receives a function to mark that input was just sent — starts latency timer. */
-  onMarkInputFn?: (fn: () => void) => void;
 }
 
-export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, onTap, onFocusFn, onFitFn, onMarkInputFn }: Props) {
+export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, onFocusFn, onFitFn }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const linesRef = useRef<string[]>([]);
   const wsRef = useRef(ws);
   wsRef.current = ws;
-  const onLatencyRef = useRef(onLatency);
-  onLatencyRef.current = onLatency;
-
-  // Latency tracking: record when last input was sent, compute on next diff
-  const lastInputAtRef = useRef<number | null>(null);
 
   // Touch scroll tracking: suppress auto-scroll for 1s after user releases touch
   const lastTouchEndRef = useRef<number>(0);
@@ -40,6 +31,12 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, on
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  // Scroll state: show button + progress bar when scrolled up
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(1); // 0..1, 1 = bottom
+  const scrollHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showScrollbar, setShowScrollbar] = useState(false);
 
   useEffect(() => {
     const term = new Terminal({
@@ -99,9 +96,8 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, on
       }, 400);
     }
 
-    // Forward all keyboard input to the tmux session; record send time for latency
+    // Forward all keyboard input to the tmux session
     term.onData((data) => {
-      lastInputAtRef.current = Date.now();
       wsRef.current?.sendInput(sessionName, data);
     });
 
@@ -109,6 +105,23 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, on
     term.onResize(({ cols, rows }) => {
       wsRef.current?.sendResize(sessionName, cols, rows);
     });
+
+    // Track scroll position for "scroll to bottom" button + progress bar
+    const updateScroll = () => {
+      const buf = term.buffer.active;
+      const baseY = buf.baseY; // total lines above viewport
+      const viewportY = buf.viewportY; // current scroll offset
+      const atBottom = viewportY >= baseY;
+      setScrolledUp(!atBottom && baseY > 0);
+      setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
+      // Show scrollbar briefly
+      setShowScrollbar(true);
+      if (scrollHideTimerRef.current) clearTimeout(scrollHideTimerRef.current);
+      scrollHideTimerRef.current = setTimeout(() => setShowScrollbar(false), 1500);
+    };
+    term.onScroll(updateScroll);
+    // Also listen to lineFeed to update when new content arrives
+    term.onLineFeed(updateScroll);
 
     termRef.current = term;
     fitRef.current = fitAddon;
@@ -119,9 +132,6 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, on
     // Expose fit function so parent can trigger resize on send / focus
     onFitFn?.(() => { fitAddon.fit(); });
 
-    // Expose markInput so parent can start latency timer when sending via input box
-    onMarkInputFn?.(() => { lastInputAtRef.current = Date.now(); });
-
     // Re-fit when window regains focus or tab becomes visible.
     // fitAddon.fit() triggers term.onResize which syncs to tmux only if dimensions changed.
     const onWindowFocus = () => { fitAddon.fit(); };
@@ -131,9 +141,15 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, on
 
     const observer = new ResizeObserver(() => {
       fitAddon.fit();
-      // Re-paint buffered content immediately so resize doesn't flash blank
+      // Re-paint buffered content in place so resize doesn't flash blank
       if (linesRef.current.length > 0) {
-        term.write('\x1b[2J\x1b[H' + linesRef.current.join('\r\n'));
+        let buf = '\x1b[H';
+        for (let i = 0; i < linesRef.current.length; i++) {
+          buf += linesRef.current[i] + '\x1b[K';
+          if (i < linesRef.current.length - 1) buf += '\r\n';
+        }
+        buf += '\x1b[J';
+        term.write(buf);
       }
     });
     if (containerRef.current) observer.observe(containerRef.current);
@@ -164,12 +180,6 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, on
     const term = termRef.current;
     if (!term) return;
 
-    // Measure round-trip latency from last keypress to this diff arriving
-    if (lastInputAtRef.current !== null) {
-      onLatencyRef.current?.(Date.now() - lastInputAtRef.current);
-      lastInputAtRef.current = null;
-    }
-
     const lines = linesRef.current;
     for (const [lineIdx, content] of diff.lines) {
       lines[lineIdx] = content;
@@ -177,8 +187,16 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, on
     while (lines.length < diff.rows) lines.push('');
     linesRef.current = lines.slice(0, diff.rows);
 
-    // Full-frame rewrite: clear screen, move to home, write all lines with ANSI intact
-    term.write('\x1b[2J\x1b[H' + linesRef.current.join('\r\n'));
+    // In-place overwrite: move cursor home, write each line clearing remainder,
+    // then clear from cursor to end of display. Avoids \x1b[2J which pushes
+    // the current screen into scrollback, causing duplicate content on scroll-up.
+    let buf = '\x1b[H';
+    for (let i = 0; i < linesRef.current.length; i++) {
+      buf += linesRef.current[i] + '\x1b[K';
+      if (i < linesRef.current.length - 1) buf += '\r\n';
+    }
+    buf += '\x1b[J'; // clear remaining rows below
+    term.write(buf);
 
     // Auto-scroll to bottom unless user is actively scrolling
     // (touched within the last 1 second)
@@ -188,38 +206,69 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onLatency, on
     }
   }, []);
 
+  const applyHistory = useCallback((content: string) => {
+    const term = termRef.current;
+    if (!term || !content) return;
+    // Write history into scrollback: save cursor, move to top, write history lines,
+    // then the visible frame will be painted on top by the next diff.
+    // We use the normal buffer — history goes above current viewport.
+    const historyLines = content.split('\n');
+    // Write history lines followed by newlines — these go into scrollback
+    for (const line of historyLines) {
+      term.write(line + '\r\n');
+    }
+  }, []);
+
   useEffect(() => {
     onDiff?.(applyDiff);
   }, [applyDiff, onDiff]);
 
+  useEffect(() => {
+    onHistory?.(applyHistory);
+  }, [applyHistory, onHistory]);
+
+  const scrollToBottom = () => {
+    termRef.current?.scrollToBottom();
+  };
+
   return (
-    <div
-      ref={containerRef}
-      class="terminal-container"
-      style={{ flex: 1, overflow: 'hidden' }}
-      onClick={isMobile ? undefined : () => { fitRef.current?.fit(); }}
-      onTouchStart={isMobile ? (e) => {
-        isTouchingRef.current = true;
-        const t = e.touches[0];
-        touchStartPosRef.current = { x: t.clientX, y: t.clientY };
-        e.preventDefault(); // block keyboard popup from xterm
-      } : undefined}
-      onTouchEnd={isMobile ? (e) => {
-        isTouchingRef.current = false;
-        lastTouchEndRef.current = Date.now();
-        // Detect tap (small movement) → focus input
-        const t = e.changedTouches[0];
-        const start = touchStartPosRef.current;
-        if (start && Math.abs(t.clientX - start.x) < 10 && Math.abs(t.clientY - start.y) < 10) {
-          onTap?.();
-        }
-        touchStartPosRef.current = null;
-      } : undefined}
-      onTouchCancel={isMobile ? () => {
-        isTouchingRef.current = false;
-        lastTouchEndRef.current = Date.now();
-        touchStartPosRef.current = null;
-      } : undefined}
-    />
+    <div class="terminal-wrap" style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <div
+        ref={containerRef}
+        class="terminal-container"
+        style={{ width: '100%', height: '100%', overflow: 'hidden' }}
+        onClick={isMobile ? undefined : () => { fitRef.current?.fit(); }}
+        onTouchStart={isMobile ? (e) => {
+          isTouchingRef.current = true;
+          const t = e.touches[0];
+          touchStartPosRef.current = { x: t.clientX, y: t.clientY };
+          e.preventDefault(); // block keyboard popup from xterm
+        } : undefined}
+        onTouchEnd={isMobile ? () => {
+          isTouchingRef.current = false;
+          lastTouchEndRef.current = Date.now();
+          touchStartPosRef.current = null;
+        } : undefined}
+        onTouchCancel={isMobile ? () => {
+          isTouchingRef.current = false;
+          lastTouchEndRef.current = Date.now();
+          touchStartPosRef.current = null;
+        } : undefined}
+      />
+
+      {/* Scroll progress bar — right edge, only visible while scrolling */}
+      {showScrollbar && (
+        <div class="term-scroll-track">
+          <div class="term-scroll-thumb" style={{ top: `${scrollProgress * 100}%` }} />
+        </div>
+      )}
+
+      {/* Scroll to bottom button */}
+      {scrolledUp && (
+        <button class="term-scroll-bottom" onClick={scrollToBottom} title="Scroll to bottom">
+          ↓
+        </button>
+      )}
+    </div>
   );
 }
