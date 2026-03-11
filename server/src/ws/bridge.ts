@@ -8,6 +8,7 @@ import type { PgDatabase } from '../db/client.js';
 import type { Env } from '../env.js';
 import { MemoryRateLimiter } from './rate-limiter.js';
 import { sha256Hex } from '../security/crypto.js';
+import { updateServerHeartbeat, updateServerStatus } from '../db/queries.js';
 import logger from '../util/logger.js';
 
 const AUTH_TIMEOUT_MS = 5000;
@@ -102,6 +103,11 @@ export class WsBridge {
         logger.info({ serverId: this.serverId }, 'Daemon authenticated');
         onAuthenticated?.();
 
+        // Mark server online in DB
+        updateServerHeartbeat(db, this.serverId).catch((err) =>
+          logger.error({ err }, 'Failed to update heartbeat on auth'),
+        );
+
         // Drain queued messages
         for (const queued of this.queue) {
           try { ws.send(queued); } catch { /* ignore */ }
@@ -111,6 +117,13 @@ export class WsBridge {
         // Notify browsers daemon reconnected
         this.broadcastToBrowsers(JSON.stringify({ type: 'daemon.reconnected' }));
         return;
+      }
+
+      // Update heartbeat on keepalive
+      if (msg.type === 'heartbeat') {
+        updateServerHeartbeat(db, this.serverId).catch((err) =>
+          logger.error({ err }, 'Failed to update heartbeat'),
+        );
       }
 
       // Relay daemon → browsers with type translation
@@ -128,6 +141,10 @@ export class WsBridge {
       if (this.daemonWs === ws) {
         this.daemonWs = null;
         this.authenticated = false;
+        // Mark server offline in DB
+        updateServerStatus(db, this.serverId, 'offline').catch((err) =>
+          logger.error({ err }, 'Failed to mark server offline'),
+        );
       }
       this.maybeCleanup();
     });
