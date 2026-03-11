@@ -291,6 +291,11 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
             open={quickOpen}
             onClose={() => setQuickOpen(false)}
             onSelect={fillInput}
+            onSend={(text: string) => {
+              if (!ws || !activeSession) return;
+              quickData.recordHistory(text, activeSession.name);
+              ws.sendSessionCommand('send', { sessionName: activeSession.name, text });
+            }}
             agentType={activeSession?.agentType ?? 'claude-code'}
             sessionName={activeSession?.name ?? ''}
             data={quickData.data}

@@ -139,6 +139,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSelect: (text: string) => void;
+  onSend: (text: string) => void;
   agentType: string;
   sessionName: string;
   data: QuickData;
@@ -158,7 +159,7 @@ type AddTarget = 'command' | 'phrase' | null;
 type HistoryScope = 'session' | 'global';
 
 export function QuickInputPanel({
-  open, onClose, onSelect, agentType, sessionName,
+  open, onClose, onSelect, onSend, agentType, sessionName,
   data, loaded,
   onAddCommand, onAddPhrase, onRemoveCommand, onRemovePhrase,
   onRemoveHistory, onRemoveSessionHistory, onClearHistory, onClearSessionHistory,
@@ -198,6 +199,7 @@ export function QuickInputPanel({
   const historySlice = activeHistory.slice(historyPage * HISTORY_PAGE_SIZE, (historyPage + 1) * HISTORY_PAGE_SIZE);
 
   const handleSelect = (text: string) => { onSelect(text); onClose(); };
+  const handleSend = (text: string) => { onSend(text); onClose(); };
 
   const handleClear = () => {
     if (historyScope === 'session') onClearSessionHistory(sessionName);
@@ -262,11 +264,11 @@ export function QuickInputPanel({
               <div class="qp-section-header">快捷命令</div>
               <div class="qp-pills">
                 {defaultCmds.map((cmd) => (
-                  <button key={cmd} class="qp-pill qp-pill-default" onClick={() => handleSelect(cmd)}>{cmd}</button>
+                  <button key={cmd} class="qp-pill qp-pill-default" onClick={() => handleSend(cmd)}>{cmd}</button>
                 ))}
                 {data.commands.map((cmd) => (
                   <span key={cmd} class="qp-pill qp-pill-custom">
-                    <span class="qp-pill-text" onClick={() => handleSelect(cmd)}>{cmd}</span>
+                    <span class="qp-pill-text" onClick={() => handleSend(cmd)}>{cmd}</span>
                     <button class="qp-pill-del" onClick={() => onRemoveCommand(cmd)}>✕</button>
                   </span>
                 ))}
@@ -280,11 +282,11 @@ export function QuickInputPanel({
               <div class="qp-section-header">快捷短语</div>
               <div class="qp-pills">
                 {DEFAULT_PHRASES.map((phrase) => (
-                  <button key={phrase} class="qp-pill qp-pill-default" onClick={() => handleSelect(phrase)}>{phrase}</button>
+                  <button key={phrase} class="qp-pill qp-pill-default" onClick={() => handleSend(phrase)}>{phrase}</button>
                 ))}
                 {data.phrases.map((phrase) => (
                   <span key={phrase} class="qp-pill qp-pill-custom">
-                    <span class="qp-pill-text" onClick={() => handleSelect(phrase)}>{phrase}</span>
+                    <span class="qp-pill-text" onClick={() => handleSend(phrase)}>{phrase}</span>
                     <button class="qp-pill-del" onClick={() => onRemovePhrase(phrase)}>✕</button>
                   </span>
                 ))}
