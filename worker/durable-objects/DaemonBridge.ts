@@ -1,6 +1,7 @@
 import type { Env } from '../src/types.js';
 import { sha256Hex } from '../src/security/crypto.js';
 import { updateServerHeartbeat, updateServerStatus } from '../src/db/queries.js';
+import { dispatchPush } from '../src/routes/push.js';
 
 const AUTH_TIMEOUT_MS = 5_000;
 const MAX_QUEUE_SIZE = 100;
@@ -121,6 +122,13 @@ export class DaemonBridge implements DurableObject {
               // Drain queued messages
               for (const q of this.queue) ws.send(q.data);
               this.queue = [];
+              // Notify browsers that daemon (re)connected — they must re-subscribe
+              // to terminal sessions since daemon process may have restarted and lost
+              // all active subscriptions.
+              const reconnectMsg = JSON.stringify({ type: 'daemon.reconnected' });
+              for (const bs of this.browserSockets) {
+                try { bs.send(reconnectMsg); } catch { this.browserSockets.delete(bs); }
+              }
               return;
             }
           }
@@ -138,7 +146,7 @@ export class DaemonBridge implements DurableObject {
       }
 
       // Forward and normalize messages for browser viewers
-      const BROWSER_FORWARD = ['terminal_update', 'terminal.history', 'session_event', 'session.error', 'session_list'];
+      const BROWSER_FORWARD = ['terminal_update', 'terminal.history', 'session_event', 'session.error', 'session_list', 'session.idle', 'session.notification', 'session.tool'];
       if (BROWSER_FORWARD.includes(msg.type as string)) {
         let browserData = data;
         if (msg.type === 'terminal_update') {
@@ -146,10 +154,29 @@ export class DaemonBridge implements DurableObject {
         } else if (msg.type === 'session_event') {
           browserData = JSON.stringify({ ...msg, type: 'session.event' });
         }
-        // session.error and session_list pass through as-is
+        // session.error, session_list, session.idle, terminal.history pass through as-is
         for (const bs of this.browserSockets) {
           try { bs.send(browserData); } catch { this.browserSockets.delete(bs); }
         }
+      }
+
+      // Push notification on session.idle
+      if (msg.type === 'session.idle' && this.serverId) {
+        const project = typeof msg.project === 'string' ? msg.project : (typeof msg.session === 'string' ? msg.session : 'Session');
+        void this.env.DB
+          .prepare('SELECT user_id FROM servers WHERE id = ?')
+          .bind(this.serverId)
+          .first<{ user_id: string }>()
+          .then((row) => {
+            if (!row) return;
+            return dispatchPush({
+              userId: row.user_id,
+              title: '✓ Task completed',
+              body: `${project} is ready`,
+              data: { sessionName: String(msg.session ?? ''), agentType: String(msg.agentType ?? '') },
+            }, this.env);
+          })
+          .catch(() => { /* push is best-effort */ });
       }
     });
 

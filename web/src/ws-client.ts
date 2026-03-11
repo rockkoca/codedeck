@@ -11,6 +11,10 @@ export type ServerMessage =
   | { type: 'terminal.history'; sessionName: string; content: string }
   | { type: 'session.event'; event: string; session: string; state: string }
   | { type: 'session.error'; project: string; message: string }
+  | { type: 'session.idle'; session: string; project: string; agentType: string }
+  | { type: 'session.notification'; session: string; project: string; title: string; message: string }
+  | { type: 'session.tool'; session: string; tool: string | null }
+  | { type: 'daemon.reconnected' }
   | { type: 'session_list'; sessions: Array<{ name: string; project: string; role: string; agentType: string; state: string }> }
   | { type: 'outbound'; platform: string; channelId: string; content: string }
   | { type: 'error'; message: string }
@@ -118,7 +122,9 @@ export class WsClient {
       .replace(/^http/, 'ws')
       .replace(/\/$/, '');
 
-    // Get a short-lived ws-ticket before connecting
+    // Get a short-lived ws-ticket before connecting.
+    // IMPORTANT: timeout the fetch — without it, a hung TCP connection keeps
+    // _connecting=true forever and all subsequent reconnect timers are no-ops.
     let ticket: string;
     try {
       const res = await fetch(`${this.baseUrl}/api/auth/ws-ticket`, {
@@ -128,6 +134,7 @@ export class WsClient {
           'Authorization': `Bearer ${this.token}`,
         },
         body: JSON.stringify({ serverId: this.serverId }),
+        signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
         this._connecting = false;
@@ -139,6 +146,11 @@ export class WsClient {
     } catch {
       this._connecting = false;
       this.scheduleReconnect();
+      return;
+    }
+
+    if (this._destroyed) {
+      this._connecting = false;
       return;
     }
 
@@ -174,7 +186,7 @@ export class WsClient {
     this.ws.addEventListener('close', () => {
       const wasConnected = this._connected;
       this._connected = false;
-      this._connecting = false; // reset in case ticket fetch was in-flight
+      this._connecting = false;
       this.ws = null;
       this.clearTimers();
       if (wasConnected) {

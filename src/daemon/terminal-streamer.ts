@@ -158,6 +158,19 @@ export class TerminalStreamer {
       if (errors >= TerminalStreamer.MAX_CONSECUTIVE_ERRORS) {
         logger.warn({ sessionName, errors }, 'Terminal capture: too many errors, stopping');
         this.stopCapture(sessionName);
+        // Notify and remove all subscribers so they know to re-subscribe when ready
+        const subs = this.subscribers.get(sessionName);
+        if (subs) {
+          const err = new Error('Terminal capture failed after too many errors');
+          for (const sub of [...subs]) {
+            try { sub.onError?.(err); } catch { /* ignore */ }
+          }
+          this.subscribers.delete(sessionName);
+        }
+        this.lastFrames.delete(sessionName);
+        this.lastChangeAt.delete(sessionName);
+        this.isIdle.delete(sessionName);
+        this.errorCounts.delete(sessionName);
       } else {
         this.scheduleNextCapture(sessionName, ACTIVE_INTERVAL_MS * errors);
       }

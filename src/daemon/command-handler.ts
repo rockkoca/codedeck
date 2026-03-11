@@ -244,18 +244,16 @@ function handleSubscribe(cmd: Record<string, unknown>, serverLink: ServerLink): 
 
   const subscriber: StreamSubscriber = {
     sessionName: session,
+    // Do NOT catch here — let errors propagate to captureAndBroadcast so it can
+    // call onError and clean up the subscription properly.
     send: (diff) => {
-      try {
-        serverLink.send({ type: 'terminal_update', diff });
-      } catch {
-        // not connected — will be cleaned up by onError
-      }
+      serverLink.send({ type: 'terminal_update', diff });
     },
     sendHistory: (history) => {
       try {
         serverLink.send({ type: 'terminal.history', sessionName: history.sessionName, content: history.content });
       } catch {
-        // not connected
+        // history is best-effort, don't remove the subscription on failure
       }
     },
     onError: () => {

@@ -6,6 +6,11 @@ interface Props {
   activeSession: string | null;
   connected?: boolean;
   latencyMs?: number | null;
+  /** Set of session names that just went idle — shows pulse alert on that tab */
+  idleAlerts?: Set<string>;
+  onAlertDismiss?: (sessionName: string) => void;
+  /** Map of session name → currently running tool name */
+  activeTools?: Map<string, string>;
   onSelect: (name: string) => void;
   onNewSession: () => void;
   onStopProject: (project: string) => void;
@@ -25,7 +30,7 @@ const AGENT_BADGE: Record<string, { label: string; color: string }> = {
   'opencode':    { label: 'oc', color: '#059669' },
 };
 
-export function SessionTabs({ sessions, activeSession, connected, latencyMs, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession }: Props) {
+export function SessionTabs({ sessions, activeSession, connected, latencyMs, idleAlerts, onAlertDismiss, activeTools, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession }: Props) {
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
@@ -93,8 +98,13 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, onS
       {sessions.map((s) => {
         const isActive = s.name === activeSession;
         const isBrain = s.role === 'brain';
+        const hasAlert = idleAlerts?.has(s.name) ?? false;
+        const activeTool = activeTools?.get(s.name) ?? null;
         const stateClass = s.state === 'running' ? 'busy' : s.state === 'idle' ? 'idle' : '';
-        const classes = ['tab', isBrain ? 'brain' : '', isActive ? 'active' : '', stateClass].filter(Boolean).join(' ');
+        const classes = ['tab', isBrain ? 'brain' : '', isActive ? 'active' : '', stateClass, hasAlert ? 'alert' : ''].filter(Boolean).join(' ');
+
+        // WS latency shown inline on the active tab
+        const latencyColor = latencyMs == null ? '#4ade80' : latencyMs < 150 ? '#4ade80' : latencyMs < 400 ? '#f59e0b' : '#ef4444';
 
         return (
           <div key={s.name} class="tab-wrap">
@@ -116,12 +126,20 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, onS
                 class={classes}
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => onSelect(s.name)}
+                onClick={() => { onSelect(s.name); if (hasAlert) onAlertDismiss?.(s.name); }}
                 onContextMenu={(e) => openCtx(e, s)}
                 title={`${s.agentType} — ${s.state}`}
               >
                 {agentBadge(s.agentType)}
                 {getLabel(s)}
+                {activeTool && (
+                  <span class="tab-tool" title={`Running: ${activeTool}`}>⚙ {activeTool}</span>
+                )}
+                {isActive && (
+                  <span class="tab-ws-dot" style={{ color: connected ? latencyColor : '#ef4444' }} title={connected ? (latencyMs != null ? `${latencyMs}ms` : 'Connected') : 'Disconnected'}>
+                    ●{connected && latencyMs != null && <span class="tab-latency">{latencyMs}ms</span>}
+                  </span>
+                )}
               </button>
             )}
           </div>
@@ -129,19 +147,6 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, onS
       })}
 
       <button class="tab-add-btn" onClick={onNewSession} title="New session">＋</button>
-      <span class="tab-ws-status" title={connected ? (latencyMs != null ? `${latencyMs}ms` : 'Connected') : 'Disconnected'}>
-        <span style={{ color: connected ? '#4ade80' : '#ef4444', fontSize: 8 }}>●</span>
-        {connected && latencyMs != null && (
-          <span style={{
-            marginLeft: 3,
-            fontSize: 10,
-            fontFamily: 'monospace',
-            color: latencyMs < 150 ? '#4ade80' : latencyMs < 400 ? '#f59e0b' : '#ef4444',
-          }}>
-            {latencyMs}ms
-          </span>
-        )}
-      </span>
 
       {ctx && (
         <div ref={menuRef} class="tab-context-menu" style={{ left: menuX, top: menuY }}>

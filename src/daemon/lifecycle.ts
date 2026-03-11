@@ -4,6 +4,9 @@ import { sessionExists } from '../agent/tmux.js';
 import { detectMemoryBackend } from '../memory/detector.js';
 import { ServerLink } from './server-link.js';
 import { handleWebCommand, setRouterContext } from './command-handler.js';
+import { startHookServer } from './hook-server.js';
+import { setupCCHooks } from '../agent/signal.js';
+import type http from 'http';
 import { loadConfig, type Config } from '../config.js';
 import { loadCredentials } from '../bind/bind-flow.js';
 import { sendKeys } from '../agent/tmux.js';
@@ -230,6 +233,28 @@ export async function startup(): Promise<DaemonContext> {
     });
   }
 
+  // Start local hook server — agents POST here via CC hooks / notify plugins.
+  // Port is auto-discovered (saved across restarts); hook scripts are rewritten with actual port.
+  const hookResult = await startHookServer((payload) => {
+    if (!serverLink) return;
+    try {
+      const record = listSessions().find((s) => s.name === payload.session);
+      const projectName = record?.projectName ?? payload.session;
+      if (payload.event === 'idle') {
+        serverLink.send({ type: 'session.idle', session: payload.session, project: projectName, agentType: payload.agentType });
+      } else if (payload.event === 'notification') {
+        serverLink.send({ type: 'session.notification', session: payload.session, project: projectName, title: payload.title, message: payload.message });
+      } else if (payload.event === 'tool_start') {
+        serverLink.send({ type: 'session.tool', session: payload.session, tool: payload.tool });
+      } else if (payload.event === 'tool_end') {
+        serverLink.send({ type: 'session.tool', session: payload.session, tool: null });
+      }
+    } catch { /* not connected */ }
+  });
+  hookServer = hookResult.server;
+  // Rewrite all CC hook scripts with the actual port (may differ from last run)
+  await setupCCHooks().catch((e) => logger.warn({ err: e }, 'CC hook setup failed'));
+
   ctx = { config, memory, serverLink, persistBinding, removeBinding, sendSessionEvent };
   setupSignalHandlers();
   startHealthPoller();
@@ -244,6 +269,7 @@ export async function shutdown(exitCode = 0): Promise<void> {
 
   try {
     if (healthTimer) clearInterval(healthTimer);
+    hookServer?.close();
     ctx?.serverLink?.disconnect();
     await flushStore();
     logger.info('Store flushed');
@@ -258,6 +284,7 @@ export async function shutdown(exitCode = 0): Promise<void> {
 
 const HEALTH_POLL_MS = 30_000;
 let healthTimer: ReturnType<typeof setInterval> | null = null;
+let hookServer: http.Server | null = null;
 
 /** Periodically check all running sessions; restart any that have disappeared. */
 function startHealthPoller(): void {

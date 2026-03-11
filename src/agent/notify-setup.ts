@@ -1,89 +1,71 @@
 /**
- * Setup idle signal hooks for Codex and OpenCode agents.
+ * Setup idle notify hooks for Codex and OpenCode agents.
+ * Both POST directly to the daemon hook server (127.0.0.1:51913/notify).
  *
- * - Codex: writes `notify` config to project config.toml
- * - OpenCode: writes .opencode/plugin/idle-signal.ts to project dir
+ * - Codex:    config.toml [notify] "agent-turn-complete" = curl script
+ * - OpenCode: .opencode/plugin/idle-notify.ts  session.idle → fetch
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import { SIGNAL_DIR } from './signal.js';
+import { activeHookPort } from '../daemon/hook-server.js';
 
-// ─── Codex notify setup ────────────────────────────────────────────────────────
+// ─── Codex ────────────────────────────────────────────────────────────────────
 
 /**
- * Write Codex notify config to <projectDir>/config.toml.
- * Uses `agent-turn-complete` event to write idle signal.
+ * Append Codex notify config to <projectDir>/config.toml.
+ * The session name is baked in at setup time (each session has its own config).
  */
 export async function setupCodexNotify(
   projectDir: string,
-  sessionName: string
+  sessionName: string,
 ): Promise<void> {
   const configPath = path.join(projectDir, 'config.toml');
-  const signalFile = path.join(SIGNAL_DIR, `${sessionName}.idle.json`);
-  const tmpFile = `${signalFile}.tmp`;
-
-  const notifyScript = `#!/bin/bash
-mkdir -p "${SIGNAL_DIR}"
-echo '{"session":"${sessionName}","timestamp":"'$(date +%s%3N)'","agentType":"codex"}' > "${tmpFile}"
-mv "${tmpFile}" "${signalFile}"`;
 
   let existing = '';
-  try {
-    existing = await fs.readFile(configPath, 'utf-8');
-  } catch {
-    // file may not exist
-  }
+  try { existing = await fs.readFile(configPath, 'utf-8'); } catch { /* ok */ }
 
-  // Only add if not already configured
-  if (!existing.includes('agent-turn-complete')) {
-    const notifyBlock = `
+  if (existing.includes('agent-turn-complete')) return; // already set up
+
+  const notifyBlock = `
 [notify]
 "agent-turn-complete" = """
-${notifyScript}
+curl -s -X POST "http://127.0.0.1:${activeHookPort}/notify" \\
+  -H "Content-Type: application/json" \\
+  -d '{"event":"idle","session":"${sessionName}","agentType":"codex"}' \\
+  --max-time 2 &>/dev/null || true
 """
 `;
-    await fs.appendFile(configPath, notifyBlock);
-  }
+  await fs.appendFile(configPath, notifyBlock);
 }
 
-// ─── OpenCode plugin setup ─────────────────────────────────────────────────────
+// ─── OpenCode ─────────────────────────────────────────────────────────────────
 
 /**
- * Write .opencode/plugin/idle-signal.ts to <projectDir>.
- * Handles `session.idle` event to write idle signal.
+ * Write .opencode/plugin/idle-notify.ts to <projectDir>.
+ * OpenCode loads plugins from this directory automatically.
  */
 export async function setupOpenCodePlugin(
   projectDir: string,
-  sessionName: string
+  sessionName: string,
 ): Promise<void> {
   const pluginDir = path.join(projectDir, '.opencode', 'plugin');
   await fs.mkdir(pluginDir, { recursive: true });
 
-  const pluginPath = path.join(pluginDir, 'idle-signal.ts');
-  const signalFile = path.join(SIGNAL_DIR, `${sessionName}.idle.json`);
-  const tmpFile = `${signalFile}.tmp`;
-
-  const pluginContent = `// OpenCode idle signal plugin for codedeck
-import { writeFileSync, mkdirSync, renameSync } from 'fs';
-
+  const pluginPath = path.join(pluginDir, 'idle-notify.ts');
+  const pluginContent = `// Codedeck idle notify plugin for OpenCode
 export default {
-  name: 'idle-signal',
+  name: 'idle-notify',
   events: {
-    'session.idle': () => {
-      const signalDir = '${SIGNAL_DIR}';
-      mkdirSync(signalDir, { recursive: true });
-      const payload = JSON.stringify({
-        session: '${sessionName}',
-        timestamp: Date.now(),
-        agentType: 'opencode',
-      });
-      writeFileSync('${tmpFile}', payload);
-      renameSync('${tmpFile}', '${signalFile}');
+    'session.idle': async () => {
+      await fetch('http://127.0.0.1:${activeHookPort}/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'idle', session: '${sessionName}', agentType: 'opencode' }),
+      }).catch(() => { /* daemon may not be running */ });
     },
   },
 };
 `;
-
   await fs.writeFile(pluginPath, pluginContent);
 }

@@ -145,7 +145,7 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       if (linesRef.current.length > 0) {
         let buf = '\x1b[H';
         for (let i = 0; i < linesRef.current.length; i++) {
-          buf += linesRef.current[i] + '\x1b[K';
+          buf += (linesRef.current[i] ?? '') + '\x1b[K';
           if (i < linesRef.current.length - 1) buf += '\r\n';
         }
         buf += '\x1b[J';
@@ -182,6 +182,8 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
 
     const lines = linesRef.current;
     for (const [lineIdx, content] of diff.lines) {
+      // Fill any sparse gaps created by out-of-bounds assignment
+      while (lines.length <= lineIdx) lines.push('');
       lines[lineIdx] = content;
     }
     while (lines.length < diff.rows) lines.push('');
@@ -192,7 +194,7 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
     // the current screen into scrollback, causing duplicate content on scroll-up.
     let buf = '\x1b[H';
     for (let i = 0; i < linesRef.current.length; i++) {
-      buf += linesRef.current[i] + '\x1b[K';
+      buf += (linesRef.current[i] ?? '') + '\x1b[K';
       if (i < linesRef.current.length - 1) buf += '\r\n';
     }
     buf += '\x1b[J'; // clear remaining rows below

@@ -34,11 +34,32 @@ body {
 .tab.idle::after { content: '●'; margin-left: 5px; color: #3fb950; font-size: 7px; vertical-align: middle; }
 .tab.busy::after { content: '◌'; margin-left: 5px; color: #e3b341; font-size: 7px; vertical-align: middle; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* Alert pulse: session just went idle (task completed) */
+.tab.alert { animation: tab-alert 0.7s ease-in-out 4; }
+@keyframes tab-alert { 0%, 100% { background: transparent; box-shadow: none; } 50% { background: #1c3a2a; box-shadow: 0 0 10px #3fb95060 inset; } }
+.tab.alert.active { animation: tab-alert-active 0.7s ease-in-out 4; }
+@keyframes tab-alert-active { 0%, 100% { background: #161b22; } 50% { background: #1e3a2f; box-shadow: 0 0 12px #3fb95070 inset; } }
+/* WS dot inline on active tab */
+.tab-ws-dot { margin-left: 6px; font-size: 7px; line-height: 1; vertical-align: middle; flex-shrink: 0; }
+.tab-latency { font-size: 9px; font-family: monospace; margin-left: 2px; vertical-align: middle; }
+.tab-tool { margin-left: 5px; font-size: 9px; color: #60a5fa; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60px; vertical-align: middle; }
 .tab-rename-input { padding: 0 10px; height: 100%; background: #21262d; border: 1px solid #3b82f6; color: #e6edf3; font-family: inherit; font-size: 12px; outline: none; width: 120px; }
 .tab-add-btn { padding: 0 12px; background: none; border: none; color: #4b5563; font-size: 16px; cursor: pointer; transition: color 0.12s; flex-shrink: 0; align-self: center; line-height: 1; }
 .tab-add-btn:hover { color: #9ca3af; }
-.tab-ws-status { display: flex; align-items: center; padding: 0 8px; flex-shrink: 0; }
 .tab-empty { padding: 0 16px; color: #4b5563; font-size: 12px; display: flex; align-items: center; }
+/* Toast notifications */
+.toast-container { position: fixed; bottom: 80px; right: 16px; z-index: 500; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { background: #1c2128; border: 1px solid #3fb950; border-radius: 8px; padding: 10px 14px; color: #e6edf3; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer; pointer-events: all; box-shadow: 0 4px 16px #00000080; animation: toast-in 0.25s ease; min-width: 200px; max-width: 280px; }
+.toast:hover { background: #21291f; }
+.toast-notification { border-color: #60a5fa; }
+.toast-notification:hover { background: #1a2033; }
+.toast-notification .toast-icon { color: #60a5fa; }
+.toast-icon { color: #3fb950; font-size: 15px; flex-shrink: 0; }
+.toast-body { flex: 1; font-size: 13px; }
+.toast-close { background: none; border: none; color: #6e7681; cursor: pointer; font-size: 12px; padding: 0 0 0 4px; flex-shrink: 0; line-height: 1; }
+.toast-close:hover { color: #e6edf3; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (max-width: 640px) { .toast-container { bottom: 130px; right: 8px; left: 8px; } .toast { max-width: 100%; } }
 .tab-context-menu { position: fixed; background: #1c2128; border: 1px solid #30363d; border-radius: 6px; min-width: 150px; box-shadow: 0 8px 24px #00000080; z-index: 100; overflow: hidden; }
 .menu-divider { height: 1px; background: #21262d; margin: 2px 0; }
 

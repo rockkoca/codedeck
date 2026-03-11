@@ -138,7 +138,12 @@ export function App() {
   const [renameRequest, setRenameRequest] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [idleAlerts, setIdleAlerts] = useState<Set<string>>(new Set());
+  const [activeTools, setActiveTools] = useState<Map<string, string>>(new Map());
+  const [toasts, setToasts] = useState<Array<{ id: number; sessionName: string; project: string; kind: 'idle' | 'notification'; title?: string; message?: string }>>([]);
   const quickData = useQuickData();
+  const activeSessionRef = useRef(activeSession);
+  activeSessionRef.current = activeSession;
 
   const setActiveSession = useCallback((name: string | null) => {
     if (name) localStorage.setItem('rcc_session', name);
@@ -198,6 +203,42 @@ export function App() {
         const applyHistory = historyApplyersRef.current.get(msg.sessionName);
         applyHistory?.(msg.content);
       }
+      if (msg.type === 'session.idle') {
+        const sessionName = msg.session as string;
+        const project = (msg.project as string) || sessionName;
+        // Clear any active tool since session is now idle
+        setActiveTools((prev) => { const m = new Map(prev); m.delete(sessionName); return m; });
+        // Add tab pulse alert (only when not the currently active tab)
+        if (sessionName !== activeSessionRef.current) {
+          setIdleAlerts((prev) => new Set([...prev, sessionName]));
+        }
+        // Always show a toast
+        const id = Date.now();
+        setToasts((prev) => [...prev, { id, sessionName, project, kind: 'idle' }]);
+        setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
+      }
+      if (msg.type === 'session.notification') {
+        const sessionName = msg.session;
+        const project = msg.project || sessionName;
+        const id = Date.now();
+        setToasts((prev) => [...prev, { id, sessionName, project, kind: 'notification', title: msg.title, message: msg.message }]);
+        setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 8000);
+      }
+      if (msg.type === 'session.tool') {
+        const sessionName = msg.session;
+        setActiveTools((prev) => {
+          const m = new Map(prev);
+          if (msg.tool) m.set(sessionName, msg.tool);
+          else m.delete(sessionName);
+          return m;
+        });
+      }
+      if (msg.type === 'daemon.reconnected') {
+        // Daemon process (re)started — all its subscriptions are gone.
+        // Re-subscribe immediately so terminal resumes without a page refresh.
+        const session = activeSessionRef.current;
+        if (session) ws.subscribeTerminal(session);
+      }
     });
 
     ws.onLatency((ms) => setLatencyMs(ms));
@@ -218,8 +259,23 @@ export function App() {
     const ws = wsRef.current;
     if (!ws?.connected || !activeSession) return;
     ws.subscribeTerminal(activeSession);
-    return () => ws.unsubscribeTerminal(activeSession);
+    return () => {
+      // Best-effort unsubscribe — WS may already be closed during reconnect
+      try { ws.unsubscribeTerminal(activeSession); } catch { /* ignore */ }
+    };
   }, [activeSession, connected]);
+
+  // Re-subscribe when tab/window becomes visible (handles sleep/wake, background tabs)
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState !== 'visible') return;
+      const ws = wsRef.current;
+      const session = activeSessionRef.current;
+      if (ws?.connected && session) ws.subscribeTerminal(session);
+    };
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, []); // no deps — uses refs
 
   // Global keyboard passthrough
   useEffect(() => {
@@ -414,7 +470,10 @@ export function App() {
               activeSession={activeSession}
               connected={connected}
               latencyMs={latencyMs}
-              onSelect={setActiveSession}
+              idleAlerts={idleAlerts}
+              activeTools={activeTools}
+              onAlertDismiss={(name) => setIdleAlerts((prev) => { const s = new Set(prev); s.delete(name); return s; })}
+              onSelect={(name) => { setActiveSession(name); setIdleAlerts((prev) => { const s = new Set(prev); s.delete(name); return s; }); }}
               onNewSession={() => setShowNewSession(true)}
               onStopProject={handleStopProject}
               onRestartProject={handleRestartProject}
@@ -455,6 +514,33 @@ export function App() {
           onClose={() => setShowNewSession(false)}
           onSessionStarted={(name) => { setActiveSession(name); setShowNewSession(false); }}
         />
+      )}
+
+      {/* Toasts: idle completions + CC notifications */}
+      {toasts.length > 0 && (
+        <div class="toast-container">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              class={`toast toast-${t.kind}`}
+              onClick={() => {
+                setActiveSession(t.sessionName);
+                setIdleAlerts((prev) => { const s = new Set(prev); s.delete(t.sessionName); return s; });
+                setToasts((prev) => prev.filter((x) => x.id !== t.id));
+              }}
+            >
+              <span class="toast-icon">{t.kind === 'idle' ? '✓' : '🔔'}</span>
+              <span class="toast-body">
+                {t.kind === 'idle' ? (
+                  <><strong>{t.project}</strong> 完成了</>
+                ) : (
+                  <><strong>{t.title || t.project}</strong>{t.message ? <> — {t.message}</> : null}</>
+                )}
+              </span>
+              <button class="toast-close" onClick={(e) => { e.stopPropagation(); setToasts((prev) => prev.filter((x) => x.id !== t.id)); }}>✕</button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

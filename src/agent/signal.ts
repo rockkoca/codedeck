@@ -1,112 +1,184 @@
 /**
- * Idle signal file detection — port of ucc.py check_idle_signal_fn pattern.
+ * Full CC hook suite setup.
  *
- * Each agent writes to /tmp/codedeck/signals/<session-name>.idle.json
- * via atomic rename (write to .tmp, then mv) to prevent partial reads.
- * Reading the file also deletes it to prevent duplicate triggers.
+ * Writes hook scripts to ~/.codedeck/ and registers them in ~/.claude/settings.json.
+ * All hooks POST directly to the daemon hook server (no file intermediary).
+ *
+ * Hook event types registered:
+ *   Stop         → { event: "idle", session, agentType: "claude-code" }
+ *   Notification → { event: "notification", session, title, message }
+ *   PreToolUse   → { event: "tool_start", session, tool }
+ *   PostToolUse  → { event: "tool_end", session }
+ *
+ * Hook format required by Claude Code:
+ *   "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "..." }] }]
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
+import { activeHookPort } from '../daemon/hook-server.js';
 
-export const SIGNAL_DIR = '/tmp/codedeck/signals';
-
-export interface IdleSignal {
-  session: string;
-  timestamp: number;
-  agentType?: string;
-}
-
-/** Ensure the signal directory exists. Call on daemon startup. */
-export async function ensureSignalDir(): Promise<void> {
-  await fs.mkdir(SIGNAL_DIR, { recursive: true });
-}
-
-function signalPath(sessionName: string): string {
-  return path.join(SIGNAL_DIR, `${sessionName}.idle.json`);
-}
-
-/**
- * Check if an idle signal file exists for the given session.
- * If it does, read it, delete it, and return the signal.
- * Returns null if no signal.
- */
-export async function checkIdleSignal(sessionName: string): Promise<IdleSignal | null> {
-  const filePath = signalPath(sessionName);
-  try {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    // Consume immediately
-    await fs.unlink(filePath).catch(() => {});
-    return JSON.parse(raw) as IdleSignal;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Write an idle signal file atomically (write to .tmp, then rename).
- * Used by hook scripts and test helpers.
- */
-export async function writeIdleSignal(signal: IdleSignal): Promise<void> {
-  await ensureSignalDir();
-  const filePath = signalPath(signal.session);
-  const tmpPath = `${filePath}.tmp`;
-  await fs.writeFile(tmpPath, JSON.stringify(signal));
-  await fs.rename(tmpPath, filePath);
-}
-
-// ─── CC Stop Hook setup ───────────────────────────────────────────────────────
-
-const CC_HOOK_SCRIPT_NAME = 'cc_stop_hook.sh';
-const CC_HOOK_SCRIPT_PATH = path.join(os.homedir(), '.codedeck', CC_HOOK_SCRIPT_NAME);
+const CODEDECK_DIR = path.join(os.homedir(), '.codedeck');
 const CC_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
-/**
- * Ensure ~/.claude/settings.json has a Stop hook pointing to cc_stop_hook.sh.
- * The hook script writes a per-session signal file on idle.
- */
-export async function setupCCStopHook(): Promise<void> {
-  // Write the hook script
-  await fs.mkdir(path.dirname(CC_HOOK_SCRIPT_PATH), { recursive: true });
-  await fs.writeFile(
-    CC_HOOK_SCRIPT_PATH,
-    `#!/bin/bash
-# CC Stop hook — writes idle signal for codedeck
-SESSION_NAME="$1"
-if [ -z "$SESSION_NAME" ]; then
-  SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null || echo "unknown")
-fi
-SIGNAL_DIR="${SIGNAL_DIR}"
-mkdir -p "$SIGNAL_DIR"
-TMP_FILE="$SIGNAL_DIR/$SESSION_NAME.idle.json.tmp"
-SIGNAL_FILE="$SIGNAL_DIR/$SESSION_NAME.idle.json"
-echo '{"session":"'"$SESSION_NAME"'","timestamp":'"$(date +%s%3N)"',"agentType":"claude-code"}' > "$TMP_FILE"
-mv "$TMP_FILE" "$SIGNAL_FILE"
-`
-  );
-  await fs.chmod(CC_HOOK_SCRIPT_PATH, 0o755);
+// Common preamble for all hook scripts: get deck_ session name or exit
+const SESSION_PREAMBLE = `\
+SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null || echo "")
+[ -z "$SESSION_NAME" ] && exit 0
+case "$SESSION_NAME" in
+  deck_*) ;;
+  *) exit 0 ;;
+esac`;
 
-  // Update ~/.claude/settings.json
+const CURL_BASE = (port: number) =>
+  `curl -s -X POST "http://127.0.0.1:${port}/notify" \\\n  -H "Content-Type: application/json"`;
+
+/** Maps CC hook event name → script file name */
+const HOOK_SCRIPTS: Record<string, string> = {
+  Stop: 'cc_hook_stop.sh',
+  Notification: 'cc_hook_notify.sh',
+  PreToolUse: 'cc_hook_pretool.sh',
+  PostToolUse: 'cc_hook_posttool.sh',
+};
+
+function buildStopScript(port: number): string {
+  return `#!/bin/bash
+# Codedeck CC Stop Hook — notifies daemon when Claude Code session goes idle
+
+INPUT=$(cat)
+
+# Avoid infinite loop when CC continues due to a stop hook
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('stop_hook_active','false'))" 2>/dev/null || echo "false")
+[ "$STOP_HOOK_ACTIVE" = "true" ] && exit 0
+
+${SESSION_PREAMBLE}
+
+${CURL_BASE(port)} \\
+  -d "{\\"event\\":\\"idle\\",\\"session\\":\\"$SESSION_NAME\\",\\"agentType\\":\\"claude-code\\"}" \\
+  --max-time 2 &>/dev/null || true
+`;
+}
+
+function buildNotifyScript(port: number): string {
+  return `#!/bin/bash
+# Codedeck CC Notification Hook — forwards CC notifications to daemon
+
+INPUT=$(cat)
+
+${SESSION_PREAMBLE}
+
+TITLE=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))" 2>/dev/null || echo "")
+MESSAGE=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('message',''))" 2>/dev/null || echo "")
+
+# Skip empty notifications
+[ -z "$TITLE" ] && [ -z "$MESSAGE" ] && exit 0
+
+PAYLOAD=$(python3 -c "import json,sys; print(json.dumps({'event':'notification','session':'$SESSION_NAME','title':'$TITLE','message':'$MESSAGE'}))" 2>/dev/null || echo "")
+[ -z "$PAYLOAD" ] && exit 0
+
+${CURL_BASE(port)} \\
+  -d "$PAYLOAD" \\
+  --max-time 2 &>/dev/null || true
+`;
+}
+
+function buildPreToolScript(port: number): string {
+  return `#!/bin/bash
+# Codedeck CC PreToolUse Hook — reports active tool to daemon
+
+INPUT=$(cat)
+
+${SESSION_PREAMBLE}
+
+TOOL_NAME=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name','unknown'))" 2>/dev/null || echo "unknown")
+
+${CURL_BASE(port)} \\
+  -d "{\\"event\\":\\"tool_start\\",\\"session\\":\\"$SESSION_NAME\\",\\"tool\\":\\"$TOOL_NAME\\"}" \\
+  --max-time 2 &>/dev/null || true
+`;
+}
+
+function buildPostToolScript(port: number): string {
+  return `#!/bin/bash
+# Codedeck CC PostToolUse Hook — reports tool completion to daemon
+
+INPUT=$(cat)
+
+${SESSION_PREAMBLE}
+
+${CURL_BASE(port)} \\
+  -d "{\\"event\\":\\"tool_end\\",\\"session\\":\\"$SESSION_NAME\\"}" \\
+  --max-time 2 &>/dev/null || true
+`;
+}
+
+/** Write all hook scripts to ~/.codedeck/ and register them in ~/.claude/settings.json. */
+export async function setupCCHooks(): Promise<void> {
+  await fs.mkdir(CODEDECK_DIR, { recursive: true });
+  const port = activeHookPort;
+
+  // ── 1. Write hook scripts ───────────────────────────────────────────────────
+  const scripts: Array<{ name: string; content: string }> = [
+    { name: HOOK_SCRIPTS['Stop']!, content: buildStopScript(port) },
+    { name: HOOK_SCRIPTS['Notification']!, content: buildNotifyScript(port) },
+    { name: HOOK_SCRIPTS['PreToolUse']!, content: buildPreToolScript(port) },
+    { name: HOOK_SCRIPTS['PostToolUse']!, content: buildPostToolScript(port) },
+  ];
+
+  for (const { name, content } of scripts) {
+    const scriptPath = path.join(CODEDECK_DIR, name);
+    await fs.writeFile(scriptPath, content);
+    await fs.chmod(scriptPath, 0o755);
+  }
+
+  // ── 2. Update ~/.claude/settings.json ──────────────────────────────────────
   let settings: Record<string, unknown> = {};
   try {
     const raw = await fs.readFile(CC_SETTINGS_PATH, 'utf-8');
     settings = JSON.parse(raw);
   } catch {
-    // file may not exist
+    // file may not exist yet — start fresh
   }
 
   const hooks = (settings['hooks'] as Record<string, unknown[]> | undefined) ?? {};
-  const stopHooks = (hooks['Stop'] as Array<{ type: string; command: string }> | undefined) ?? [];
 
-  const hookEntry = { type: 'command', command: CC_HOOK_SCRIPT_PATH };
-  const alreadySet = stopHooks.some((h) => h.command === CC_HOOK_SCRIPT_PATH);
+  type HookEntry = { matcher?: string; hooks?: Array<{ type: string; command: string }> };
 
-  if (!alreadySet) {
-    hooks['Stop'] = [...stopHooks, hookEntry];
-    settings['hooks'] = hooks;
+  for (const [eventName, scriptName] of Object.entries(HOOK_SCRIPTS)) {
+    const scriptPath = path.join(CODEDECK_DIR, scriptName);
+    const entries = ((hooks[eventName] as unknown[]) ?? []) as HookEntry[];
 
-    await fs.mkdir(path.dirname(CC_SETTINGS_PATH), { recursive: true });
-    await fs.writeFile(CC_SETTINGS_PATH, JSON.stringify(settings, null, 2));
+    // Remove any legacy flat entries pointing to any codedeck script (wrong format)
+    const cleaned = entries.filter((entry) => {
+      const flat = entry as unknown as { type?: string; command?: string };
+      return !(flat.type === 'command' && typeof flat.command === 'string' && flat.command.includes('codedeck'));
+    });
+
+    // Remove outdated correct-format entries for codedeck scripts (port may have changed)
+    const withoutOld = cleaned.filter((entry) =>
+      !(Array.isArray(entry.hooks) &&
+        entry.hooks.some((h) => h.command.includes('codedeck'))),
+    );
+
+    // Register in correct format
+    withoutOld.push({
+      matcher: '',
+      hooks: [{ type: 'command', command: scriptPath }],
+    });
+
+    hooks[eventName] = withoutOld;
   }
+
+  settings['hooks'] = hooks;
+
+  // Validate before writing
+  const json = JSON.stringify(settings, null, 2);
+  JSON.parse(json); // throws if invalid
+
+  await fs.mkdir(path.dirname(CC_SETTINGS_PATH), { recursive: true });
+  await fs.writeFile(CC_SETTINGS_PATH, json);
 }
+
+/** @deprecated Use setupCCHooks() instead */
+export const setupCCStopHook = setupCCHooks;
