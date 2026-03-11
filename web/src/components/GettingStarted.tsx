@@ -57,11 +57,14 @@ export function GettingStarted({ keys, onKeyCreated, onDeviceAppeared }: Props) 
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const bindCmd = apiKey
-    ? `codedeck bind ${window.location.origin}/bind/${apiKey}`
+  const bindUrl = apiKey
+    ? `${window.location.origin}/bind/${apiKey}`
     : existingKey
-      ? `# Retrieve your API key from the API Keys section below,\n# then run: codedeck bind ${window.location.origin}/bind/<your-api-key>`
+      ? `${window.location.origin}/bind/<your-api-key>`
       : '';
+  const fullCmd = bindUrl
+    ? `npm i -g codedeck && codedeck bind ${bindUrl}`
+    : '';
 
   return (
     <div style={{ border: '1px solid #334155', borderRadius: 12, padding: 24, marginBottom: 24 }}>
@@ -90,20 +93,21 @@ export function GettingStarted({ keys, onKeyCreated, onDeviceAppeared }: Props) 
         {hasBindUrl && (
           <div style={{ background: '#0f172a', borderRadius: 8, padding: 14 }}>
             <pre style={{ margin: 0, color: '#e2e8f0', fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-              {bindCmd}
+              {fullCmd}
             </pre>
             {apiKey && (
               <button
                 class="btn btn-secondary"
                 style={{ marginTop: 10, fontSize: 11 }}
-                onClick={() => handleCopy(`codedeck bind ${window.location.origin}/bind/${apiKey}`)}
+                onClick={() => handleCopy(fullCmd)}
               >
                 {copied ? 'Copied!' : 'Copy'}
               </button>
             )}
             <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>
-              This installs the daemon and sets it up to run automatically on login (macOS).
-              <br />Don't have codedeck installed? Run: <code style={{ color: '#94a3b8' }}>npm i -g codedeck</code>
+              Installs codedeck and binds this machine to your account.
+              Auto-starts on login (macOS/Linux).
+              {'\n'}Re-binding on the same machine will replace the previous server connection.
             </div>
           </div>
         )}
