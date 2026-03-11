@@ -15,6 +15,7 @@ import {
   type SessionRecord,
 } from '../store/session-store.js';
 import logger from '../util/logger.js';
+import { timelineEmitter } from '../daemon/timeline-emitter.js';
 
 // Restart loop prevention: max 3 restarts within 5 minutes
 const MAX_RESTARTS = 3;
@@ -29,6 +30,7 @@ export function setSessionEventCallback(cb: SessionEventCallback): void {
 
 function emitSessionEvent(event: 'started' | 'stopped' | 'error', session: string, state: string): void {
   try { _onSessionEvent?.(event, session, state); } catch { /* ignore */ }
+  timelineEmitter.emit(session, 'session.state', { state: event });
 }
 
 /** Called after upsert (record provided) or remove (record=null, name provided). */

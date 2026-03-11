@@ -21,6 +21,10 @@ interface Props {
   quickData: UseQuickDataResult;
   /** Model detected from terminal output for the active session. */
   detectedModel?: ModelChoice;
+  /** Hide the shortcuts row (e.g. in chat mode). */
+  hideShortcuts?: boolean;
+  /** Called after a message is sent — for local UX only (e.g. optimistic display). Does not emit timeline events. */
+  onSend?: (sessionName: string, text: string) => void;
 }
 
 type MenuAction = 'restart' | 'new' | 'stop';
@@ -49,7 +53,7 @@ function loadModel(): ModelChoice | null {
   return null;
 }
 
-export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend }: Props) {
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -119,11 +123,12 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     if (!text || !ws || !activeSession) return;
     quickData.recordHistory(text, activeSession.name);
     ws.sendSessionCommand('send', { sessionName: activeSession.name, text });
+    onSend?.(activeSession.name, text);
     if (divRef.current) divRef.current.textContent = '';
     setHasText(false);
     histIdxRef.current = -1;
     draftRef.current = '';
-  }, [ws, activeSession, quickData]);
+  }, [ws, activeSession, quickData, onSend]);
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -231,8 +236,8 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
 
   return (
     <div class="controls-wrapper">
-      {/* Shortcut row */}
-      <div class="shortcuts-row">
+      {/* Shortcut row — hidden in chat mode */}
+      {!hideShortcuts && <div class="shortcuts-row">
         <div class="shortcuts">
           {SHORTCUTS.map((s) => (
             <button
@@ -274,7 +279,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
             )}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Main input row */}
       <div class="controls">

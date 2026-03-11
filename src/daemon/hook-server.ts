@@ -16,6 +16,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import logger from '../util/logger.js';
+import { timelineEmitter } from './timeline-emitter.js';
 
 export const DEFAULT_HOOK_PORT = 51913;
 const PORT_FILE = path.join(os.homedir(), '.codedeck', 'hook-port');
@@ -95,9 +96,16 @@ export async function startHookServer(onHook: HookCallback): Promise<{ server: h
           const tool = (msg['tool'] as string | undefined) ?? 'unknown';
           logger.debug({ session, tool }, 'Hook: tool start');
           onHook({ event: 'tool_start', session, tool });
+          timelineEmitter.emit(session, 'tool.call', { tool }, { source: 'hook' });
         } else if (event === 'tool_end') {
           logger.debug({ session }, 'Hook: tool end');
           onHook({ event: 'tool_end', session });
+          timelineEmitter.emit(session, 'tool.result', {}, { source: 'hook' });
+        } else if (event === 'mode_change') {
+          const mode = (msg['mode'] as string | undefined) ?? '';
+          const active = msg['active'] !== false;
+          logger.debug({ session, mode, active }, 'Hook: mode change');
+          timelineEmitter.emit(session, 'mode.state', { mode, active }, { source: 'hook' });
         }
 
         res.writeHead(200);

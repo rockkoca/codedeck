@@ -3,12 +3,16 @@ import { LoginPage } from './pages/LoginPage.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 import { SessionTabs } from './components/SessionTabs.js';
 import { TerminalView } from './components/TerminalView.js';
+import { ChatView } from './components/ChatView.js';
 import { SessionControls } from './components/SessionControls.js';
 import { useQuickData } from './components/QuickInputPanel.js';
 import { NewSessionDialog } from './components/NewSessionDialog.js';
+import { useTimeline } from './hooks/useTimeline.js';
 import { WsClient } from './ws-client.js';
 import { configure as configureApi, apiFetch } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
+
+type ViewMode = 'terminal' | 'chat';
 
 interface AuthState {
   token: string;
@@ -160,10 +164,26 @@ export function App() {
   const termFitFnRef = useRef<(() => void) | null>(null);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const stored = localStorage.getItem('rcc_viewMode');
+    if (stored === 'terminal' || stored === 'chat') return stored;
+    return isMobile ? 'chat' : 'terminal';
+  });
+  const toggleViewMode = useCallback(() => {
+    setViewMode((prev) => {
+      const next = prev === 'terminal' ? 'chat' : 'terminal';
+      localStorage.setItem('rcc_viewMode', next);
+      return next;
+    });
+  }, []);
+
   const focusTerminal = useCallback(() => {
     termFitFnRef.current?.();
     if (!isMobile) termFocusFnRef.current?.();
   }, [isMobile]);
+
+  // Timeline events for chat view
+  const { events: timelineEvents, loading: timelineLoading } = useTimeline(activeSession, wsRef.current);
 
   // Set up WebSocket only when a server is selected
   useEffect(() => {
@@ -476,9 +496,14 @@ export function App() {
                   </div>
                 )}
               </div>
-              <span class={`badge ${connected ? 'badge-online' : 'badge-offline'}`} style={{ fontSize: 10 }}>
-                {connected ? '● Online' : '○ Offline'}
-              </span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button class="view-toggle" onClick={toggleViewMode}>
+                  {viewMode === 'chat' ? '⌨' : '💬'}
+                </button>
+                <span class={`badge ${connected ? 'badge-online' : 'badge-offline'}`} style={{ fontSize: 10 }}>
+                  {connected ? '● Online' : '○ Offline'}
+                </span>
+              </div>
             </div>
 
             <SessionTabs
@@ -499,16 +524,20 @@ export function App() {
             />
 
             {activeSession ? (
-              <TerminalView
-                key={activeSession}
-                sessionName={activeSession}
-                ws={wsRef.current}
-                connected={connected}
-                onDiff={(apply) => registerDiffApplyer(activeSession, apply)}
-                onHistory={(apply) => registerHistoryApplyer(activeSession, apply)}
-                onFocusFn={(fn) => { termFocusFnRef.current = fn; }}
-                onFitFn={(fn) => { termFitFnRef.current = fn; }}
-              />
+              viewMode === 'chat' ? (
+                <ChatView events={timelineEvents} loading={timelineLoading} />
+              ) : (
+                <TerminalView
+                  key={activeSession}
+                  sessionName={activeSession}
+                  ws={wsRef.current}
+                  connected={connected}
+                  onDiff={(apply) => registerDiffApplyer(activeSession, apply)}
+                  onHistory={(apply) => registerHistoryApplyer(activeSession, apply)}
+                  onFocusFn={(fn) => { termFocusFnRef.current = fn; }}
+                  onFitFn={(fn) => { termFitFnRef.current = fn; }}
+                />
+              )
             ) : (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
                 <div style={{ fontSize: 32 }}>⌨</div>
@@ -519,7 +548,7 @@ export function App() {
               </div>
             )}
 
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={viewMode === 'chat'} />
           </>
         )}
       </main>

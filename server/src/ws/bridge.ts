@@ -21,6 +21,8 @@ const BROWSER_RATE_WINDOW = 10_000; // 10s
 const BROWSER_WHITELIST = new Set([
   'terminal.subscribe',
   'terminal.unsubscribe',
+  'terminal.snapshot_request',
+  'timeline.replay_request',
   'session.start',
   'session.stop',
   'session.restart',

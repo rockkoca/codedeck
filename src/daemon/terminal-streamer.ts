@@ -6,6 +6,8 @@
 import { capturePaneVisible, capturePaneHistory } from '../agent/tmux.js';
 import { getPaneSize } from '../agent/tmux.js';
 import logger from '../util/logger.js';
+import { timelineEmitter } from './timeline-emitter.js';
+import { processTerminalDiff } from './terminal-parser.js';
 
 const ACTIVE_INTERVAL_MS = 100; // 10 FPS
 const IDLE_INTERVAL_MS = 1000; // 1 FPS
@@ -19,6 +21,16 @@ export interface TerminalDiff {
   /** Full frame width/height (cols x rows) */
   cols: number;
   rows: number;
+  /** Per-session monotonic frame counter */
+  frameSeq: number;
+  /** True when first frame after subscribe or snapshot_request */
+  fullFrame: boolean;
+  /** True only when fullFrame was triggered by terminal.snapshot_request (not subscribe) */
+  snapshotRequested: boolean;
+  /** True when screen scrolled up by k lines */
+  scrolled: boolean;
+  /** Number of new lines at the bottom when scrolled (0 when not scrolled) */
+  newLineCount: number;
 }
 
 export interface TerminalHistory {
@@ -44,6 +56,8 @@ export class TerminalStreamer {
   private isIdle = new Map<string, boolean>();
   private errorCounts = new Map<string, number>();
   private sizeCache = new Map<string, { cols: number; rows: number; ts: number }>();
+  private frameSeqs = new Map<string, number>();
+  private pendingSnapshot = new Set<string>();
   private static readonly SIZE_CACHE_MS = 5_000;
 
   private static readonly MAX_CONSECUTIVE_ERRORS = 5;
@@ -85,6 +99,7 @@ export class TerminalStreamer {
       this.lastChangeAt.delete(sessionName);
       this.isIdle.delete(sessionName);
       this.errorCounts.delete(sessionName);
+      this.frameSeqs.delete(sessionName);
     }
   }
 
@@ -102,12 +117,30 @@ export class TerminalStreamer {
     this.sizeCache.delete(sessionName);
   }
 
+  /** Clear lastFrames cache so next capture produces fullFrame + terminal.snapshot event. */
+  requestSnapshot(sessionName: string): void {
+    this.lastFrames.delete(sessionName);
+    this.pendingSnapshot.add(sessionName);
+    // Nudge to produce the frame quickly
+    if (this.subscribers.has(sessionName)) {
+      this.nudge(sessionName);
+    }
+  }
+
   private startCapture(sessionName: string): void {
+    // Clear lastFrames so first capture is a fullFrame
+    this.lastFrames.delete(sessionName);
     this.lastChangeAt.set(sessionName, Date.now());
     this.isIdle.set(sessionName, false);
     this.errorCounts.set(sessionName, 0);
     this.scheduleNextCapture(sessionName, ACTIVE_INTERVAL_MS);
     logger.debug({ sessionName }, 'Terminal capture started');
+  }
+
+  private nextFrameSeq(sessionName: string): number {
+    const seq = (this.frameSeqs.get(sessionName) ?? 0) + 1;
+    this.frameSeqs.set(sessionName, seq);
+    return seq;
   }
 
   private scheduleNextCapture(sessionName: string, delayMs: number): void {
@@ -171,6 +204,7 @@ export class TerminalStreamer {
         this.lastChangeAt.delete(sessionName);
         this.isIdle.delete(sessionName);
         this.errorCounts.delete(sessionName);
+        this.frameSeqs.delete(sessionName);
       } else {
         this.scheduleNextCapture(sessionName, ACTIVE_INTERVAL_MS * errors);
       }
@@ -178,9 +212,24 @@ export class TerminalStreamer {
     }
 
     const previousLines = this.lastFrames.get(sessionName) ?? [];
-    const diff = computeLineDiff(previousLines, currentLines);
+    const isFullFrame = previousLines.length === 0;
+    const snapshotRequested = isFullFrame && this.pendingSnapshot.has(sessionName);
+    if (snapshotRequested) this.pendingSnapshot.delete(sessionName);
 
-    if (diff.length > 0) {
+    const diff = isFullFrame
+      ? currentLines.map((line, i) => [i, line] as [number, string])
+      : computeLineDiff(previousLines, currentLines);
+
+    // Detect scroll: find max k where current[0..rows-k-1] === previous[k..rows-1]
+    let scrolled = false;
+    let newLineCount = 0;
+    if (!isFullFrame && diff.length > 0) {
+      const scrollInfo = detectScroll(previousLines, currentLines);
+      scrolled = scrollInfo.scrolled;
+      newLineCount = scrollInfo.newLineCount;
+    }
+
+    if (diff.length > 0 || isFullFrame) {
       this.lastFrames.set(sessionName, currentLines);
       this.lastChangeAt.set(sessionName, Date.now());
       this.isIdle.set(sessionName, false);
@@ -191,6 +240,11 @@ export class TerminalStreamer {
         lines: diff,
         cols,
         rows,
+        frameSeq: this.nextFrameSeq(sessionName),
+        fullFrame: isFullFrame,
+        snapshotRequested,
+        scrolled,
+        newLineCount,
       };
 
       const subs = this.subscribers.get(sessionName);
@@ -205,6 +259,20 @@ export class TerminalStreamer {
           }
         }
       }
+
+      // Emit terminal.snapshot timeline event only when triggered by snapshot_request
+      if (isFullFrame && snapshotRequested) {
+        timelineEmitter.emit(sessionName, 'terminal.snapshot', {
+          lines: currentLines,
+          cols,
+          rows,
+        });
+      }
+
+      // Extract assistant.text from scrolled content (low-confidence terminal parse)
+      if (scrolled && newLineCount > 0) {
+        processTerminalDiff(sessionName, currentLines, rows, scrolled, newLineCount);
+      }
     }
 
     if (!this.subscribers.has(sessionName)) return;
@@ -215,6 +283,7 @@ export class TerminalStreamer {
 
     if (nowIdle && !wasIdle) {
       this.isIdle.set(sessionName, true);
+      timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
     } else if (!nowIdle && wasIdle) {
       this.isIdle.set(sessionName, false);
     }
@@ -231,6 +300,8 @@ export class TerminalStreamer {
     this.lastFrames.clear();
     this.lastChangeAt.clear();
     this.isIdle.clear();
+    this.frameSeqs.clear();
+    this.pendingSnapshot.clear();
   }
 }
 
@@ -253,4 +324,31 @@ function computeLineDiff(prev: string[], curr: string[]): Array<[number, string]
   }
 
   return changed;
+}
+
+/**
+ * Deterministic scroll detection.
+ * Find max k where current[0..rows-k-1] === previous[k..rows-1].
+ * If k > 0: screen scrolled up by k lines, new content is bottom k lines.
+ */
+export function detectScroll(prev: string[], curr: string[]): { scrolled: boolean; newLineCount: number } {
+  const rows = Math.min(prev.length, curr.length);
+  if (rows === 0) return { scrolled: false, newLineCount: 0 };
+
+  // Try shift values from largest down to 1 (rows-1 means all but one line scrolled off)
+  const maxShift = rows - 1;
+  for (let k = maxShift; k >= 1; k--) {
+    let match = true;
+    for (let i = 0; i < rows - k; i++) {
+      if (curr[i] !== prev[i + k]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      return { scrolled: true, newLineCount: k };
+    }
+  }
+
+  return { scrolled: false, newLineCount: 0 };
 }

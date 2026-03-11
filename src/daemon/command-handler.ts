@@ -8,6 +8,7 @@ import { listSessions } from '../store/session-store.js';
 import { routeMessage, type InboundMessage, type RouterContext } from '../router/message-router.js';
 import { terminalStreamer, type StreamSubscriber } from './terminal-streamer.js';
 import type { ServerLink } from './server-link.js';
+import { timelineEmitter } from './timeline-emitter.js';
 import logger from '../util/logger.js';
 import { homedir } from 'os';
 
@@ -59,6 +60,12 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       break;
     case 'terminal.unsubscribe':
       handleUnsubscribe(cmd);
+      break;
+    case 'terminal.snapshot_request':
+      handleSnapshotRequest(cmd);
+      break;
+    case 'timeline.replay_request':
+      handleTimelineReplay(cmd, serverLink);
       break;
     case 'auth_ok':
     case 'heartbeat':
@@ -182,6 +189,7 @@ async function handleSend(cmd: Record<string, unknown>): Promise<void> {
 
   try {
     await sendKeys(sessionName, text);
+    timelineEmitter.emit(sessionName, 'user.message', { text });
   } catch (err) {
     logger.error({ sessionName, err }, 'session.send failed');
   }
@@ -276,4 +284,50 @@ function handleUnsubscribe(cmd: Record<string, unknown>): void {
     activeSubscriptions.delete(session);
     logger.debug({ session }, 'Terminal unsubscribed via web');
   }
+}
+
+function handleSnapshotRequest(cmd: Record<string, unknown>): void {
+  const sessionName = cmd.sessionName as string | undefined;
+  if (!sessionName) return;
+  terminalStreamer.requestSnapshot(sessionName);
+  logger.debug({ sessionName }, 'Snapshot requested via web');
+}
+
+function handleTimelineReplay(cmd: Record<string, unknown>, serverLink: ServerLink): void {
+  const sessionName = cmd.sessionName as string | undefined;
+  const afterSeq = cmd.afterSeq as number | undefined;
+  const requestEpoch = cmd.epoch as number | undefined;
+  const requestId = cmd.requestId as string | undefined;
+
+  if (!sessionName || afterSeq === undefined || requestEpoch === undefined) {
+    logger.warn('timeline.replay_request: missing fields');
+    return;
+  }
+
+  if (requestEpoch !== timelineEmitter.epoch) {
+    // Daemon restarted — epoch mismatch
+    try {
+      serverLink.send({
+        type: 'timeline.replay',
+        sessionName,
+        requestId,
+        events: [],
+        truncated: true,
+        epoch: timelineEmitter.epoch,
+      });
+    } catch { /* not connected */ }
+    return;
+  }
+
+  const { events, truncated } = timelineEmitter.replay(sessionName, afterSeq);
+  try {
+    serverLink.send({
+      type: 'timeline.replay',
+      sessionName,
+      requestId,
+      events,
+      truncated,
+      epoch: timelineEmitter.epoch,
+    });
+  } catch { /* not connected */ }
 }

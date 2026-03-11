@@ -6,6 +6,19 @@ import type { TerminalDiff } from './types.js';
 
 export type MessageHandler = (msg: ServerMessage) => void;
 
+export interface TimelineEvent {
+  eventId: string;
+  sessionId: string;
+  ts: number;
+  seq: number;
+  epoch: number;
+  source: 'daemon' | 'hook' | 'terminal-parse';
+  confidence: 'high' | 'medium' | 'low';
+  type: string;
+  payload: Record<string, unknown>;
+  hidden?: boolean;
+}
+
 export type ServerMessage =
   | { type: 'terminal.diff'; diff: TerminalDiff }
   | { type: 'terminal.history'; sessionName: string; content: string }
@@ -17,6 +30,8 @@ export type ServerMessage =
   | { type: 'daemon.reconnected' }
   | { type: 'session_list'; sessions: Array<{ name: string; project: string; role: string; agentType: string; state: string }> }
   | { type: 'outbound'; platform: string; channelId: string; content: string }
+  | { type: 'timeline.event'; event: TimelineEvent }
+  | { type: 'timeline.replay'; sessionName: string; requestId?: string; events: TimelineEvent[]; truncated: boolean; epoch: number }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 
@@ -112,6 +127,18 @@ export class WsClient {
   /** Request the current session list from the daemon. */
   requestSessionList(): void {
     this.send({ type: 'get_sessions' });
+  }
+
+  /** Request timeline event replay from the daemon for reconnection gap-fill. */
+  sendTimelineReplayRequest(sessionName: string, afterSeq: number, epoch: number): string {
+    const requestId = crypto.randomUUID();
+    this.send({ type: 'timeline.replay_request', sessionName, afterSeq, epoch, requestId });
+    return requestId;
+  }
+
+  /** Request a terminal snapshot (fullFrame) for a session. */
+  sendSnapshotRequest(sessionName: string): void {
+    this.send({ type: 'terminal.snapshot_request', sessionName });
   }
 
   private async openSocket(): Promise<void> {

@@ -4,6 +4,7 @@ import { sessionExists } from '../agent/tmux.js';
 import { detectMemoryBackend } from '../memory/detector.js';
 import { ServerLink } from './server-link.js';
 import { handleWebCommand, setRouterContext } from './command-handler.js';
+import { timelineEmitter } from './timeline-emitter.js';
 import { startHookServer } from './hook-server.js';
 import { setupCCHooks } from '../agent/signal.js';
 import type http from 'http';
@@ -202,6 +203,13 @@ export async function startup(): Promise<DaemonContext> {
     } catch (e) {
       logger.warn({ err: e, event, session }, 'Failed to send session event');
     }
+  }
+
+  // Forward all timeline events to connected browsers via ServerLink
+  if (serverLink) {
+    timelineEmitter.on((event) => {
+      serverLink!.sendTimelineEvent(event);
+    });
   }
 
   // Set up router context so inbound chat messages can be dispatched to routeMessage
