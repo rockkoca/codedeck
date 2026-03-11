@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.remotechatcli.app',
-  appName: 'Remote Chat CLI',
+  appId: 'app.codedeck',
+  appName: 'CodeDeck',
   webDir: 'dist',
   server: {
     // During development, point to the Vite dev server for live reload.

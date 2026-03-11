@@ -14,9 +14,9 @@ Place required assets here before submitting to App Store / Google Play.
 - `ios/screenshots/ipad-pro-12-9/` — 2048×2732 px (iPad Pro 12.9")
 
 ### App Store Listing
-- **Name**: Remote Chat CLI
+- **Name**: CodeDeck
 - **Subtitle**: AI agent terminal, anywhere
-- **Description**: Control AI coding agents from Discord, Telegram, or your browser. Remote Chat CLI bridges your local Claude Code / Codex sessions to any platform.
+- **Description**: Control AI coding agents from Discord, Telegram, or your browser. CodeDeck bridges your local Claude Code / Codex sessions to any platform.
 - **Keywords**: AI, terminal, Claude, agent, remote, SSH, coding assistant
 - **Category**: Developer Tools
 - **Privacy URL**: (your privacy policy URL)
@@ -36,7 +36,7 @@ Place required assets here before submitting to App Store / Google Play.
 - `android/screenshots/tablet-10/` — 1920×1200 px (optional)
 
 ### Play Store Listing
-- **App name**: Remote Chat CLI
+- **App name**: CodeDeck
 - **Short description** (80 chars): Control AI agents remotely via Discord, Telegram, or browser
 - **Full description**: (same as iOS, reformatted for Play Store markdown)
 - **Category**: Tools

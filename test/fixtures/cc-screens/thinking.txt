@@ -1,4 +1,4 @@
-  chat-cli v0.1.0
+  codedeck v0.1.0
 
   my-project — /home/user/projects/my-project
 

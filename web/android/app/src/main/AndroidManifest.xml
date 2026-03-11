@@ -39,12 +39,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep links: rcc://session/<id> -->
+            <!-- Deep links: codedeck://session/<id> -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="rcc" />
+                <data android:scheme="codedeck" />
             </intent-filter>
         </activity>
 

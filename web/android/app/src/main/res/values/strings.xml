@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Remote Chat CLI</string>
-    <string name="title_activity_main">Remote Chat CLI</string>
-    <string name="package_name">com.remotechatcli.app</string>
-    <string name="custom_url_scheme">rcc</string>
+    <string name="app_name">CodeDeck</string>
+    <string name="title_activity_main">CodeDeck</string>
+    <string name="package_name">app.codedeck</string>
+    <string name="custom_url_scheme">codedeck</string>
 </resources>

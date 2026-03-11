@@ -1,4 +1,4 @@
-  chat-cli v0.1.0
+  codedeck v0.1.0
 
   I'll help you implement the authentication system. Here's my plan:
 

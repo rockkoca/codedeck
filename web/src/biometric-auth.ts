@@ -45,8 +45,8 @@ export async function getAuthKey(): Promise<string | null> {
 
     // Authenticate before retrieving
     await BiometricAuth.verify({
-      reason: 'Authenticate to access Remote Chat CLI',
-      title: 'Remote Chat CLI',
+      reason: 'Authenticate to access CodeDeck',
+      title: 'CodeDeck',
       negativeButtonText: 'Use Passcode',
     });
 

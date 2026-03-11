@@ -1,4 +1,4 @@
-package com.remotechatcli.app;
+package app.codedeck;
 
 import com.getcapacitor.BridgeActivity;
 
