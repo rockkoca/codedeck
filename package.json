@@ -25,11 +25,12 @@
     "test:e2e": "vitest run --project e2e",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "lint": "eslint src/ --ext .ts",
+    "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.59.0",
     "commander": "^12.1.0",
     "octokit": "^4.0.2",
     "pino": "^9.5.0",

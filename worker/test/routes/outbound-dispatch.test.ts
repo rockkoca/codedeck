@@ -9,7 +9,7 @@ import type { Env } from '../../src/types.js';
 function makeApp(env: Partial<Env>) {
   const app = new Hono<{ Bindings: Env }>();
   app.use('*', async (c, next) => {
-    Object.assign(c.env, env);
+    c.env = { ...c.env, ...env } as Env;
     await next();
   });
   app.route('/outbound', outboundRoutes);
