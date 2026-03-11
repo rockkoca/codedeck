@@ -37,12 +37,18 @@ jobs:
           node-version: ${{ env.NODE_VERSION_PRIMARY }}
           cache: 'npm'
       - run: npm ci
+      - name: Install worker deps
+        run: npm ci
+        working-directory: worker
+      - name: Install server deps
+        run: npm ci
+        working-directory: server
       - name: Daemon
         run: npx tsc --noEmit
       - name: Worker
         run: npx tsc -p worker/tsconfig.json --noEmit
       - name: Server
-        run: npm ci && npx tsc --noEmit
+        run: npx tsc --noEmit
         working-directory: server
 
   # ── Secret scanning ────────────────────────────────────────────────────────
