@@ -141,6 +141,7 @@ export function App() {
   const [idleAlerts, setIdleAlerts] = useState<Set<string>>(new Set());
   const [activeTools, setActiveTools] = useState<Map<string, string>>(new Map());
   const [toasts, setToasts] = useState<Array<{ id: number; sessionName: string; project: string; kind: 'idle' | 'notification'; title?: string; message?: string }>>([]);
+  const [detectedModels, setDetectedModels] = useState<Map<string, 'opus' | 'sonnet' | 'haiku'>>(new Map());
   const quickData = useQuickData();
   const activeSessionRef = useRef(activeSession);
   activeSessionRef.current = activeSession;
@@ -198,6 +199,21 @@ export function App() {
       if (msg.type === 'terminal.diff') {
         const apply = diffApplyersRef.current.get(msg.diff.sessionName);
         apply?.(msg.diff);
+        // Scan lines for model keywords to detect active model
+        const sessionName = msg.diff.sessionName;
+        const stripped = msg.diff.lines.map(([, l]) => l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')).join(' ').toLowerCase();
+        const detected: 'opus' | 'sonnet' | 'haiku' | null =
+          stripped.includes('opus') ? 'opus' :
+          stripped.includes('sonnet') ? 'sonnet' :
+          stripped.includes('haiku') ? 'haiku' : null;
+        if (detected) {
+          setDetectedModels((prev) => {
+            if (prev.get(sessionName) === detected) return prev;
+            const next = new Map(prev);
+            next.set(sessionName, detected);
+            return next;
+          });
+        }
       }
       if (msg.type === 'terminal.history') {
         const applyHistory = historyApplyersRef.current.get(msg.sessionName);
@@ -503,7 +519,7 @@ export function App() {
               </div>
             )}
 
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} />
           </>
         )}
       </main>

@@ -19,6 +19,8 @@ interface Props {
   sessionDisplayName?: string | null;
   /** Quick data hook result from parent (loaded once at app level). */
   quickData: UseQuickDataResult;
+  /** Model detected from terminal output for the active session. */
+  detectedModel?: ModelChoice;
 }
 
 type MenuAction = 'restart' | 'new' | 'stop';
@@ -39,20 +41,20 @@ const SHORTCUTS: Array<{ label: string; title: string; data: string; wide?: bool
   { label: '⌫',    title: 'Backspace',  data: '\x7f' },
 ];
 
-function loadModel(): ModelChoice {
+function loadModel(): ModelChoice | null {
   try {
     const v = localStorage.getItem(MODEL_STORAGE_KEY);
     if (v === 'opus' || v === 'sonnet' || v === 'haiku') return v;
   } catch { /* ignore */ }
-  return 'sonnet';
+  return null;
 }
 
-export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel }: Props) {
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [model, setModel] = useState<ModelChoice>(loadModel);
+  const [model, setModel] = useState<ModelChoice | null>(loadModel);
   const [confirm, setConfirm] = useState<MenuAction | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
@@ -68,6 +70,13 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
   useEffect(() => {
     if (inputRef) (inputRef as { current: HTMLDivElement | null }).current = divRef.current;
   });
+
+  // Auto-adopt detected model when user hasn't explicitly chosen one
+  useEffect(() => {
+    if (detectedModel && model === null) {
+      setModel(detectedModel);
+    }
+  }, [detectedModel, model]);
 
   const disabled = !ws?.connected || !activeSession;
   const isClaudeCode = activeSession?.agentType === 'claude-code';
@@ -245,10 +254,10 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
               class="shortcut-btn"
               onClick={() => setModelOpen((o) => !o)}
               disabled={disabled}
-              title={`Model: ${model}`}
-              style={{ color: '#a78bfa', fontSize: 10 }}
+              title={model ? `Model: ${model}` : 'Model: Unknown — tap to select'}
+              style={{ color: model ? '#a78bfa' : '#6b7280', fontSize: 10 }}
             >
-              {model}
+              {model ?? 'unknown'}
             </button>
             {modelOpen && (
               <div class="menu-dropdown">
