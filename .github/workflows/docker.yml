@@ -20,6 +20,9 @@ jobs:
   docker:
     name: Build & Push
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
