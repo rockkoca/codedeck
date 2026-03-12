@@ -13,6 +13,8 @@ export class TimelineEmitter {
   private seqMap = new Map<string, number>();
   private buffer = new Map<string, TimelineEvent[]>();
   private handlers = new Set<(e: TimelineEvent) => void>();
+  /** Track last session.state per session to deduplicate repeated idle events */
+  private lastSessionState = new Map<string, string>();
   /** Daemon startup timestamp — changes on restart, used for epoch-based seq continuity */
   readonly epoch = Date.now();
 
@@ -21,7 +23,14 @@ export class TimelineEmitter {
     type: TimelineEventType,
     payload: Record<string, unknown>,
     opts?: { source?: TimelineSource; confidence?: TimelineConfidence },
-  ): TimelineEvent {
+  ): TimelineEvent | null {
+    // Deduplicate session.state — skip if state unchanged
+    if (type === 'session.state') {
+      const state = String(payload.state ?? '');
+      if (this.lastSessionState.get(sessionId) === state) return null;
+      this.lastSessionState.set(sessionId, state);
+    }
+
     const seq = (this.seqMap.get(sessionId) ?? 0) + 1;
     this.seqMap.set(sessionId, seq);
 

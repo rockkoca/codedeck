@@ -281,7 +281,8 @@ export class TerminalStreamer {
 
     if (nowIdle && !wasIdle) {
       this.isIdle.set(sessionName, true);
-      timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
+      // Note: session.state(idle) is now emitted by hook-server on 'idle' hook,
+      // not here. This flag only controls capture frame rate.
     } else if (!nowIdle && wasIdle) {
       this.isIdle.set(sessionName, false);
     }

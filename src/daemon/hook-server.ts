@@ -87,6 +87,7 @@ export async function startHookServer(onHook: HookCallback): Promise<{ server: h
           const agentType = (msg['agentType'] as string | undefined) ?? 'unknown';
           logger.info({ session, agentType }, 'Hook: session idle');
           onHook({ event: 'idle', session, agentType });
+          timelineEmitter.emit(session, 'session.state', { state: 'idle' }, { source: 'hook' });
         } else if (event === 'notification') {
           const title = (msg['title'] as string | undefined) ?? '';
           const message = (msg['message'] as string | undefined) ?? '';
@@ -96,6 +97,7 @@ export async function startHookServer(onHook: HookCallback): Promise<{ server: h
           const tool = (msg['tool'] as string | undefined) ?? 'unknown';
           logger.debug({ session, tool }, 'Hook: tool start');
           onHook({ event: 'tool_start', session, tool });
+          timelineEmitter.emit(session, 'session.state', { state: 'running' }, { source: 'hook' });
           timelineEmitter.emit(session, 'tool.call', { tool }, { source: 'hook' });
         } else if (event === 'tool_end') {
           logger.debug({ session }, 'Hook: tool end');
