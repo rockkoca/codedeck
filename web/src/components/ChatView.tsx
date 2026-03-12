@@ -4,7 +4,6 @@
  * Supports basic Markdown rendering (code blocks, inline code, bold).
  */
 import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
-import { h, type VNode } from 'preact';
 import type { TimelineEvent } from '../ws-client.js';
 
 interface Props {
@@ -217,70 +216,87 @@ function truncate(s: string, max: number): string {
 
 // ── Lightweight Markdown renderer ─────────────────────────────────────────
 
-/** Render inline markdown: `code`, **bold**, *italic* */
-function renderInline(text: string): (string | VNode)[] {
-  const parts: (string | VNode)[] = [];
-  // Match `code`, **bold**, *italic* — in priority order
+interface TextSegment {
+  type: 'text' | 'code' | 'bold' | 'italic';
+  content: string;
+}
+
+/** Parse inline markdown: `code`, **bold**, *italic* */
+function parseInline(text: string): TextSegment[] {
+  const segments: TextSegment[] = [];
   const regex = /`([^`]+)`|\*\*(.+?)\*\*|\*(.+?)\*/g;
   let last = 0;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
-    if (match.index > last) parts.push(text.slice(last, match.index));
-    if (match[1] !== undefined) {
-      parts.push(h('code', { class: 'chat-inline-code' }, match[1]));
-    } else if (match[2] !== undefined) {
-      parts.push(h('strong', null, match[2]));
-    } else if (match[3] !== undefined) {
-      parts.push(h('em', null, match[3]));
-    }
+    if (match.index > last) segments.push({ type: 'text', content: text.slice(last, match.index) });
+    if (match[1] !== undefined) segments.push({ type: 'code', content: match[1] });
+    else if (match[2] !== undefined) segments.push({ type: 'bold', content: match[2] });
+    else if (match[3] !== undefined) segments.push({ type: 'italic', content: match[3] });
     last = match.index + match[0].length;
   }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts;
+  if (last < text.length) segments.push({ type: 'text', content: text.slice(last) });
+  return segments;
+}
+
+interface CodeBlock { type: 'code-block'; lang: string; code: string }
+interface TextBlock { type: 'text-block'; text: string }
+type Block = CodeBlock | TextBlock;
+
+/** Split text into code blocks and text blocks. */
+function parseBlocks(text: string): Block[] {
+  const blocks: Block[] = [];
+  const regex = /```(\w*)\n([\s\S]*?)```/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > last) blocks.push({ type: 'text-block', text: text.slice(last, match.index) });
+    blocks.push({ type: 'code-block', lang: match[1] || '', code: match[2].replace(/\n$/, '') });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) blocks.push({ type: 'text-block', text: text.slice(last) });
+  return blocks;
+}
+
+/** Render inline segments as JSX. */
+function InlineText({ text }: { text: string }) {
+  const lines = text.split('\n');
+  return (
+    <span>
+      {lines.map((line, li) => {
+        const segments = parseInline(line);
+        return (
+          <span key={li}>
+            {li > 0 && <br />}
+            {segments.map((seg, si) => {
+              switch (seg.type) {
+                case 'code': return <code key={si} class="chat-inline-code">{seg.content}</code>;
+                case 'bold': return <strong key={si}>{seg.content}</strong>;
+                case 'italic': return <em key={si}>{seg.content}</em>;
+                default: return <span key={si}>{seg.content}</span>;
+              }
+            })}
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 /** Render markdown text with code blocks and inline formatting. */
 function RichText({ text }: { text: string }) {
-  // Split by fenced code blocks: ```lang\n...\n```
-  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
-  const parts: VNode[] = [];
-  let last = 0;
-  let match: RegExpExecArray | null;
-  let key = 0;
-
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    // Text before code block
-    if (match.index > last) {
-      const before = text.slice(last, match.index);
-      parts.push(h('span', { key: key++ }, ...renderTextLines(before)));
-    }
-    // Code block
-    const lang = match[1] || '';
-    const code = match[2].replace(/\n$/, '');
-    parts.push(
-      h('div', { key: key++, class: 'chat-code-block' },
-        lang && h('div', { class: 'chat-code-lang' }, lang),
-        h('pre', null, h('code', null, code)),
-      ),
-    );
-    last = match.index + match[0].length;
-  }
-
-  // Remaining text after last code block
-  if (last < text.length) {
-    parts.push(h('span', { key: key++ }, ...renderTextLines(text.slice(last))));
-  }
-
-  return h('div', { class: 'chat-rich-text' }, ...parts);
-}
-
-/** Render text lines with inline formatting, preserving newlines. */
-function renderTextLines(text: string): (string | VNode)[] {
-  const lines = text.split('\n');
-  const result: (string | VNode)[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (i > 0) result.push(h('br', null));
-    result.push(...renderInline(lines[i]));
-  }
-  return result;
+  const blocks = parseBlocks(text);
+  return (
+    <div class="chat-rich-text">
+      {blocks.map((block, i) =>
+        block.type === 'code-block' ? (
+          <div key={i} class="chat-code-block">
+            {block.lang && <div class="chat-code-lang">{block.lang}</div>}
+            <pre><code>{block.code}</code></pre>
+          </div>
+        ) : (
+          <InlineText key={i} text={block.text} />
+        ),
+      )}
+    </div>
+  );
 }
