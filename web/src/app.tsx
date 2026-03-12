@@ -117,7 +117,7 @@ export function App() {
     } catch { /* best-effort */ }
   }, [selectedServerId]);
 
-  // On mount: if restoring terminal view, immediately fetch sessions from D1
+  // Fetch sessions from DB immediately when auth + server are available
   useEffect(() => {
     if (!auth || !selectedServerId) return;
     apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string }> }>(
@@ -131,8 +131,7 @@ export function App() {
         state: s.state as SessionInfo['state'],
       })));
     }).catch(() => {/* WS fallback */});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally runs once on mount only
+  }, [auth, selectedServerId]);
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [activeSession, setActiveSessionState] = useState<string | null>(
