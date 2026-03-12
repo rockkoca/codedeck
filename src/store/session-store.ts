@@ -21,6 +21,8 @@ export interface SessionRecord {
   updatedAt: number;
   /** tmux pane ID (e.g. "%42") recorded at session creation. Used for pipe-pane streaming. */
   paneId?: string;
+  /** CC session UUID used with --session-id / --resume for deterministic JSONL path. */
+  ccSessionId?: string;
 }
 
 export interface SessionStore {

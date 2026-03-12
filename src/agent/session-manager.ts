@@ -17,8 +17,24 @@ import {
 } from '../store/session-store.js';
 import logger from '../util/logger.js';
 import { timelineEmitter } from '../daemon/timeline-emitter.js';
-import { startWatching, stopWatching, isWatching } from '../daemon/jsonl-watcher.js';
+import { startWatching, startWatchingFile, stopWatching, isWatching, claudeProjectDir } from '../daemon/jsonl-watcher.js';
 import { startWatching as startCodexWatching, stopWatching as stopCodexWatching, isWatching as isCodexWatching } from '../daemon/codex-watcher.js';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+
+/** Start JSONL watcher for a CC session — uses specific file if ccSessionId known, else directory scan. */
+function startCCWatcher(sessionName: string, projectDir: string, ccSessionId?: string): void {
+  if (ccSessionId) {
+    const jsonlPath = join(claudeProjectDir(projectDir), `${ccSessionId}.jsonl`);
+    startWatchingFile(sessionName, jsonlPath).catch((e) =>
+      logger.warn({ err: e, session: sessionName }, 'jsonl-watcher startWatchingFile failed'),
+    );
+  } else {
+    startWatching(sessionName, projectDir).catch((e) =>
+      logger.warn({ err: e, session: sessionName }, 'jsonl-watcher start failed'),
+    );
+  }
+}
 
 // Restart loop prevention: max 3 restarts within 5 minutes
 const MAX_RESTARTS = 3;
@@ -115,9 +131,7 @@ export async function restoreFromStore(): Promise<void> {
       logger.info({ session: s.name }, 'Missing on restore, restarting');
       await restartSession(s);
     } else if (s.agentType === 'claude-code' && s.projectDir && !isWatching(s.name)) {
-      startWatching(s.name, s.projectDir).catch((e) =>
-        logger.warn({ err: e, session: s.name }, 'jsonl-watcher start failed (restore)'),
-      );
+      startCCWatcher(s.name, s.projectDir, s.ccSessionId);
     } else if (s.agentType === 'codex' && s.projectDir && !isCodexWatching(s.name)) {
       startCodexWatching(s.name, s.projectDir).catch((e) =>
         logger.warn({ err: e, session: s.name }, 'codex-watcher start failed (restore)'),
@@ -159,9 +173,7 @@ export async function restoreFromStore(): Promise<void> {
     emitSessionPersist(record, name);
     emitSessionEvent('started', name, 'running');
     if (record.agentType === 'claude-code' && projectDir) {
-      startWatching(name, projectDir).catch((e) =>
-        logger.warn({ err: e, session: name }, 'jsonl-watcher start failed (restore)'),
-      );
+      startCCWatcher(name, projectDir, record.ccSessionId);
     } else if (record.agentType === 'codex' && projectDir) {
       startCodexWatching(name, projectDir).catch((e) =>
         logger.warn({ err: e, session: name }, 'codex-watcher start failed (restore)'),
@@ -203,6 +215,7 @@ export async function restartSession(record: SessionRecord): Promise<boolean> {
     agentType: record.agentType as AgentType,
     projectDir: record.projectDir,
     skipStore: true,
+    ccSessionId: record.ccSessionId,
   });
 
   return true;
@@ -218,11 +231,20 @@ interface LaunchOpts {
   extraEnv?: Record<string, string>;
   /** When true, start fresh without resuming last conversation. */
   fresh?: boolean;
+  /** CC session UUID for --session-id / --resume. Generated if absent for CC sessions. */
+  ccSessionId?: string;
 }
 
 export async function launchSession(opts: LaunchOpts): Promise<void> {
   const { name, projectName, role, agentType, projectDir, skipStore, extraEnv, fresh } = opts;
   const driver = getDriver(agentType);
+
+  // For CC sessions: use stored ccSessionId or generate a new one for deterministic JSONL path
+  let ccSessionId = opts.ccSessionId;
+  if (agentType === 'claude-code' && !ccSessionId) {
+    const existing = getSession(name);
+    ccSessionId = existing?.ccSessionId ?? randomUUID();
+  }
 
   // Configure agent-specific hooks/signals
   if (agentType === 'claude-code') {
@@ -237,9 +259,9 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
 
   const exists = await sessionExists(name);
   if (!exists) {
-    const launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh });
+    const launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh, ccSessionId });
     await newSession(name, launchCmd, { cwd: projectDir, env: extraEnv });
-    logger.info({ session: name, agentType }, 'Launched session');
+    logger.info({ session: name, agentType, ccSessionId }, 'Launched session');
   }
 
   // Always record paneId — it changes on each session creation/restart
@@ -252,6 +274,7 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
   }
 
   if (!skipStore) {
+    const existing = getSession(name);
     const record: SessionRecord = {
       name,
       projectName,
@@ -259,11 +282,12 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
       agentType,
       projectDir,
       state: 'running',
-      restarts: 0,
-      restartTimestamps: [],
-      createdAt: Date.now(),
+      restarts: existing?.restarts ?? 0,
+      restartTimestamps: existing?.restartTimestamps ?? [],
+      createdAt: existing?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
       paneId,
+      ...(ccSessionId ? { ccSessionId } : {}),
     };
     upsertSession(record);
     emitSessionPersist(record, name);
@@ -273,9 +297,7 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
 
   // Start structured-event watchers for supported agent types
   if (agentType === 'claude-code') {
-    startWatching(name, projectDir).catch((e) =>
-      logger.warn({ err: e, session: name }, 'jsonl-watcher start failed'),
-    );
+    startCCWatcher(name, projectDir, ccSessionId);
   } else if (agentType === 'codex') {
     startCodexWatching(name, projectDir).catch((e) =>
       logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
