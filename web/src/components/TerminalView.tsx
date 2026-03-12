@@ -135,6 +135,13 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       const buf = term.buffer.active;
       const baseY = buf.baseY;
       const viewportY = buf.viewportY;
+      // Nuclear guard: viewportY=0 with scrollback content is always a bug, never user intent.
+      // Nobody deliberately scrolls to the absolute top — snap back immediately.
+      if (viewportY === 0 && baseY > 0) {
+        autoFollowRef.current = true;
+        term.scrollToBottom();
+        return;
+      }
       const atBottom = viewportY >= baseY || baseY === 0;
       if (atBottom) {
         // Re-enter auto-follow only when no write is in progress.
