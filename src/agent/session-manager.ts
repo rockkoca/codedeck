@@ -17,6 +17,7 @@ import {
 import logger from '../util/logger.js';
 import { timelineEmitter } from '../daemon/timeline-emitter.js';
 import { startWatching, stopWatching, isWatching } from '../daemon/jsonl-watcher.js';
+import { startWatching as startCodexWatching, stopWatching as stopCodexWatching, isWatching as isCodexWatching } from '../daemon/codex-watcher.js';
 
 // Restart loop prevention: max 3 restarts within 5 minutes
 const MAX_RESTARTS = 3;
@@ -84,6 +85,7 @@ export async function stopProject(projectName: string): Promise<void> {
   const sessions = storeSessions(projectName);
   for (const s of sessions) {
     stopWatching(s.name);
+    stopCodexWatching(s.name);
     await killSession(s.name).catch(() => {});
     removeSession(s.name);
     emitSessionPersist(null, s.name);
@@ -113,6 +115,10 @@ export async function restoreFromStore(): Promise<void> {
     } else if (s.agentType === 'claude-code' && s.projectDir && !isWatching(s.name)) {
       startWatching(s.name, s.projectDir).catch((e) =>
         logger.warn({ err: e, session: s.name }, 'jsonl-watcher start failed (restore)'),
+      );
+    } else if (s.agentType === 'codex' && s.projectDir && !isCodexWatching(s.name)) {
+      startCodexWatching(s.name, s.projectDir).catch((e) =>
+        logger.warn({ err: e, session: s.name }, 'codex-watcher start failed (restore)'),
       );
     }
   }
@@ -153,6 +159,10 @@ export async function restoreFromStore(): Promise<void> {
     if (record.agentType === 'claude-code' && projectDir) {
       startWatching(name, projectDir).catch((e) =>
         logger.warn({ err: e, session: name }, 'jsonl-watcher start failed (restore)'),
+      );
+    } else if (record.agentType === 'codex' && projectDir) {
+      startCodexWatching(name, projectDir).catch((e) =>
+        logger.warn({ err: e, session: name }, 'codex-watcher start failed (restore)'),
       );
     }
     logger.info({ session: name, projectDir }, 'Discovered unregistered tmux session, registered');
@@ -259,10 +269,14 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
 
   emitSessionEvent('started', name, 'running');
 
-  // Start JSONL watcher for claude-code sessions to get structured chat events
+  // Start structured-event watchers for supported agent types
   if (agentType === 'claude-code') {
     startWatching(name, projectDir).catch((e) =>
       logger.warn({ err: e, session: name }, 'jsonl-watcher start failed'),
+    );
+  } else if (agentType === 'codex') {
+    startCodexWatching(name, projectDir).catch((e) =>
+      logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
     );
   }
 

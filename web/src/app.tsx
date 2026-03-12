@@ -174,18 +174,27 @@ export function App() {
   const termFitFnRef = useRef<(() => void) | null>(null);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const stored = localStorage.getItem('rcc_viewMode');
-    if (stored === 'terminal' || stored === 'chat') return stored;
-    return isMobile ? 'chat' : 'terminal';
+  const defaultViewMode: ViewMode = isMobile ? 'chat' : 'terminal';
+  // Per-session view mode: Record<sessionName, ViewMode>
+  const [viewModes, setViewModes] = useState<Record<string, ViewMode>>(() => {
+    try {
+      const stored = localStorage.getItem('rcc_viewModes');
+      if (stored) return JSON.parse(stored) as Record<string, ViewMode>;
+    } catch { /* ignore */ }
+    return {};
   });
+  // Current session's view mode, falls back to device default
+  const viewMode: ViewMode = (activeSession && viewModes[activeSession]) ? viewModes[activeSession] : defaultViewMode;
   const toggleViewMode = useCallback(() => {
-    setViewMode((prev) => {
-      const next = prev === 'terminal' ? 'chat' : 'terminal';
-      localStorage.setItem('rcc_viewMode', next);
-      return next;
+    if (!activeSession) return;
+    setViewModes((prev) => {
+      const current = prev[activeSession] ?? defaultViewMode;
+      const next: ViewMode = current === 'terminal' ? 'chat' : 'terminal';
+      const updated = { ...prev, [activeSession]: next };
+      localStorage.setItem('rcc_viewModes', JSON.stringify(updated));
+      return updated;
     });
-  }, []);
+  }, [activeSession, defaultViewMode]);
 
   const focusTerminal = useCallback(() => {
     termFitFnRef.current?.();
@@ -286,7 +295,8 @@ export function App() {
         const session = activeSessionRef.current;
         if (session) {
           ws.subscribeTerminal(session);
-          if (viewModeRef.current === 'chat') {
+          const mode = viewModesRef.current[session] ?? defaultViewMode;
+          if (mode === 'chat') {
             ws.sendResize(session, 200, 50);
           }
         }
@@ -324,8 +334,8 @@ export function App() {
   }, [activeSession, connected, viewMode]);
 
   // Re-subscribe when tab/window becomes visible (handles sleep/wake, background tabs)
-  const viewModeRef = useRef(viewMode);
-  viewModeRef.current = viewMode;
+  const viewModesRef = useRef(viewModes);
+  viewModesRef.current = viewModes;
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState !== 'visible') return;
@@ -333,7 +343,8 @@ export function App() {
       const session = activeSessionRef.current;
       if (!ws?.connected || !session) return;
       ws.subscribeTerminal(session);
-      if (viewModeRef.current === 'chat') {
+      const mode = viewModesRef.current[session] ?? defaultViewMode;
+      if (mode === 'chat') {
         ws.sendResize(session, 200, 50);
       }
     };

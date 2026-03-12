@@ -20,6 +20,7 @@ import { capturePaneVisible, capturePaneHistory, getPaneId, getPaneSize, session
 import { getSession, upsertSession } from '../store/session-store.js';
 import { processRawPtyData, resetParser } from './terminal-parser.js';
 import { isWatching } from './jsonl-watcher.js';
+import { isWatching as isCodexWatching } from './codex-watcher.js';
 import logger from '../util/logger.js';
 import { timelineEmitter } from './timeline-emitter.js';
 
@@ -389,8 +390,8 @@ export class TerminalStreamer {
     }
     this.resetIdleTimer(sessionName);
 
-    // Text extraction — skip if JSONL watcher is active (higher quality source)
-    if (!isWatching(sessionName)) {
+    // Text extraction — skip if a structured watcher is active (higher quality source)
+    if (!isWatching(sessionName) && !isCodexWatching(sessionName)) {
       processRawPtyData(sessionName, data);
     }
 
