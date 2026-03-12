@@ -269,10 +269,8 @@ export class TerminalStreamer {
         });
       }
 
-      // Extract assistant.text from scrolled content (low-confidence terminal parse)
-      if (scrolled && newLineCount > 0) {
-        processTerminalDiff(sessionName, currentLines, rows, scrolled, newLineCount);
-      }
+      // Extract assistant.text from terminal changes (streaming + scrolled)
+      processTerminalDiff(sessionName, currentLines, rows, scrolled, newLineCount, diff, isFullFrame);
     }
 
     if (!this.subscribers.has(sessionName)) return;

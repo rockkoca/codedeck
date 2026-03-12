@@ -1,8 +1,8 @@
 /**
  * ChatView — renders TimelineEvent[] as a chat-style view.
- * Replaces the old terminal-diff-based stub.
+ * Merges consecutive streaming assistant.text events into single blocks.
  */
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
 import type { TimelineEvent } from '../ws-client.js';
 
 interface Props {
@@ -11,17 +11,72 @@ interface Props {
   sessionState?: string;
 }
 
+/** A merged view item — either a single event or merged assistant text chunks. */
+interface ViewItem {
+  key: string;
+  type: 'event' | 'assistant-block';
+  event?: TimelineEvent;
+  /** Merged text for assistant-block */
+  text?: string;
+  ts?: number;
+  lastTs?: number;
+}
+
+/** Merge consecutive assistant.text events into blocks for display. */
+function buildViewItems(events: TimelineEvent[]): ViewItem[] {
+  const visible = events.filter((e) => !e.hidden);
+  const items: ViewItem[] = [];
+  let pendingText: string[] = [];
+  let pendingFirstTs = 0;
+  let pendingLastTs = 0;
+  let pendingKey = '';
+
+  const flushPending = () => {
+    if (pendingText.length > 0) {
+      items.push({
+        key: pendingKey,
+        type: 'assistant-block',
+        text: pendingText.join('\n'),
+        ts: pendingFirstTs,
+        lastTs: pendingLastTs,
+      });
+      pendingText = [];
+    }
+  };
+
+  for (const event of visible) {
+    if (event.type === 'assistant.text') {
+      const text = String(event.payload.text ?? '');
+      if (!text) continue;
+      if (pendingText.length === 0) {
+        pendingKey = event.eventId;
+        pendingFirstTs = event.ts;
+      }
+      pendingLastTs = event.ts;
+      pendingText.push(text);
+    } else {
+      flushPending();
+      items.push({ key: event.eventId, type: 'event', event });
+    }
+  }
+  flushPending();
+
+  return items;
+}
+
 export function ChatView({ events, loading, sessionState }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+
+  const viewItems = useMemo(() => buildViewItems(events), [events]);
 
   // Auto-scroll on new events
   useEffect(() => {
     if (autoScroll) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [events.length, autoScroll]);
+  }, [viewItems.length, events.length, autoScroll]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -34,18 +89,23 @@ export function ChatView({ events, loading, sessionState }: Props) {
     return <div class="chat-view"><div class="chat-loading">Loading timeline...</div></div>;
   }
 
-  const visible = events.filter((e) => !e.hidden);
-
   return (
     <div class="chat-view" ref={scrollRef} onScroll={handleScroll}>
-      {visible.length === 0 && (
+      {viewItems.length === 0 && (
         <div class="chat-loading">
           {sessionState ? `Session ${sessionState}` : 'No events yet'}
         </div>
       )}
-      {visible.map((event) => (
-        <ChatEvent key={event.eventId} event={event} />
-      ))}
+      {viewItems.map((item) =>
+        item.type === 'assistant-block' ? (
+          <div key={item.key} class="chat-event chat-assistant">
+            {item.text}
+            <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
+          </div>
+        ) : (
+          <ChatEvent key={item.key} event={item.event!} />
+        ),
+      )}
       <div ref={bottomRef} />
       {!autoScroll && (
         <button
@@ -68,14 +128,6 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
       return (
         <div class="chat-event chat-user">
           <div class="chat-bubble-content">{String(event.payload.text ?? '')}</div>
-          <ChatTime ts={event.ts} />
-        </div>
-      );
-
-    case 'assistant.text':
-      return (
-        <div class="chat-event chat-assistant">
-          {String(event.payload.text ?? '')}
           <ChatTime ts={event.ts} />
         </div>
       );
@@ -121,9 +173,7 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
     }
 
     case 'terminal.snapshot':
-      return (
-        <SnapshotEvent event={event} />
-      );
+      return <SnapshotEvent event={event} />;
 
     default:
       return null;

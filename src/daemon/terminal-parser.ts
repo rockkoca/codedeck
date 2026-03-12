@@ -80,8 +80,12 @@ export function extractScrolledText(
 }
 
 /**
- * Process a terminal diff and emit assistant.text if scrolled content detected.
- * Called from terminal-streamer after each diff with scroll metadata.
+ * Process a terminal diff and emit assistant.text for changed content.
+ * Called from terminal-streamer after each diff.
+ *
+ * Two modes:
+ * 1. Scrolled: extract new lines at the bottom (bulk text)
+ * 2. In-place changes: extract changed line content as streaming chunks
  */
 export function processTerminalDiff(
   sessionName: string,
@@ -89,14 +93,39 @@ export function processTerminalDiff(
   rows: number,
   scrolled: boolean,
   newLineCount: number,
+  changedLines?: Array<[number, string]>,
+  isFullFrame?: boolean,
 ): void {
-  if (!scrolled || newLineCount <= 0) return;
+  // Scrolled: bulk extract new bottom lines
+  if (scrolled && newLineCount > 0) {
+    const text = extractScrolledText(allLines, rows, newLineCount);
+    if (text) {
+      timelineEmitter.emit(sessionName, 'assistant.text', { text }, {
+        source: 'terminal-parse',
+        confidence: 'low',
+      });
+    }
+    return;
+  }
 
-  const text = extractScrolledText(allLines, rows, newLineCount);
-  if (!text) return;
-
-  timelineEmitter.emit(sessionName, 'assistant.text', { text }, {
-    source: 'terminal-parse',
-    confidence: 'low',
-  });
+  // In-place changes (streaming typing): extract changed text
+  if (!isFullFrame && changedLines && changedLines.length > 0) {
+    const kept: string[] = [];
+    for (const [, line] of changedLines) {
+      const stripped = stripAnsi(line).trimEnd();
+      const cls = classifyLine(stripped);
+      if (cls === 'KEEP' && stripped.length > 0) {
+        kept.push(stripped);
+      }
+    }
+    if (kept.length > 0) {
+      timelineEmitter.emit(sessionName, 'assistant.text', {
+        text: kept.join('\n'),
+        streaming: true,
+      }, {
+        source: 'terminal-parse',
+        confidence: 'low',
+      });
+    }
+  }
 }
