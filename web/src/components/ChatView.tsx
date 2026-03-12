@@ -1,8 +1,10 @@
 /**
  * ChatView — renders TimelineEvent[] as a chat-style view.
  * Merges consecutive streaming assistant.text events into single blocks.
+ * Supports basic Markdown rendering (code blocks, inline code, bold).
  */
 import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
+import { h, type VNode } from 'preact';
 import type { TimelineEvent } from '../ws-client.js';
 
 interface Props {
@@ -99,7 +101,7 @@ export function ChatView({ events, loading, sessionState }: Props) {
       {viewItems.map((item) =>
         item.type === 'assistant-block' ? (
           <div key={item.key} class="chat-event chat-assistant">
-            {item.text}
+            <RichText text={item.text!} />
             <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
           </div>
         ) : (
@@ -211,4 +213,74 @@ function ChatTime({ ts }: { ts: number }) {
 
 function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, max) + '...';
+}
+
+// ── Lightweight Markdown renderer ─────────────────────────────────────────
+
+/** Render inline markdown: `code`, **bold**, *italic* */
+function renderInline(text: string): (string | VNode)[] {
+  const parts: (string | VNode)[] = [];
+  // Match `code`, **bold**, *italic* — in priority order
+  const regex = /`([^`]+)`|\*\*(.+?)\*\*|\*(.+?)\*/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    if (match[1] !== undefined) {
+      parts.push(h('code', { class: 'chat-inline-code' }, match[1]));
+    } else if (match[2] !== undefined) {
+      parts.push(h('strong', null, match[2]));
+    } else if (match[3] !== undefined) {
+      parts.push(h('em', null, match[3]));
+    }
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+/** Render markdown text with code blocks and inline formatting. */
+function RichText({ text }: { text: string }) {
+  // Split by fenced code blocks: ```lang\n...\n```
+  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+  const parts: VNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    // Text before code block
+    if (match.index > last) {
+      const before = text.slice(last, match.index);
+      parts.push(h('span', { key: key++ }, ...renderTextLines(before)));
+    }
+    // Code block
+    const lang = match[1] || '';
+    const code = match[2].replace(/\n$/, '');
+    parts.push(
+      h('div', { key: key++, class: 'chat-code-block' },
+        lang && h('div', { class: 'chat-code-lang' }, lang),
+        h('pre', null, h('code', null, code)),
+      ),
+    );
+    last = match.index + match[0].length;
+  }
+
+  // Remaining text after last code block
+  if (last < text.length) {
+    parts.push(h('span', { key: key++ }, ...renderTextLines(text.slice(last))));
+  }
+
+  return h('div', { class: 'chat-rich-text' }, ...parts);
+}
+
+/** Render text lines with inline formatting, preserving newlines. */
+function renderTextLines(text: string): (string | VNode)[] {
+  const lines = text.split('\n');
+  const result: (string | VNode)[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) result.push(h('br', null));
+    result.push(...renderInline(lines[i]));
+  }
+  return result;
 }

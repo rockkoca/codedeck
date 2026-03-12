@@ -209,7 +209,13 @@ body {
 .chat-view { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
 .chat-event { margin: 2px 0; }
 .chat-user { background: #1e3a5f; border-radius: 8px; padding: 6px 12px; margin-left: 40px; text-align: right; }
-.chat-assistant { padding: 4px 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+.chat-assistant { padding: 4px 0; word-break: break-word; line-height: 1.5; }
+.chat-rich-text { white-space: pre-wrap; }
+.chat-code-block { background: #1a1a2e; border-radius: 8px; margin: 8px 0; overflow: hidden; }
+.chat-code-block pre { margin: 0; padding: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; font-size: 13px; line-height: 1.4; }
+.chat-code-block code { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', monospace; color: #e2e8f0; }
+.chat-code-lang { background: #2a2a4a; color: #94a3b8; font-size: 11px; padding: 4px 12px; font-family: sans-serif; }
+.chat-inline-code { background: #1e293b; color: #93c5fd; padding: 1px 5px; border-radius: 3px; font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', monospace; font-size: 0.9em; }
 .chat-tool { color: #64748b; font-size: 12px; padding: 2px 0; }
 .chat-tool-icon { margin-right: 4px; font-weight: bold; }
 .chat-mode { display: inline-block; background: #1e1338; color: #a78bfa; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
