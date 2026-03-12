@@ -184,18 +184,18 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   }, [connected, sessionName]);
 
   // Raw PTY bytes: feed directly into xterm.js.
-  // Depend on `ws` so the handler re-registers when WsClient becomes available
-  // (on page refresh, ws is null on first render, non-null after WS connects).
-  useEffect(() => {
-    if (!ws) return;
+  // Register handler during render (not in useEffect) to avoid timing gaps
+  // where ws becomes available but the effect hasn't re-run yet.
+  if (ws) {
     ws.onTerminalRaw((sName: string, data: Uint8Array) => {
       if (sName !== sessionName) return;
       termRef.current?.write(data);
     });
-    return () => {
-      ws.onTerminalRaw(null);
-    };
-  }, [ws, sessionName]);
+  }
+  // Cleanup on unmount only
+  useEffect(() => {
+    return () => { wsRef.current?.onTerminalRaw(null); };
+  }, []);
 
   // Handle terminal.stream_reset — reset xterm state so stale ANSI doesn't corrupt (Task 5.4)
   useEffect(() => {
