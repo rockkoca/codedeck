@@ -23,9 +23,49 @@ interface ViewItem {
   lastTs?: number;
 }
 
-/** Merge consecutive assistant.text events into blocks for display. */
+/** Merge consecutive assistant.text events into blocks for display.
+ *  Also:
+ *  - Merge consecutive tool.call + tool.result pairs into compact single lines
+ *  - Deduplicate consecutive session.state events with same state (keep last)
+ */
 function buildViewItems(events: TimelineEvent[]): ViewItem[] {
   const visible = events.filter((e) => !e.hidden);
+
+  // Pre-pass: merge tool.call+tool.result pairs and dedup session.state
+  const consolidated: TimelineEvent[] = [];
+  for (let i = 0; i < visible.length; i++) {
+    const ev = visible[i];
+
+    // Merge tool.call followed by tool.result into a single synthetic event
+    if (ev.type === 'tool.call') {
+      const next = visible[i + 1];
+      if (next && next.type === 'tool.result') {
+        const toolName = String(ev.payload.tool ?? 'tool');
+        const input = ev.payload.input ? ` ${truncate(String(ev.payload.input), 60)}` : '';
+        const status = next.payload.error ? `✗ ${truncate(String(next.payload.error), 60)}` : '✓';
+        consolidated.push({
+          ...ev,
+          type: 'tool.call',
+          payload: { ...ev.payload, tool: toolName, input: `${input} ${status}`.trim(), _merged: true },
+        });
+        i++; // skip the tool.result
+        continue;
+      }
+    }
+
+    // Deduplicate consecutive session.state events with the same state — keep last
+    if (ev.type === 'session.state') {
+      const next = visible[i + 1];
+      if (next && next.type === 'session.state' && String(next.payload.state) === String(ev.payload.state)) {
+        // Skip this one, keep the next (which will be checked again on next iteration)
+        continue;
+      }
+    }
+
+    consolidated.push(ev);
+  }
+
+  // Main pass: merge assistant.text blocks
   const items: ViewItem[] = [];
   let pendingText: string[] = [];
   let pendingFirstTs = 0;
@@ -45,7 +85,7 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
     }
   };
 
-  for (const event of visible) {
+  for (const event of consolidated) {
     if (event.type === 'assistant.text') {
       const text = String(event.payload.text ?? '');
       if (!text) continue;
@@ -155,6 +195,7 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
       );
 
     case 'tool.result':
+      // Standalone tool.result (not merged) — still rendered for cases without a preceding call
       return (
         <div class="chat-event chat-tool">
           <span class="chat-tool-icon">{'<'}</span>

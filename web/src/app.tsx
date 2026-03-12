@@ -131,7 +131,11 @@ export function App() {
         state: s.state as SessionInfo['state'],
       }));
       setSessions(mapped);
-      setSessionsLoaded(true);
+      // Only mark loaded if we got data — empty means daemon hasn't synced yet,
+      // so wait for WS session_list to avoid flashing "No active sessions"
+      if (mapped.length > 0) {
+        setSessionsLoaded(true);
+      }
       // Auto-select first session if none was previously saved
       if (mapped.length > 0 && !localStorage.getItem('rcc_session')) {
         setActiveSession(mapped[0].name);
