@@ -172,12 +172,9 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
           if (i < linesRef.current.length - 1) buf += '\r\n';
         }
         buf += '\x1b[J';
-        const savedLine = term.buffer.active.viewportY;
-        const wasScrolledUp = !autoFollowRef.current;
         writingCountRef.current++;
         term.write(buf, () => {
           writingCountRef.current--;
-          if (wasScrolledUp) term.scrollToLine(savedLine);
         });
       }
     });
@@ -213,12 +210,9 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       if (sName !== sessionName) return;
       const term = termRef.current;
       if (!term) return;
-      const savedLine = term.buffer.active.viewportY;
-      const wasScrolledUp = !autoFollowRef.current;
       writingCountRef.current++;
       term.write(data, () => {
         writingCountRef.current--;
-        if (wasScrolledUp) term.scrollToLine(savedLine);
       });
     });
   }
@@ -261,12 +255,11 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
         if (i < linesRef.current.length - 1) buf += '\r\n';
       }
       buf += '\x1b[J';
-      const savedLine = term.buffer.active.viewportY;
-      const wasScrolledUp = !autoFollowRef.current;
       writingCountRef.current++;
       term.write(buf, () => {
         writingCountRef.current--;
-        if (wasScrolledUp) term.scrollToLine(savedLine);
+        autoFollowRef.current = true;
+        term.scrollToBottom();
       });
     } else if (diff.lines.length > 0) {
       // Partial update: only write changed lines using cursor addressing
