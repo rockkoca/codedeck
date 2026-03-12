@@ -203,7 +203,18 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   if (ws) {
     ws.onTerminalRaw((sName: string, data: Uint8Array) => {
       if (sName !== sessionName) return;
-      termRef.current?.write(data);
+      const term = termRef.current;
+      if (!term) return;
+      if (!autoFollowRef.current) {
+        // User has scrolled up — write data but restore viewport so xterm's
+        // cursor-following doesn't yank the view back to bottom.
+        const savedLine = term.buffer.active.viewportY;
+        term.write(data, () => {
+          if (!autoFollowRef.current) term.scrollToLine(savedLine);
+        });
+      } else {
+        term.write(data);
+      }
     });
   }
   // Cleanup on unmount only
@@ -245,7 +256,14 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
         if (i < linesRef.current.length - 1) buf += '\r\n';
       }
       buf += '\x1b[J';
-      term.write(buf);
+      if (!autoFollowRef.current) {
+        const savedLine = term.buffer.active.viewportY;
+        term.write(buf, () => {
+          if (!autoFollowRef.current) term.scrollToLine(savedLine);
+        });
+      } else {
+        term.write(buf);
+      }
     } else if (diff.lines.length > 0) {
       // Partial update: only write changed lines using cursor addressing
       let buf = '';
@@ -256,11 +274,10 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       term.write(buf);
     }
 
-    // Auto-scroll to bottom only when in auto-follow mode (State 2).
-    // autoFollowRef is a sticky user-intent flag — only changed by real scroll events,
-    // not by onLineFeed intermediate states during write processing.
+    // Auto-scroll to bottom only when in auto-follow mode AND not a fullFrame
+    // (fullFrame already handles its own scroll restore inside the write callback).
     const touchIdle = !isTouchingRef.current && (Date.now() - lastTouchEndRef.current > 1000);
-    if (touchIdle && autoFollowRef.current) {
+    if (!diff.fullFrame && touchIdle && autoFollowRef.current) {
       setTimeout(() => {
         if (autoFollowRef.current) term.scrollToBottom();
       }, 0);
