@@ -29,8 +29,10 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   const lastTouchEndRef = useRef<number>(0);
   const isTouchingRef = useRef(false);
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
-  // Track whether terminal is scrolled up (ref so applyDiff closure always sees latest)
-  const scrolledUpRef = useRef(false);
+  // User intent: true = auto-follow bottom (State 2), false = user scrolled up (State 1).
+  // Only changed by real user scroll actions (onScroll), NOT by onLineFeed/writes.
+  // This prevents intermediate xterm write states from corrupting the follow flag.
+  const autoFollowRef = useRef(true);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -112,23 +114,35 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       wsRef.current?.sendResize(sessionName, cols, rows);
     });
 
-    // Track scroll position for "scroll to bottom" button + progress bar
-    const updateScroll = () => {
+    // Track scroll position for "scroll to bottom" button + progress bar.
+    // onScroll = real user scroll action → update autoFollowRef (sticky intent).
+    // onLineFeed = xterm write in progress → only update UI, NOT autoFollowRef.
+    const onScrollEvent = () => {
       const buf = term.buffer.active;
-      const baseY = buf.baseY; // total lines above viewport
-      const viewportY = buf.viewportY; // current scroll offset
-      const atBottom = viewportY >= baseY;
-      scrolledUpRef.current = !atBottom && baseY > 0;
-      setScrolledUp(!atBottom && baseY > 0);
+      const baseY = buf.baseY;
+      const viewportY = buf.viewportY;
+      const atBottom = viewportY >= baseY || baseY === 0;
+      // Update user intent: if they scrolled to bottom, re-enter auto-follow
+      autoFollowRef.current = atBottom;
+      setScrolledUp(!atBottom);
       setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
-      // Show scrollbar briefly
       setShowScrollbar(true);
       if (scrollHideTimerRef.current) clearTimeout(scrollHideTimerRef.current);
       scrollHideTimerRef.current = setTimeout(() => setShowScrollbar(false), 1500);
     };
-    term.onScroll(updateScroll);
-    // Also listen to lineFeed to update when new content arrives
-    term.onLineFeed(updateScroll);
+    const onLineFeedEvent = () => {
+      // Only update UI indicators — do NOT touch autoFollowRef here.
+      // onLineFeed fires during term.write() at intermediate buffer states,
+      // which would corrupt the sticky auto-follow flag.
+      const buf = term.buffer.active;
+      const baseY = buf.baseY;
+      const viewportY = buf.viewportY;
+      const atBottom = viewportY >= baseY || baseY === 0;
+      setScrolledUp(!atBottom);
+      setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
+    };
+    term.onScroll(onScrollEvent);
+    term.onLineFeed(onLineFeedEvent);
 
     termRef.current = term;
     fitRef.current = fitAddon;
@@ -242,13 +256,13 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       term.write(buf);
     }
 
-    // Auto-scroll to bottom unless user has scrolled up to read history.
-    // Check scrolledUpRef INSIDE setTimeout — by then xterm's write queue has
-    // settled and onScroll/onLineFeed have updated the ref to the true state.
+    // Auto-scroll to bottom only when in auto-follow mode (State 2).
+    // autoFollowRef is a sticky user-intent flag — only changed by real scroll events,
+    // not by onLineFeed intermediate states during write processing.
     const touchIdle = !isTouchingRef.current && (Date.now() - lastTouchEndRef.current > 1000);
-    if (touchIdle) {
+    if (touchIdle && autoFollowRef.current) {
       setTimeout(() => {
-        if (!scrolledUpRef.current) term.scrollToBottom();
+        if (autoFollowRef.current) term.scrollToBottom();
       }, 0);
     }
   }, []);
@@ -275,6 +289,8 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   }, [applyHistory, onHistory]);
 
   const scrollToBottom = () => {
+    // Re-enter auto-follow mode (State 2) before scrolling
+    autoFollowRef.current = true;
     termRef.current?.scrollToBottom();
   };
 
