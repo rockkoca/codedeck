@@ -1,4 +1,4 @@
-import { newSession, killSession, sessionExists, listSessions as tmuxListSessions, sendKeys, sendKey, capturePane, showBuffer, getPaneId, cleanupOrphanFifos } from './tmux.js';
+import { newSession, killSession, sessionExists, listSessions as tmuxListSessions, sendKeys, sendKey, capturePane, showBuffer, getPaneId, getPaneCwd, cleanupOrphanFifos } from './tmux.js';
 import { ClaudeCodeDriver } from './drivers/claude-code.js';
 import { CodexDriver } from './drivers/codex.js';
 import { OpenCodeDriver } from './drivers/opencode.js';
@@ -94,16 +94,57 @@ export async function initOnStartup(): Promise<void> {
   await cleanupOrphanFifos();
 }
 
-/** Reconcile store with actual tmux on daemon start — restart missing sessions. */
+// Pattern for valid codedeck session names: deck_{project}_{brain|wN}
+const DECK_SESSION_RE = /^deck_(.+)_(brain|w\d+)$/;
+
+/** Reconcile store with actual tmux on daemon start — restart missing sessions and discover orphans. */
 export async function restoreFromStore(): Promise<void> {
   const all = storeSessions();
   const live = await tmuxListSessions();
+
+  // 1. Restart store sessions missing from tmux
   for (const s of all) {
     if (s.state === 'stopped') continue;
     if (!live.includes(s.name)) {
       logger.info({ session: s.name }, 'Missing on restore, restarting');
       await restartSession(s);
     }
+  }
+
+  // 2. Discover tmux sessions unknown to the store (e.g. created before daemon started)
+  const knownNames = new Set(all.map((s) => s.name));
+  for (const name of live) {
+    if (knownNames.has(name)) continue;
+    const match = DECK_SESSION_RE.exec(name);
+    if (!match) continue; // not a codedeck session
+
+    const projectName = match[1];
+    const role = match[2] as 'brain' | `w${number}`;
+
+    // Infer metadata from tmux pane
+    const [projectDir, paneId] = await Promise.all([
+      getPaneCwd(name).catch(() => ''),
+      getPaneId(name).catch(() => undefined as string | undefined),
+    ]);
+
+    const record: SessionRecord = {
+      name,
+      projectName,
+      role,
+      agentType: 'claude-code', // default; most common
+      projectDir,
+      state: 'running',
+      restarts: 0,
+      restartTimestamps: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(paneId ? { paneId } : {}),
+    };
+
+    upsertSession(record);
+    emitSessionPersist(record, name);
+    emitSessionEvent('started', name, 'running');
+    logger.info({ session: name, projectDir }, 'Discovered unregistered tmux session, registered');
   }
 }
 

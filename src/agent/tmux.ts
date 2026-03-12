@@ -123,6 +123,12 @@ export async function getPaneId(session: string): Promise<string> {
   return tmuxExec(`display-message -p -t ${session} '#{pane_id}'`);
 }
 
+/** Get the current working directory of the first pane of a session. */
+export async function getPaneCwd(session: string): Promise<string> {
+  const raw = await tmuxExec(`display-message -p -t ${session} '#{pane_current_path}'`);
+  return raw.trim();
+}
+
 /** Delete the tmux paste buffer (clipboard cleanup after CC /copy). */
 export async function deleteBuffer(): Promise<void> {
   try {
