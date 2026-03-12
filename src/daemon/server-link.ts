@@ -43,6 +43,17 @@ export class ServerLink {
     this.stopWatchdog();
     if (this.pongTimer) { clearTimeout(this.pongTimer); this.pongTimer = undefined; }
 
+    // Close the existing socket before creating a new one.
+    // Without this, a socket still in CONNECTING state is orphaned and will
+    // eventually reach the server as a second daemon connection — the server
+    // then closes the *current* socket with 1001 "replaced", causing an
+    // infinite reconnect loop.
+    if (this.ws) {
+      const old = this.ws;
+      this.ws = null;
+      try { old.close(); } catch { /* ignore */ }
+    }
+
     const wsUrl = this.workerUrl.replace(/^http/, 'ws') + `/api/server/${this.serverId}/ws`;
     logger.info({ url: wsUrl }, 'ServerLink: connecting');
     this.reconnecting = false;
