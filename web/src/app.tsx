@@ -174,6 +174,8 @@ export function App() {
   const inputRef = useRef<HTMLDivElement>(null);
   const termFocusFnsRef = useRef<Map<string, () => void>>(new Map());
   const termFitFnsRef = useRef<Map<string, () => void>>(new Map());
+  const termScrollFnsRef = useRef<Map<string, () => void>>(new Map());
+  const chatScrollFnRef = useRef<(() => void) | null>(null);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const defaultViewMode: ViewMode = isMobile ? 'chat' : 'terminal';
@@ -203,6 +205,17 @@ export function App() {
     termFitFnsRef.current.get(activeSession)?.();
     if (!isMobile) termFocusFnsRef.current.get(activeSession)?.();
   }, [activeSession, isMobile]);
+
+  // Force scroll to bottom in whichever view is currently active
+  const scrollActiveToBottom = useCallback(() => {
+    if (!activeSession) return;
+    const mode = viewModesRef.current[activeSession] ?? defaultViewMode;
+    if (mode === 'chat') {
+      chatScrollFnRef.current?.();
+    } else {
+      termScrollFnsRef.current.get(activeSession)?.();
+    }
+  }, [activeSession, defaultViewMode]);
 
   // Timeline events for chat view
   const { events: timelineEvents, loading: timelineLoading } = useTimeline(activeSession, wsRef.current);
@@ -609,6 +622,7 @@ export function App() {
                     onHistory={(apply) => registerHistoryApplyer(s.name, apply)}
                     onFocusFn={(fn) => { termFocusFnsRef.current.set(s.name, fn); }}
                     onFitFn={(fn) => { termFitFnsRef.current.set(s.name, fn); }}
+                    onScrollBottomFn={(fn) => { termScrollFnsRef.current.set(s.name, fn); }}
                   />
                 </div>
               );
@@ -616,7 +630,7 @@ export function App() {
 
             {/* Chat view for active session in chat mode */}
             {activeSession && viewMode === 'chat' && (
-              <ChatView events={timelineEvents} loading={timelineLoading} sessionState={activeSessionInfo?.state} />
+              <ChatView events={timelineEvents} loading={timelineLoading} sessionState={activeSessionInfo?.state} onScrollBottomFn={(fn) => { chatScrollFnRef.current = fn; }} />
             )}
 
             {!activeSession && !sessionsLoaded && (
@@ -635,7 +649,7 @@ export function App() {
               </div>
             )}
 
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={viewMode === 'chat'} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={scrollActiveToBottom} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={viewMode === 'chat'} />
           </>
         )}
       </main>

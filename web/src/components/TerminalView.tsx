@@ -15,9 +15,11 @@ interface Props {
   onFocusFn?: (fn: () => void) => void;
   /** Receives a function that fits the terminal to its container and syncs size to tmux. */
   onFitFn?: (fn: () => void) => void;
+  /** Receives a function that forces the terminal to scroll to the bottom. */
+  onScrollBottomFn?: (fn: () => void) => void;
 }
 
-export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, onFocusFn, onFitFn }: Props) {
+export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, onFocusFn, onFitFn, onScrollBottomFn }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -162,6 +164,9 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
 
     // Expose focus function so parent can restore keyboard to xterm after button clicks
     onFocusFn?.(() => term.focus());
+
+    // Expose scroll-to-bottom function so parent can force-snap after sending a message
+    onScrollBottomFn?.(() => { autoFollowRef.current = true; term.scrollToBottom(); });
 
     // Expose fit function so parent can trigger resize on send / focus
     const doFitAndSnap = () => {

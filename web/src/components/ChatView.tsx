@@ -10,6 +10,8 @@ interface Props {
   events: TimelineEvent[];
   loading: boolean;
   sessionState?: string;
+  /** Receives a function that forces the chat list to scroll to the bottom. */
+  onScrollBottomFn?: (fn: () => void) => void;
 }
 
 /** A merged view item — either a single event, merged assistant text, or collapsed tool summary. */
@@ -107,7 +109,7 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
   return items;
 }
 
-export function ChatView({ events, loading, sessionState }: Props) {
+export function ChatView({ events, loading, sessionState, onScrollBottomFn }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const autoScrollRef = useRef(true);
@@ -118,8 +120,15 @@ export function ChatView({ events, loading, sessionState }: Props) {
   const scrollToBottom = () => {
     const el = scrollRef.current;
     if (!el) return;
+    autoScrollRef.current = true;
     el.scrollTop = el.scrollHeight;
   };
+
+  // Expose scroll-to-bottom so parent can force-snap after sending a message
+  useEffect(() => {
+    onScrollBottomFn?.(scrollToBottom);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onScrollBottomFn]);
 
   // Auto-scroll on new events — only read autoScrollRef, not setState, to avoid re-trigger loops
   useEffect(() => {
