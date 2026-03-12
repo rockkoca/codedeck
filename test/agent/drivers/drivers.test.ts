@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ClaudeCodeDriver } from '../../../src/agent/drivers/claude-code.js';
 import { CodexDriver } from '../../../src/agent/drivers/codex.js';
 import { OpenCodeDriver } from '../../../src/agent/drivers/opencode.js';
+import { ShellDriver } from '../../../src/agent/drivers/shell.js';
 
 // ── Claude Code ───────────────────────────────────────────────────────────────
 
@@ -110,5 +111,58 @@ describe('OpenCodeDriver', () => {
   it('buildResumeCommand returns a resume command', () => {
     const cmd = driver.buildResumeCommand('deck_proj_w1');
     expect(cmd).toBeTruthy();
+  });
+});
+
+// ── Shell ─────────────────────────────────────────────────────────────────────
+
+describe('ShellDriver', () => {
+  const driver = new ShellDriver();
+
+  it('type is shell', () => {
+    expect(driver.type).toBe('shell');
+  });
+
+  it('buildLaunchCommand uses provided shellBin', () => {
+    const cmd = driver.buildLaunchCommand('deck_sub_abc', { shellBin: '/opt/homebrew/bin/fish' } as never);
+    expect(cmd).toContain('/opt/homebrew/bin/fish');
+  });
+
+  it('buildLaunchCommand falls back to SHELL env', () => {
+    const original = process.env.SHELL;
+    process.env.SHELL = '/bin/zsh';
+    const cmd = driver.buildLaunchCommand('deck_sub_abc');
+    expect(cmd).toContain('/bin/zsh');
+    process.env.SHELL = original;
+  });
+
+  it('buildLaunchCommand prepends cd when cwd provided', () => {
+    const cmd = driver.buildLaunchCommand('deck_sub_abc', { cwd: '/home/user/proj', shellBin: '/bin/bash' } as never);
+    expect(cmd).toContain('cd');
+    expect(cmd).toContain('/home/user/proj');
+    expect(cmd).toContain('/bin/bash');
+  });
+
+  it('buildResumeCommand returns same as buildLaunchCommand', () => {
+    expect(driver.buildResumeCommand('x')).toBe(driver.buildLaunchCommand('x'));
+  });
+
+  it('isOverlay always returns false', () => {
+    expect(driver.isOverlay(['anything'])).toBe(false);
+  });
+
+  it('detectStatus returns idle on $ prompt', () => {
+    expect(driver.detectStatus(['user@host:~$ '])).toBe('idle');
+  });
+
+  it('detectStatus returns idle on % prompt', () => {
+    expect(driver.detectStatus(['~/proj %'])).toBe('idle');
+  });
+
+  it('captureLastResponse joins pane lines', async () => {
+    const capturePane = vi.fn().mockResolvedValue(['line1', 'line2', '$ ']);
+    const result = await driver.captureLastResponse(capturePane);
+    expect(result).toContain('line1');
+    expect(result).toContain('line2');
   });
 });

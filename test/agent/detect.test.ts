@@ -73,3 +73,31 @@ describe('detectStatus() edge cases', () => {
     expect(status).toBe('idle');
   });
 });
+
+describe('detectStatus() — Shell', () => {
+  it('detects idle on $ prompt', () => {
+    expect(detectStatus(['user@host:~$ '], 'shell')).toBe('idle');
+  });
+
+  it('detects idle on % prompt (zsh)', () => {
+    expect(detectStatus(['user@host ~ %'], 'shell')).toBe('idle');
+  });
+
+  it('detects idle on # prompt (root)', () => {
+    expect(detectStatus(['root@host:~# '], 'shell')).toBe('idle');
+  });
+
+  it('detects idle on › prompt (fish)', () => {
+    expect(detectStatus(['~/projects ›'], 'shell')).toBe('idle');
+  });
+
+  it('detects idle on > prompt', () => {
+    expect(detectStatus(['C:\\Users\\k>'], 'shell')).toBe('idle');
+  });
+
+  it('returns idle (fallthrough) for running output with no prompt yet', () => {
+    // No active signal → default idle fallthrough
+    const status = detectStatus(['npm install', 'added 42 packages'], 'shell');
+    expect(status).toBe('idle');
+  });
+});
