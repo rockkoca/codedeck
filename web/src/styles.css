@@ -230,3 +230,5 @@ body {
 .chat-snapshot-content { background: #1e293b; border-radius: 4px; padding: 8px; font-size: 11px; overflow-x: auto; max-height: 200px; margin-top: 4px; }
 .view-toggle { background: none; border: 1px solid #475569; color: #e2e8f0; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 14px; }
 .view-toggle:hover { background: #334155; }
+.desktop-view-toggle { display: flex; justify-content: flex-end; padding: 2px 8px; background: #0f172a; }
+.desktop-view-toggle .view-toggle { font-size: 12px; padding: 2px 8px; }

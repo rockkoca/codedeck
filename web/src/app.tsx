@@ -539,6 +539,15 @@ export function App() {
               onRenameSession={handleRenameSession}
             />
 
+            {/* Desktop view mode toggle — mobile uses the one in mobile-server-bar */}
+            {!isMobile && activeSession && (
+              <div class="desktop-view-toggle">
+                <button class="view-toggle" onClick={toggleViewMode}>
+                  {viewMode === 'chat' ? '⌨ Terminal' : '💬 Chat'}
+                </button>
+              </div>
+            )}
+
             {activeSession ? (
               viewMode === 'chat' ? (
                 <ChatView events={timelineEvents} loading={timelineLoading} sessionState={activeSessionInfo?.state} />
