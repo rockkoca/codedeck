@@ -93,8 +93,8 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
 
   return (
     <div class="tab-bar" role="tablist">
-      {sessions.length === 0 && (
-        <span class="tab-empty">{sessionsLoaded ? 'No active sessions' : 'Connecting...'}</span>
+      {sessions.length === 0 && sessionsLoaded && (
+        <span class="tab-empty">No active sessions</span>
       )}
 
       {sessions.map((s) => {

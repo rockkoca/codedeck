@@ -1,4 +1,6 @@
 *, *::before, *::after { box-sizing: border-box; }
+.spinner { width: 28px; height: 28px; border: 3px solid #334155; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 html, body, #app { margin: 0; padding: 0; height: 100%; width: 100%; touch-action: pan-x pan-y; }
 body {
   background: #0f172a;

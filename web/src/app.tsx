@@ -568,6 +568,11 @@ export function App() {
                   onFitFn={(fn) => { termFitFnRef.current = fn; }}
                 />
               )
+            ) : !sessionsLoaded ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
+                <div class="spinner" />
+                <div>Connecting...</div>
+              </div>
             ) : (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
                 <div style={{ fontSize: 32 }}>⌨</div>
