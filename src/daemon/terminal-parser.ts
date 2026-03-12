@@ -29,12 +29,31 @@ const HIDE_EXACT = new Set([
 // Box-drawing: U+2500-U+257F
 const BOX_DRAWING = /[\u2500-\u257F]/g;
 
+// Claude Code UI chrome patterns — these are tool/status lines, not assistant text
+const CC_CHROME_PATTERNS = [
+  /^[>❯]\s*(Read|Edit|Write|Bash|Grep|Glob|Agent|Skill|WebFetch|WebSearch|LSP|NotebookEdit|TodoWrite|AskUserQuestion|TaskCreate|TaskUpdate|TaskGet|TaskList|TaskOutput|TaskStop|ToolSearch|EnterPlanMode|ExitPlanMode)\b/,
+  /^[<]\s*(done|error|result)/i,
+  /^[*●○◉⬤]\s*(Accomplishing|Thinking|Working|Reading|Searching|Running|Generating|Planning|Waiting)/i,
+  /^\s*[LI⎿├│└┌─]\s/,  // tree/indent markers
+  /^Running\.*\s*\(\d/,  // "Running... (23s..."
+  /^thought for/i,
+  /^\d+[smh]\s*[·•]\s*(timeout|tokens)/,  // "23s · timeout 2m 30s"
+  /^ctrl\+/i,  // "ctrl+b ctrl+b..."
+  /^Co-Authored-By:/,
+  /^EOF$/,
+];
+
 export function classifyLine(stripped: string): LineClass {
   const trimmed = stripped.trim();
   if (!trimmed) return 'HIDE';
 
   // Exact match hide
   if (HIDE_EXACT.has(trimmed)) return 'HIDE';
+
+  // Claude Code UI chrome — tool calls, status lines, progress indicators
+  for (const pat of CC_CHROME_PATTERNS) {
+    if (pat.test(trimmed)) return 'HIDE';
+  }
 
   // Pure braille spinner line
   if (BRAILLE_RANGE.test(trimmed)) return 'HIDE';
