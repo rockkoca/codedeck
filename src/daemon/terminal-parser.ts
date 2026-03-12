@@ -1,7 +1,7 @@
 /**
- * Terminal diff → assistant.text extraction.
- * Extracts text from terminal changes with dedup and throttling.
- * Conservative classification: HIDE known chrome, KEEP everything else.
+ * Terminal text extraction from raw PTY stream.
+ * RawStreamParser handles chunk-boundary UTF-8/ANSI fragments and CR/LF semantics.
+ * Completed lines are classified and throttled into assistant.text timeline events.
  */
 
 import { timelineEmitter } from './timeline-emitter.js';
@@ -47,18 +47,14 @@ export function classifyLine(stripped: string): LineClass {
   const trimmed = stripped.trim();
   if (!trimmed) return 'HIDE';
 
-  // Exact match hide
   if (HIDE_EXACT.has(trimmed)) return 'HIDE';
 
-  // Claude Code UI chrome — tool calls, status lines, progress indicators
   for (const pat of CC_CHROME_PATTERNS) {
     if (pat.test(trimmed)) return 'HIDE';
   }
 
-  // Pure braille spinner line
   if (BRAILLE_RANGE.test(trimmed)) return 'HIDE';
 
-  // Box-drawing dominated (>80% of non-whitespace)
   const nonWs = trimmed.replace(/\s/g, '');
   if (nonWs.length > 0) {
     const boxCount = (nonWs.match(BOX_DRAWING) ?? []).length;
@@ -68,43 +64,180 @@ export function classifyLine(stripped: string): LineClass {
   return 'KEEP';
 }
 
-// ── Text extraction from scrolled diffs ──────────────────────────────────────
+// ── RawStreamParser ──────────────────────────────────────────────────────────
 
 /**
- * Extract assistant text from new lines that appeared due to scrolling.
- * Only call when scrolled=true && newLineCount > 0.
+ * Per-session streaming parser for raw PTY bytes.
+ * Handles UTF-8 multi-byte fragments, ANSI escape fragments, and CR/LF semantics
+ * across arbitrary chunk boundaries.
+ *
+ * CR semantics:
+ *   \r\n  → CRLF: emit current line as completed
+ *   \r<X> → pure CR overwrite: discard current line (spinner/progress bar redraw)
+ *   \n    → LF only: emit current line as completed
  */
-export function extractScrolledText(
-  allLines: string[],
-  rows: number,
-  newLineCount: number,
-): string | null {
-  const startIdx = rows - newLineCount;
-  const newLines = allLines.slice(startIdx, rows);
+export class RawStreamParser {
+  private utf8Pending: number[] = [];     // incomplete multi-byte UTF-8 sequence
+  private ansiBuffer = '';               // incomplete ANSI escape sequence
+  private inAnsi = false;                // currently inside an ANSI sequence
+  private currentLine = '';             // accumulated text for current line
+  private crPending = false;            // last char was \r, waiting to see next
 
-  const kept: string[] = [];
-  for (const line of newLines) {
-    const stripped = stripAnsi(line).trimEnd();
-    const cls = classifyLine(stripped);
-    if (cls !== 'HIDE') {
-      kept.push(stripped);
+  /**
+   * Feed a raw PTY chunk. Returns completed new lines (stripped of ANSI,
+   * after carriage-return overwrite logic applied).
+   */
+  feed(chunk: Buffer): string[] {
+    // 1. Prepend any pending UTF-8 bytes from previous chunk
+    let buf: Buffer;
+    if (this.utf8Pending.length > 0) {
+      buf = Buffer.concat([Buffer.from(this.utf8Pending), chunk]);
+      this.utf8Pending = [];
+    } else {
+      buf = chunk;
     }
+
+    // 2. Split off incomplete trailing UTF-8 sequence
+    const split = splitIncompleteUtf8(buf);
+    if (split.pending.length > 0) {
+      this.utf8Pending = Array.from(split.pending);
+    }
+
+    // 3. Decode safe portion to string
+    const str = split.safe.toString('utf8');
+
+    // 4. Scan characters
+    const completed: string[] = [];
+
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+
+      // ANSI sequence handling
+      if (this.inAnsi) {
+        this.ansiBuffer += ch;
+        // ANSI sequences end with a letter (C0 letters, m, J, H, etc.)
+        if (/[a-zA-Z]/.test(ch)) {
+          this.inAnsi = false;
+          this.ansiBuffer = '';
+        }
+        continue;
+      }
+
+      if (ch === '\x1b') {
+        // Start of escape sequence
+        this.inAnsi = true;
+        this.ansiBuffer = ch;
+        continue;
+      }
+
+      if (ch === '\r') {
+        if (this.crPending) {
+          // Double CR — treat first CR as overwrite (discard line), start fresh
+          this.currentLine = '';
+        }
+        this.crPending = true;
+        continue;
+      }
+
+      if (ch === '\n') {
+        if (this.crPending) {
+          // CRLF: emit current line
+          completed.push(this.currentLine);
+          this.currentLine = '';
+          this.crPending = false;
+        } else {
+          // Pure LF: emit current line
+          completed.push(this.currentLine);
+          this.currentLine = '';
+        }
+        continue;
+      }
+
+      // Regular character
+      if (this.crPending) {
+        // Pure CR (not followed by \n): overwrite — discard current line
+        this.currentLine = '';
+        this.crPending = false;
+      }
+
+      this.currentLine += ch;
+    }
+
+    return completed;
   }
 
-  if (kept.length === 0) return null;
-  return kept.join('\n');
+  /** Currently accumulated (not yet completed) line text. */
+  pending(): string {
+    return this.currentLine;
+  }
+
+  /** Reset all parser state (e.g. on session restart). */
+  reset(): void {
+    this.utf8Pending = [];
+    this.ansiBuffer = '';
+    this.inAnsi = false;
+    this.currentLine = '';
+    this.crPending = false;
+  }
 }
 
-// ── Streaming text accumulator (per-session throttle + dedup) ────────────────
+/**
+ * Split a buffer at the last complete UTF-8 character boundary.
+ * Returns { safe: complete bytes, pending: incomplete trailing bytes }.
+ */
+function splitIncompleteUtf8(buf: Buffer): { safe: Buffer; pending: Buffer } {
+  if (buf.length === 0) return { safe: buf, pending: Buffer.alloc(0) };
+
+  // Find where trailing incomplete sequence starts (if any)
+  let i = buf.length - 1;
+  while (i >= 0 && i >= buf.length - 4) {
+    const b = buf[i];
+    if ((b & 0x80) === 0) {
+      // ASCII byte — fully valid, no pending
+      return { safe: buf, pending: Buffer.alloc(0) };
+    }
+    if ((b & 0xC0) === 0xC0) {
+      // Start of multi-byte sequence
+      const seqLen = b >= 0xF0 ? 4 : b >= 0xE0 ? 3 : 2;
+      const remaining = buf.length - i;
+      if (remaining < seqLen) {
+        // Incomplete sequence at end
+        return { safe: buf.slice(0, i), pending: buf.slice(i) };
+      }
+      // Complete sequence
+      return { safe: buf, pending: Buffer.alloc(0) };
+    }
+    // Continuation byte (0x80-0xBF) — keep scanning backwards
+    i--;
+  }
+
+  return { safe: buf, pending: Buffer.alloc(0) };
+}
+
+// ── Per-session parser instances ─────────────────────────────────────────────
+
+const parsers = new Map<string, RawStreamParser>();
+
+function getOrCreateParser(sessionName: string): RawStreamParser {
+  let parser = parsers.get(sessionName);
+  if (!parser) {
+    parser = new RawStreamParser();
+    parsers.set(sessionName, parser);
+  }
+  return parser;
+}
+
+export function resetParser(sessionName: string): void {
+  parsers.get(sessionName)?.reset();
+  parsers.delete(sessionName);
+}
+
+// ── Streaming text accumulator (per-session throttle) ────────────────────────
 
 const THROTTLE_MS = 500;
 
 interface SessionAcc {
-  /** Current screen text snapshot (stripped, KEEP lines only) */
-  lastScreenText: string;
-  /** Accumulated new text since last emit */
   pendingText: string;
-  /** Timer for throttled emit */
   timer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -113,7 +246,7 @@ const accumulators = new Map<string, SessionAcc>();
 function getAcc(sessionName: string): SessionAcc {
   let acc = accumulators.get(sessionName);
   if (!acc) {
-    acc = { lastScreenText: '', pendingText: '', timer: null };
+    acc = { pendingText: '', timer: null };
     accumulators.set(sessionName, acc);
   }
   return acc;
@@ -136,91 +269,31 @@ function flushAcc(sessionName: string): void {
 }
 
 /**
- * Extract the visible "content" text from screen lines — used to detect
- * what actually changed between frames.
+ * Process a raw PTY data chunk for a session.
+ * Feeds into per-session RawStreamParser, classifies completed lines,
+ * and throttles assistant.text emission.
  */
-function screenContentText(allLines: string[]): string {
-  const kept: string[] = [];
-  for (const line of allLines) {
-    const stripped = stripAnsi(line).trimEnd();
-    if (classifyLine(stripped) === 'KEEP') {
-      kept.push(stripped);
-    }
-  }
-  return kept.join('\n');
-}
+export function processRawPtyData(sessionName: string, data: Buffer): void {
+  const parser = getOrCreateParser(sessionName);
+  const newLines = parser.feed(data);
 
-/**
- * Process a terminal diff and emit assistant.text for meaningful changes.
- * Throttled to emit at most every 500ms, deduplicates unchanged content.
- */
-export function processTerminalDiff(
-  sessionName: string,
-  allLines: string[],
-  rows: number,
-  scrolled: boolean,
-  newLineCount: number,
-  _changedLines?: Array<[number, string]>,
-  isFullFrame?: boolean,
-): void {
-  // Scrolled: emit immediately (bulk text that scrolled off)
-  if (scrolled && newLineCount > 0) {
-    const text = extractScrolledText(allLines, rows, newLineCount);
-    if (text) {
-      timelineEmitter.emit(sessionName, 'assistant.text', { text }, {
-        source: 'terminal-parse',
-        confidence: 'low',
-      });
-      // Update screen snapshot after scroll
-      const acc = getAcc(sessionName);
-      acc.lastScreenText = screenContentText(allLines);
-    }
-    return;
-  }
+  if (newLines.length === 0) return;
 
-  // Full frame: just update the baseline, don't emit
-  if (isFullFrame) {
-    const acc = getAcc(sessionName);
-    acc.lastScreenText = screenContentText(allLines);
-    return;
-  }
-
-  // In-place changes: compare full screen text to find new content
   const acc = getAcc(sessionName);
-  const currentText = screenContentText(allLines);
 
-  if (currentText === acc.lastScreenText) return; // no meaningful change
-
-  // Find the new text: what's in current but extends beyond previous
-  // Simple approach: if current starts with previous content, the diff is the tail
-  let newText = '';
-  if (currentText.startsWith(acc.lastScreenText) && acc.lastScreenText.length > 0) {
-    newText = currentText.slice(acc.lastScreenText.length).trim();
-  } else if (acc.lastScreenText && currentText.length > acc.lastScreenText.length) {
-    // Content changed in a non-append way — take only genuinely new lines
-    const prevLines = acc.lastScreenText.split('\n');
-    const currLines = currentText.split('\n');
-    // Only extract lines beyond the previous line count (truly new lines)
-    // Lines that changed within the existing range are UI redraws, not new content
-    if (currLines.length > prevLines.length) {
-      const newLines = currLines.slice(prevLines.length);
-      newText = newLines.join('\n').trim();
+  for (const line of newLines) {
+    const stripped = stripAnsi(line).trimEnd();
+    const cls = classifyLine(stripped);
+    if (cls === 'KEEP') {
+      if (acc.pendingText) {
+        acc.pendingText += '\n' + stripped;
+      } else {
+        acc.pendingText = stripped;
+      }
     }
-    // If line count didn't grow, it's a redraw — skip (update baseline only)
   }
 
-  acc.lastScreenText = currentText;
-
-  if (!newText) return;
-
-  // Accumulate and throttle
-  if (acc.pendingText) {
-    acc.pendingText += '\n' + newText;
-  } else {
-    acc.pendingText = newText;
-  }
-
-  if (!acc.timer) {
+  if (acc.pendingText && !acc.timer) {
     acc.timer = setTimeout(() => flushAcc(sessionName), THROTTLE_MS);
   }
 }

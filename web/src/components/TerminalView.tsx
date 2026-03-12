@@ -180,6 +180,34 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
     }
   }, [connected, sessionName]);
 
+  // Raw PTY bytes: feed directly into xterm.js (Task 5.3)
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    ws.onTerminalRaw((sName: string, data: Uint8Array) => {
+      if (sName !== sessionName) return;
+      termRef.current?.write(data);
+    });
+    return () => {
+      wsRef.current?.onTerminalRaw(null);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionName]);
+
+  // Handle terminal.stream_reset — reset xterm state so stale ANSI doesn't corrupt (Task 5.4)
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    const unsub = ws.onMessage((msg) => {
+      if (msg.type === 'terminal.stream_reset' && msg.session === sessionName) {
+        termRef.current?.reset();
+        linesRef.current = [];
+      }
+    });
+    return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionName]);
+
   const applyDiff = useCallback((diff: TerminalDiff) => {
     const term = termRef.current;
     if (!term) return;

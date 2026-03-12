@@ -13,6 +13,105 @@ import { timelineStore } from './timeline-store.js';
 import logger from '../util/logger.js';
 import { homedir } from 'os';
 
+// ── Binary frame packing ─────────────────────────────────────────────────────
+
+/**
+ * Pack a raw PTY buffer into the v1 binary frame format:
+ *   byte 0: version (0x01)
+ *   bytes 1-2: sessionName length (uint16 BE)
+ *   bytes 3..3+N-1: sessionName (UTF-8)
+ *   bytes 3+N..: raw PTY payload
+ */
+function packRawFrame(sessionName: string, data: Buffer): Buffer {
+  const nameBytes = Buffer.from(sessionName, 'utf8');
+  const header = Buffer.allocUnsafe(3 + nameBytes.length);
+  header[0] = 0x01;
+  header.writeUInt16BE(nameBytes.length, 1);
+  nameBytes.copy(header, 3);
+  return Buffer.concat([header, data]);
+}
+
+// ── AsyncMutex (per-session serialized stdin writes) ─────────────────────────
+
+class AsyncMutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  async acquire(): Promise<() => void> {
+    return new Promise<() => void>((resolve) => {
+      const tryLock = () => {
+        if (!this.locked) {
+          this.locked = true;
+          resolve(() => this.release());
+        } else {
+          this.queue.push(tryLock);
+        }
+      };
+      tryLock();
+    });
+  }
+
+  private release(): void {
+    this.locked = false;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+const sessionMutexes = new Map<string, AsyncMutex>();
+function getMutex(sessionName: string): AsyncMutex {
+  let mutex = sessionMutexes.get(sessionName);
+  if (!mutex) {
+    mutex = new AsyncMutex();
+    sessionMutexes.set(sessionName, mutex);
+  }
+  return mutex;
+}
+
+// ── CommandId dedup cache (100 entries / 5 min TTL per session) ──────────────
+
+class CommandDedup {
+  private entries = new Map<string, number>(); // commandId → timestamp
+  private readonly MAX_SIZE = 100;
+  private readonly TTL_MS = 5 * 60 * 1000;
+
+  has(commandId: string): boolean {
+    const ts = this.entries.get(commandId);
+    if (ts === undefined) return false;
+    if (Date.now() - ts > this.TTL_MS) {
+      this.entries.delete(commandId);
+      return false;
+    }
+    return true;
+  }
+
+  add(commandId: string): void {
+    if (this.entries.size >= this.MAX_SIZE) {
+      // Evict expired entries first
+      const now = Date.now();
+      for (const [id, ts] of this.entries) {
+        if (now - ts > this.TTL_MS) this.entries.delete(id);
+      }
+      // If still at max, evict the oldest
+      if (this.entries.size >= this.MAX_SIZE) {
+        const oldest = this.entries.keys().next().value;
+        if (oldest !== undefined) this.entries.delete(oldest);
+      }
+    }
+    this.entries.set(commandId, Date.now());
+  }
+}
+
+const sessionDedups = new Map<string, CommandDedup>();
+function getDedup(sessionName: string): CommandDedup {
+  let dedup = sessionDedups.get(sessionName);
+  if (!dedup) {
+    dedup = new CommandDedup();
+    sessionDedups.set(sessionName, dedup);
+  }
+  return dedup;
+}
+
 function expandTilde(p: string): string {
   return p.startsWith('~/') ? homedir() + p.slice(1) : p === '~' ? homedir() : p;
 }
@@ -45,7 +144,7 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       void handleRestart(cmd, serverLink);
       break;
     case 'session.send':
-      void handleSend(cmd);
+      void handleSend(cmd, serverLink);
       break;
     case 'session.input':
       void handleInput(cmd);
@@ -182,20 +281,46 @@ async function handleStop(cmd: Record<string, unknown>): Promise<void> {
   }
 }
 
-async function handleSend(cmd: Record<string, unknown>): Promise<void> {
+async function handleSend(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
   const sessionName = (cmd.sessionName ?? cmd.session) as string | undefined;
   const text = cmd.text as string | undefined;
+  const commandId = cmd.commandId as string | undefined;
 
   if (!sessionName || !text) {
     logger.warn('session.send: missing sessionName or text');
     return;
   }
 
+  // Fallback: legacy clients that don't send commandId get a server-generated one
+  const isLegacy = !commandId;
+  const effectiveId = commandId ?? crypto.randomUUID();
+  if (isLegacy) {
+    logger.warn({ sessionName, effectiveId }, 'session.send: missing commandId — using server-generated fallback');
+  }
+
+  // Dedup: silently ignore duplicate commandIds
+  const dedup = getDedup(sessionName);
+  if (dedup.has(effectiveId)) {
+    logger.debug({ sessionName, effectiveId }, 'session.send: duplicate commandId, ignored');
+    return;
+  }
+  dedup.add(effectiveId);
+
+  // Serialized write via per-session mutex
+  const release = await getMutex(sessionName).acquire();
   try {
     await sendKeys(sessionName, text);
     timelineEmitter.emit(sessionName, 'user.message', { text });
+    // Emit accepted ack (accepted_legacy for fallback IDs so callers can distinguish)
+    const status = isLegacy ? 'accepted_legacy' : 'accepted';
+    timelineEmitter.emit(sessionName, 'command.ack', { commandId: effectiveId, status });
+    try {
+      serverLink.send({ type: 'command.ack', commandId: effectiveId, status, session: sessionName });
+    } catch { /* not connected */ }
   } catch (err) {
     logger.error({ sessionName, err }, 'session.send failed');
+  } finally {
+    release();
   }
 }
 
@@ -203,14 +328,17 @@ async function handleInput(cmd: Record<string, unknown>): Promise<void> {
   const sessionName = cmd.sessionName as string | undefined;
   const data = cmd.data as string | undefined;
 
+  // session.input SHALL NOT require or process commandId
   if (!sessionName || data === undefined) return;
 
+  // Serialized via same per-session mutex (no commandId, no retry)
+  const release = await getMutex(sessionName).acquire();
   try {
     await sendRawInput(sessionName, data);
-    // Wake up the capture loop immediately so the screen reflects the keystroke
-    terminalStreamer.nudge(sessionName);
   } catch (err) {
     logger.error({ sessionName, err }, 'session.input failed');
+  } finally {
+    release();
   }
 }
 
@@ -222,7 +350,6 @@ async function handleResize(cmd: Record<string, unknown>): Promise<void> {
   try {
     await resizeSession(sessionName, Math.max(cols, 40), Math.max(rows, 10));
     terminalStreamer.invalidateSize(sessionName);
-    terminalStreamer.nudge(sessionName);
   } catch (err) {
     logger.error({ sessionName, cols, rows, err }, 'session.resize failed');
   }
@@ -256,17 +383,14 @@ function handleSubscribe(cmd: Record<string, unknown>, serverLink: ServerLink): 
 
   const subscriber: StreamSubscriber = {
     sessionName: session,
-    // Do NOT catch here — let errors propagate to captureAndBroadcast so it can
-    // call onError and clean up the subscription properly.
     send: (diff) => {
-      serverLink.send({ type: 'terminal_update', diff });
+      try { serverLink.send({ type: 'terminal_update', diff }); } catch { /* ignore */ }
     },
-    sendHistory: (history) => {
-      try {
-        serverLink.send({ type: 'terminal.history', sessionName: history.sessionName, content: history.content });
-      } catch {
-        // history is best-effort, don't remove the subscription on failure
-      }
+    sendRaw: (data: Buffer) => {
+      serverLink.sendBinary(packRawFrame(session, data));
+    },
+    sendControl: (msg) => {
+      try { serverLink.send(msg); } catch { /* ignore */ }
     },
     onError: () => {
       activeSubscriptions.delete(session);

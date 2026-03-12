@@ -20,6 +20,7 @@
     "start": "node dist/index.ts",
     "test": "vitest run",
     "test:unit": "vitest run --project daemon",
+    "test:server": "vitest run --project server",
     "test:worker": "vitest run --project worker",
     "test:web": "vitest run --project web",
     "test:e2e": "vitest run --project e2e",
@@ -27,7 +28,7 @@
     "test:watch": "vitest",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm run test:unit && npm run test:server && npm run test:worker && npm run test:web"
   },
   "dependencies": {
     "@rollup/rollup-linux-x64-gnu": "^4.59.0",

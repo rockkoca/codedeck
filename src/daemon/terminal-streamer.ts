@@ -1,17 +1,31 @@
 /**
- * Capture tmux pane at ~10 FPS, compute line-level diffs, stream to WebSocket.
- * Used by the web terminal viewer for real-time session display.
- * Features idle detection: drops to 1 FPS after 2s of no changes.
+ * Terminal streaming via tmux pipe-pane -O raw PTY stream.
+ * Replaces polling capture-pane approach.
+ *
+ * Per-subscriber flow:
+ *   1. capturePaneVisible() → fullFrame snapshot → sent to subscriber
+ *   2. startPipePaneStream() → raw PTY bytes forwarded to subscribers
+ *
+ * Subscribers joining an already-running stream get a snapshot barrier:
+ *   - rawBuffer during snapshotPending (up to 256KB, else fail_subscriber)
+ *   - flush buffer after snapshot completes
+ *
+ * Dual-layer idle detection:
+ *   - Any raw bytes → reset idle timer → emit session.state(running) if was idle
+ *   - No raw bytes for IDLE_THRESHOLD_MS → emit session.state(idle)
  */
-import { capturePaneVisible, capturePaneHistory } from '../agent/tmux.js';
-import { getPaneSize } from '../agent/tmux.js';
+
+import type { Readable } from 'stream';
+import { capturePaneVisible, capturePaneHistory, getPaneSize, sessionExists, startPipePaneStream, stopPipePaneStream } from '../agent/tmux.js';
+import { getSession } from '../store/session-store.js';
+import { processRawPtyData, resetParser } from './terminal-parser.js';
 import logger from '../util/logger.js';
 import { timelineEmitter } from './timeline-emitter.js';
-import { processTerminalDiff, stripAnsi } from './terminal-parser.js';
 
-const ACTIVE_INTERVAL_MS = 100; // 10 FPS
-const IDLE_INTERVAL_MS = 1000; // 1 FPS
-const IDLE_THRESHOLD_MS = 2000; // 2s without changes → idle
+const IDLE_THRESHOLD_MS = 30_000; // 30s without raw bytes → idle
+const MAX_RAW_BUFFER = 256 * 1024; // 256KB per-subscriber snapshot-pending buffer
+const REBIND_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000];
+const MAX_REBIND_ATTEMPTS = 5;
 
 export interface TerminalDiff {
   sessionName: string;
@@ -35,55 +49,132 @@ export interface TerminalDiff {
 
 export interface TerminalHistory {
   sessionName: string;
-  /** Scrollback lines above visible area, with ANSI codes */
   content: string;
 }
 
 export interface StreamSubscriber {
   sessionName: string;
+  /** Send a fullFrame snapshot or diff (snapshot uses fullFrame: true). */
   send: (diff: TerminalDiff) => void;
+  /** Send raw PTY bytes directly to the terminal renderer. */
+  sendRaw?: (data: Buffer) => void;
+  /** Send a control message (e.g. terminal.stream_reset). */
+  sendControl?: (msg: { type: string; [key: string]: unknown }) => void;
   sendHistory?: (history: TerminalHistory) => void;
   onError?: (err: Error) => void;
+}
+
+interface SubscriberState {
+  snapshotPending: boolean;
+  rawBuffer: Buffer[];
+  rawBufferBytes: number;
+}
+
+interface PipeState {
+  stream: Readable;
+  cleanup: () => Promise<void>;
+  retryCount: number;
 }
 
 // ── TerminalStreamer ───────────────────────────────────────────────────────────
 
 export class TerminalStreamer {
-  private subscribers = new Map<string, Set<StreamSubscriber>>();
-  private lastFrames = new Map<string, string[]>();
-  private timers = new Map<string, ReturnType<typeof setTimeout>>();
-  private lastChangeAt = new Map<string, number>();
-  private isIdle = new Map<string, boolean>();
-  private errorCounts = new Map<string, number>();
+  /** session → subscriber → state */
+  private subscribers = new Map<string, Map<StreamSubscriber, SubscriberState>>();
+  private pipes = new Map<string, PipeState>();
+  private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // Idle detection
+  private lastRawAt = new Map<string, number>();
+  private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private idleState = new Map<string, boolean>();
+
+  // Size cache for snapshots (refreshed every 5s)
   private sizeCache = new Map<string, { cols: number; rows: number; ts: number }>();
-  private frameSeqs = new Map<string, number>();
-  private pendingSnapshot = new Set<string>();
   private static readonly SIZE_CACHE_MS = 5_000;
 
-  private static readonly MAX_CONSECUTIVE_ERRORS = 5;
+  private frameSeqs = new Map<string, number>();
 
   subscribe(subscriber: StreamSubscriber): () => void {
     const { sessionName } = subscriber;
-    if (!this.subscribers.has(sessionName)) {
-      this.subscribers.set(sessionName, new Set());
-      this.startCapture(sessionName);
-    }
-    this.subscribers.get(sessionName)!.add(subscriber);
 
-    // Send scrollback history snapshot once on subscribe
-    if (subscriber.sendHistory) {
-      void capturePaneHistory(sessionName, 2000).then((content) => {
-        // Trim empty trailing lines from history
-        const trimmed = content.replace(/\n+$/, '');
-        if (trimmed) {
-          try {
-            subscriber.sendHistory!({ sessionName, content: trimmed });
-          } catch { /* ignore */ }
-        }
-      }).catch(() => { /* ignore — history is best-effort */ });
+    if (!this.subscribers.has(sessionName)) {
+      this.subscribers.set(sessionName, new Map());
     }
+    const subs = this.subscribers.get(sessionName)!;
+    const hasPipe = this.pipes.has(sessionName);
+
+    const subState: SubscriberState = {
+      // If pipe already running, buffer raw bytes until snapshot delivered
+      snapshotPending: hasPipe,
+      rawBuffer: [],
+      rawBufferBytes: 0,
+    };
+    subs.set(subscriber, subState);
+
+    // Async: take snapshot then start pipe (for first subscriber) or flush buffer
+    void this.bootstrapSubscriber(sessionName, subscriber, subState, hasPipe);
 
     return () => this.unsubscribe(subscriber);
+  }
+
+  private async bootstrapSubscriber(
+    sessionName: string,
+    subscriber: StreamSubscriber,
+    subState: SubscriberState,
+    hasPipe: boolean,
+  ): Promise<void> {
+    // 1. Take snapshot
+    try {
+      const size = await this.getSize(sessionName);
+      const raw = await capturePaneVisible(sessionName);
+      const lines = raw.split('\n').slice(0, size.rows);
+      while (lines.length < size.rows) lines.push('');
+
+      const diff: TerminalDiff = {
+        sessionName,
+        timestamp: Date.now(),
+        lines: lines.map((l, i) => [i, l] as [number, string]),
+        cols: size.cols,
+        rows: size.rows,
+        frameSeq: this.nextFrameSeq(sessionName),
+        fullFrame: true,
+        snapshotRequested: false,
+        scrolled: false,
+        newLineCount: 0,
+      };
+
+      // Check subscriber is still active
+      if (!this.subscribers.get(sessionName)?.has(subscriber)) return;
+      subscriber.send(diff);
+
+      // Send scrollback history if subscriber wants it
+      if (subscriber.sendHistory) {
+        try {
+          const historyContent = await capturePaneHistory(sessionName);
+          if (historyContent && this.subscribers.get(sessionName)?.has(subscriber)) {
+            subscriber.sendHistory({ sessionName, content: historyContent });
+          }
+        } catch { /* best-effort */ }
+      }
+    } catch (err) {
+      logger.warn({ sessionName, err }, 'Snapshot failed during subscribe');
+      // Continue — raw stream may still recover state
+    }
+
+    // 2. Flush buffered raw bytes (if pipe was already running)
+    subState.snapshotPending = false;
+    for (const chunk of subState.rawBuffer) {
+      if (!this.subscribers.get(sessionName)?.has(subscriber)) break;
+      try { subscriber.sendRaw?.(chunk); } catch { /* ignore */ }
+    }
+    subState.rawBuffer = [];
+    subState.rawBufferBytes = 0;
+
+    // 3. Start pipe if this was the first subscriber
+    if (!hasPipe && this.subscribers.get(sessionName)?.has(subscriber)) {
+      await this.startPipe(sessionName, 0);
+    }
   }
 
   unsubscribe(subscriber: StreamSubscriber): void {
@@ -92,49 +183,303 @@ export class TerminalStreamer {
     if (!subs) return;
 
     subs.delete(subscriber);
+
     if (subs.size === 0) {
-      this.stopCapture(sessionName);
       this.subscribers.delete(sessionName);
-      this.lastFrames.delete(sessionName);
-      this.lastChangeAt.delete(sessionName);
-      this.isIdle.delete(sessionName);
-      this.errorCounts.delete(sessionName);
+      void this.stopPipe(sessionName);
+      this.clearIdleTimer(sessionName);
+      this.lastRawAt.delete(sessionName);
+      this.idleState.delete(sessionName);
+      this.sizeCache.delete(sessionName);
       this.frameSeqs.delete(sessionName);
+      resetParser(sessionName);
     }
   }
 
-  /** Wake up the capture loop immediately (e.g. after keyboard input). */
-  nudge(sessionName: string): void {
-    if (!this.subscribers.has(sessionName)) return;
-    this.stopCapture(sessionName);
-    this.isIdle.set(sessionName, false);
-    this.lastChangeAt.set(sessionName, Date.now());
-    this.scheduleNextCapture(sessionName, 50);
+  /** Request an on-demand snapshot for all subscribers of a session. */
+  requestSnapshot(sessionName: string): void {
+    const subs = this.subscribers.get(sessionName);
+    if (!subs || subs.size === 0) return;
+
+    void (async () => {
+      try {
+        const size = await this.getSize(sessionName);
+        const raw = await capturePaneVisible(sessionName);
+        const lines = raw.split('\n').slice(0, size.rows);
+        while (lines.length < size.rows) lines.push('');
+
+        const diff: TerminalDiff = {
+          sessionName,
+          timestamp: Date.now(),
+          lines: lines.map((l, i) => [i, l] as [number, string]),
+          cols: size.cols,
+          rows: size.rows,
+          frameSeq: this.nextFrameSeq(sessionName),
+          fullFrame: true,
+          snapshotRequested: true,
+          scrolled: false,
+          newLineCount: 0,
+        };
+
+        for (const [sub] of subs) {
+          try { sub.send(diff); } catch { /* ignore */ }
+        }
+
+        timelineEmitter.emit(sessionName, 'terminal.snapshot', { lines, cols: size.cols, rows: size.rows });
+      } catch (err) {
+        logger.warn({ sessionName, err }, 'requestSnapshot failed');
+      }
+    })();
   }
 
-  /** Invalidate size cache after a resize event. */
+  /** Invalidate size cache (call after resize events). */
   invalidateSize(sessionName: string): void {
     this.sizeCache.delete(sessionName);
   }
 
-  /** Clear lastFrames cache so next capture produces fullFrame + terminal.snapshot event. */
-  requestSnapshot(sessionName: string): void {
-    this.lastFrames.delete(sessionName);
-    this.pendingSnapshot.add(sessionName);
-    // Nudge to produce the frame quickly
-    if (this.subscribers.has(sessionName)) {
-      this.nudge(sessionName);
+  /** No-op in new design (no polling loop to nudge). Kept for API compat. */
+  nudge(_sessionName: string): void {
+    // Raw stream is always live — no nudge needed
+  }
+
+  /** Called by session-manager when a session restarts with a new pane. */
+  async rebindSession(sessionName: string): Promise<void> {
+    if (!this.subscribers.has(sessionName)) return;
+    await this.stopPipe(sessionName);
+    await this.startPipe(sessionName, 0);
+    // Re-snapshot all subscribers
+    this.requestSnapshot(sessionName);
+  }
+
+  destroy(): void {
+    for (const [sessionName] of this.subscribers) {
+      void this.stopPipe(sessionName);
+      this.clearIdleTimer(sessionName);
+    }
+    for (const timer of this.retryTimers.values()) clearTimeout(timer);
+    this.subscribers.clear();
+    this.pipes.clear();
+    this.retryTimers.clear();
+    this.lastRawAt.clear();
+    this.idleTimers.clear();
+    this.idleState.clear();
+  }
+
+  // ── Pipe lifecycle ──────────────────────────────────────────────────────────
+
+  private async startPipe(sessionName: string, retryCount: number): Promise<void> {
+    const session = getSession(sessionName);
+    if (!session?.paneId) {
+      logger.error({ sessionName }, 'Cannot start pipe-pane: paneId not available — restart session to fix');
+      // Do not remove subscribers: they can still receive on-demand snapshots
+      return;
+    }
+
+    try {
+      const { stream, cleanup } = await startPipePaneStream(sessionName, session.paneId);
+
+      const pipeState: PipeState = { stream, cleanup, retryCount };
+      this.pipes.set(sessionName, pipeState);
+
+      stream.on('data', (chunk: unknown) => {
+        this.onRawData(sessionName, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+      });
+
+      stream.on('error', (err) => {
+        logger.warn({ sessionName, err }, 'Pipe stream error');
+        this.handlePipeClose(sessionName);
+      });
+
+      stream.on('close', () => {
+        // Unexpected close (e.g. FIFO fd error)
+        if (this.pipes.has(sessionName)) {
+          this.handlePipeClose(sessionName);
+        }
+      });
+
+      logger.info({ sessionName, paneId: session.paneId }, 'Pipe-pane stream started');
+    } catch (err) {
+      logger.error({ sessionName, err }, 'Failed to start pipe-pane stream');
+      if (retryCount < MAX_REBIND_ATTEMPTS) {
+        this.scheduleRebind(sessionName, retryCount + 1);
+      } else {
+        this.errorAllSubscribers(sessionName, err instanceof Error ? err : new Error(String(err)));
+      }
     }
   }
 
-  private startCapture(sessionName: string): void {
-    // Clear lastFrames so first capture is a fullFrame
-    this.lastFrames.delete(sessionName);
-    this.lastChangeAt.set(sessionName, Date.now());
-    this.isIdle.set(sessionName, false);
-    this.errorCounts.set(sessionName, 0);
-    this.scheduleNextCapture(sessionName, ACTIVE_INTERVAL_MS);
-    logger.debug({ sessionName }, 'Terminal capture started');
+  private async stopPipe(sessionName: string): Promise<void> {
+    const timer = this.retryTimers.get(sessionName);
+    if (timer) {
+      clearTimeout(timer);
+      this.retryTimers.delete(sessionName);
+    }
+
+    const pipeState = this.pipes.get(sessionName);
+    if (!pipeState) return;
+    this.pipes.delete(sessionName);
+
+    pipeState.stream.destroy();
+    try { await pipeState.cleanup(); } catch (err) {
+      logger.warn({ sessionName, err }, 'Pipe cleanup error');
+    }
+    try { await stopPipePaneStream(sessionName); } catch { /* best-effort */ }
+  }
+
+  private handlePipeClose(sessionName: string): void {
+    this.pipes.delete(sessionName);
+
+    // If still have active subscribers, attempt rebind
+    const subs = this.subscribers.get(sessionName);
+    if (subs && subs.size > 0) {
+      logger.info({ sessionName }, 'Pipe closed unexpectedly — scheduling rebind');
+      this.scheduleRebind(sessionName, 0);
+    }
+  }
+
+  private scheduleRebind(sessionName: string, attempt: number): void {
+    const delay = REBIND_DELAYS_MS[Math.min(attempt, REBIND_DELAYS_MS.length - 1)];
+    const timer = setTimeout(async () => {
+      this.retryTimers.delete(sessionName);
+
+      // Check if still have subscribers
+      const subs = this.subscribers.get(sessionName);
+      if (!subs || subs.size === 0) return;
+
+      if (attempt >= MAX_REBIND_ATTEMPTS) {
+        logger.error({ sessionName }, 'Pipe rebind: max retries exceeded');
+        this.errorAllSubscribers(sessionName, new Error('Terminal stream unavailable after max retries'));
+        return;
+      }
+
+      // Check if session still alive
+      const alive = await sessionExists(sessionName).catch(() => false);
+      if (!alive) {
+        logger.warn({ sessionName }, 'Session gone, stopping pipe rebind');
+        this.errorAllSubscribers(sessionName, new Error('Session no longer exists'));
+        return;
+      }
+
+      logger.info({ sessionName, attempt }, 'Rebinding pipe-pane stream');
+      await this.startPipe(sessionName, attempt);
+    }, delay);
+
+    this.retryTimers.set(sessionName, timer);
+  }
+
+  // ── Raw data handling ───────────────────────────────────────────────────────
+
+  private onRawData(sessionName: string, data: Buffer): void {
+    // Dual-layer idle detection (Task 3.5): any raw bytes → session active
+    const wasIdle = this.idleState.get(sessionName) ?? false;
+    this.lastRawAt.set(sessionName, Date.now());
+    if (wasIdle) {
+      this.idleState.set(sessionName, false);
+      timelineEmitter.emit(sessionName, 'session.state', { state: 'running' });
+    }
+    this.resetIdleTimer(sessionName);
+
+    // Text extraction (KEEP lines only → assistant.text)
+    processRawPtyData(sessionName, data);
+
+    // Forward to subscribers
+    const subs = this.subscribers.get(sessionName);
+    if (!subs) return;
+
+    for (const [sub, state] of subs) {
+      if (state.snapshotPending) {
+        // Buffer raw bytes while snapshot is pending
+        state.rawBuffer.push(data);
+        state.rawBufferBytes += data.length;
+        if (state.rawBufferBytes > MAX_RAW_BUFFER) {
+          this.failSubscriber(sessionName, sub, state);
+        }
+      } else {
+        try {
+          sub.sendRaw?.(data);
+        } catch (err) {
+          sub.onError?.(err instanceof Error ? err : new Error(String(err)));
+          this.removeSubscriber(sessionName, sub);
+        }
+      }
+    }
+  }
+
+  private failSubscriber(sessionName: string, sub: StreamSubscriber, state: SubscriberState): void {
+    // Discard buffer and remove subscriber
+    state.rawBuffer = [];
+    state.rawBufferBytes = 0;
+    this.removeSubscriber(sessionName, sub);
+
+    // Notify client to reset and resubscribe
+    try {
+      sub.sendControl?.({ type: 'terminal.stream_reset', session: sessionName, reason: 'raw_buffer_overflow' });
+    } catch {
+      sub.onError?.(new Error('raw_buffer_overflow'));
+    }
+  }
+
+  private removeSubscriber(sessionName: string, sub: StreamSubscriber): void {
+    const subs = this.subscribers.get(sessionName);
+    if (!subs) return;
+    subs.delete(sub);
+    if (subs.size === 0) {
+      this.subscribers.delete(sessionName);
+      void this.stopPipe(sessionName);
+      this.clearIdleTimer(sessionName);
+      this.lastRawAt.delete(sessionName);
+      this.idleState.delete(sessionName);
+    }
+  }
+
+  private errorAllSubscribers(sessionName: string, err: Error): void {
+    const subs = this.subscribers.get(sessionName);
+    if (!subs) return;
+    for (const [sub] of subs) {
+      try { sub.onError?.(err); } catch { /* ignore */ }
+    }
+    this.subscribers.delete(sessionName);
+    void this.stopPipe(sessionName);
+    this.clearIdleTimer(sessionName);
+  }
+
+  // ── Idle detection ──────────────────────────────────────────────────────────
+
+  private resetIdleTimer(sessionName: string): void {
+    this.clearIdleTimer(sessionName);
+    const timer = setTimeout(() => {
+      this.idleTimers.delete(sessionName);
+      const currentlyIdle = this.idleState.get(sessionName) ?? false;
+      if (!currentlyIdle) {
+        this.idleState.set(sessionName, true);
+        timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
+      }
+    }, IDLE_THRESHOLD_MS);
+    this.idleTimers.set(sessionName, timer);
+  }
+
+  private clearIdleTimer(sessionName: string): void {
+    const timer = this.idleTimers.get(sessionName);
+    if (timer) {
+      clearTimeout(timer);
+      this.idleTimers.delete(sessionName);
+    }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private async getSize(sessionName: string): Promise<{ cols: number; rows: number }> {
+    const cached = this.sizeCache.get(sessionName);
+    if (cached && Date.now() - cached.ts < TerminalStreamer.SIZE_CACHE_MS) {
+      return { cols: cached.cols, rows: cached.rows };
+    }
+    try {
+      const size = await getPaneSize(sessionName);
+      this.sizeCache.set(sessionName, { ...size, ts: Date.now() });
+      return size;
+    } catch {
+      return { cols: 80, rows: 24 };
+    }
   }
 
   private nextFrameSeq(sessionName: string): number {
@@ -142,223 +487,8 @@ export class TerminalStreamer {
     this.frameSeqs.set(sessionName, seq);
     return seq;
   }
-
-  private scheduleNextCapture(sessionName: string, delayMs: number): void {
-    const timer = setTimeout(() => {
-      void this.captureAndBroadcast(sessionName);
-    }, delayMs);
-    this.timers.set(sessionName, timer);
-  }
-
-  private stopCapture(sessionName: string): void {
-    const timer = this.timers.get(sessionName);
-    if (timer) {
-      clearTimeout(timer);
-      this.timers.delete(sessionName);
-    }
-    logger.debug({ sessionName }, 'Terminal capture stopped');
-  }
-
-  private async captureAndBroadcast(sessionName: string): Promise<void> {
-    if (!this.subscribers.has(sessionName)) return;
-
-    let currentLines: string[];
-    let cols = 80;
-    let rows = 24;
-    try {
-      // Get size from cache (refreshed every 5s) to avoid extra tmux call each frame
-      const cached = this.sizeCache.get(sessionName);
-      if (!cached || Date.now() - cached.ts > TerminalStreamer.SIZE_CACHE_MS) {
-        const size = await getPaneSize(sessionName);
-        this.sizeCache.set(sessionName, { ...size, ts: Date.now() });
-        cols = size.cols;
-        rows = size.rows;
-      } else {
-        cols = cached.cols;
-        rows = cached.rows;
-      }
-
-      // Capture ONLY the visible pane with ANSI colors — no scrollback
-      const raw = await capturePaneVisible(sessionName);
-      // Split into lines, trim to exact visible rows
-      currentLines = raw.split('\n').slice(0, rows);
-      // Pad to rows if shorter
-      while (currentLines.length < rows) currentLines.push('');
-      this.errorCounts.set(sessionName, 0);
-    } catch {
-      const errors = (this.errorCounts.get(sessionName) ?? 0) + 1;
-      this.errorCounts.set(sessionName, errors);
-      if (errors >= TerminalStreamer.MAX_CONSECUTIVE_ERRORS) {
-        logger.warn({ sessionName, errors }, 'Terminal capture: too many errors, stopping');
-        this.stopCapture(sessionName);
-        // Notify and remove all subscribers so they know to re-subscribe when ready
-        const subs = this.subscribers.get(sessionName);
-        if (subs) {
-          const err = new Error('Terminal capture failed after too many errors');
-          for (const sub of [...subs]) {
-            try { sub.onError?.(err); } catch { /* ignore */ }
-          }
-          this.subscribers.delete(sessionName);
-        }
-        this.lastFrames.delete(sessionName);
-        this.lastChangeAt.delete(sessionName);
-        this.isIdle.delete(sessionName);
-        this.errorCounts.delete(sessionName);
-        this.frameSeqs.delete(sessionName);
-      } else {
-        this.scheduleNextCapture(sessionName, ACTIVE_INTERVAL_MS * errors);
-      }
-      return;
-    }
-
-    const previousLines = this.lastFrames.get(sessionName) ?? [];
-    const isFullFrame = previousLines.length === 0;
-    const snapshotRequested = isFullFrame && this.pendingSnapshot.has(sessionName);
-    if (snapshotRequested) this.pendingSnapshot.delete(sessionName);
-
-    const diff = isFullFrame
-      ? currentLines.map((line, i) => [i, line] as [number, string])
-      : computeLineDiff(previousLines, currentLines);
-
-    // Detect scroll: find max k where current[0..rows-k-1] === previous[k..rows-1]
-    let scrolled = false;
-    let newLineCount = 0;
-    if (!isFullFrame && diff.length > 0) {
-      const scrollInfo = detectScroll(previousLines, currentLines);
-      scrolled = scrollInfo.scrolled;
-      newLineCount = scrollInfo.newLineCount;
-    }
-
-    // Determine if the diff is a "real" content change (not just cursor blink / ANSI escape changes).
-    // Compare stripped content to detect meaningful changes for idle state tracking.
-    const hasRealChange = isFullFrame || diff.some(([i, line]) => {
-      const prev = previousLines[i] ?? '';
-      return stripAnsi(prev).trimEnd() !== stripAnsi(line).trimEnd();
-    });
-
-    if (diff.length > 0 || isFullFrame) {
-      this.lastFrames.set(sessionName, currentLines);
-      // Only reset idle timer for real content changes, not cursor blink
-      if (hasRealChange) {
-        this.lastChangeAt.set(sessionName, Date.now());
-        this.isIdle.set(sessionName, false);
-      }
-
-      const payload: TerminalDiff = {
-        sessionName,
-        timestamp: Date.now(),
-        lines: diff,
-        cols,
-        rows,
-        frameSeq: this.nextFrameSeq(sessionName),
-        fullFrame: isFullFrame,
-        snapshotRequested,
-        scrolled,
-        newLineCount,
-      };
-
-      const subs = this.subscribers.get(sessionName);
-      if (subs) {
-        for (const sub of subs) {
-          try {
-            sub.send(payload);
-          } catch (err) {
-            logger.error({ sessionName, err }, 'Subscriber send failed');
-            sub.onError?.(err instanceof Error ? err : new Error(String(err)));
-            this.unsubscribe(sub);
-          }
-        }
-      }
-
-      // Emit terminal.snapshot timeline event only when triggered by snapshot_request
-      if (isFullFrame && snapshotRequested) {
-        timelineEmitter.emit(sessionName, 'terminal.snapshot', {
-          lines: currentLines,
-          cols,
-          rows,
-        });
-      }
-
-      // Extract assistant.text from terminal changes (streaming + scrolled)
-      processTerminalDiff(sessionName, currentLines, rows, scrolled, newLineCount, diff, isFullFrame);
-    }
-
-    if (!this.subscribers.has(sessionName)) return;
-
-    const lastChange = this.lastChangeAt.get(sessionName) ?? Date.now();
-    const wasIdle = this.isIdle.get(sessionName) ?? false;
-    const nowIdle = Date.now() - lastChange > IDLE_THRESHOLD_MS;
-
-    if (nowIdle && !wasIdle) {
-      this.isIdle.set(sessionName, true);
-      // Fallback idle detection for agents without hooks (Codex, OpenCode).
-      // For Claude Code, the hook-server emits idle first and the emitter deduplicates.
-      timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
-    } else if (!nowIdle && wasIdle) {
-      this.isIdle.set(sessionName, false);
-    }
-
-    const nextInterval = nowIdle ? IDLE_INTERVAL_MS : ACTIVE_INTERVAL_MS;
-    this.scheduleNextCapture(sessionName, nextInterval);
-  }
-
-  destroy(): void {
-    for (const sessionName of this.timers.keys()) {
-      this.stopCapture(sessionName);
-    }
-    this.subscribers.clear();
-    this.lastFrames.clear();
-    this.lastChangeAt.clear();
-    this.isIdle.clear();
-    this.frameSeqs.clear();
-    this.pendingSnapshot.clear();
-  }
 }
 
 // ── Singleton ─────────────────────────────────────────────────────────────────
 
 export const terminalStreamer = new TerminalStreamer();
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function computeLineDiff(prev: string[], curr: string[]): Array<[number, string]> {
-  const maxLen = Math.max(prev.length, curr.length);
-  const changed: Array<[number, string]> = [];
-
-  for (let i = 0; i < maxLen; i++) {
-    const prevLine = prev[i] ?? '';
-    const currLine = curr[i] ?? '';
-    if (prevLine !== currLine) {
-      changed.push([i, currLine]);
-    }
-  }
-
-  return changed;
-}
-
-/**
- * Deterministic scroll detection.
- * Find max k where current[0..rows-k-1] === previous[k..rows-1].
- * If k > 0: screen scrolled up by k lines, new content is bottom k lines.
- */
-export function detectScroll(prev: string[], curr: string[]): { scrolled: boolean; newLineCount: number } {
-  const rows = Math.min(prev.length, curr.length);
-  if (rows === 0) return { scrolled: false, newLineCount: 0 };
-
-  // Try shift values from largest down to 1 (rows-1 means all but one line scrolled off)
-  const maxShift = rows - 1;
-  for (let k = maxShift; k >= 1; k--) {
-    let match = true;
-    for (let i = 0; i < rows - k; i++) {
-      if (curr[i] !== prev[i + k]) {
-        match = false;
-        break;
-      }
-    }
-    if (match) {
-      return { scrolled: true, newLineCount: k };
-    }
-  }
-
-  return { scrolled: false, newLineCount: 0 };
-}

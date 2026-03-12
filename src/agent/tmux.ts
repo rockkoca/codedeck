@@ -1,7 +1,14 @@
-import { exec as execCb } from 'child_process';
+import { exec as execCb, execFile as execFileCb } from 'child_process';
 import { promisify } from 'util';
+import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
+import { Socket as NetSocket } from 'net';
+import type { Readable } from 'stream';
 
 const exec = promisify(execCb);
+const execFile = promisify(execFileCb);
 
 /** Run a raw tmux command. */
 export async function tmuxExec(args: string): Promise<string> {
@@ -111,6 +118,11 @@ export async function showBuffer(): Promise<string> {
   return tmuxExec('show-buffer');
 }
 
+/** Get the pane ID of the first pane in a tmux session (e.g. "%42"). */
+export async function getPaneId(session: string): Promise<string> {
+  return tmuxExec(`display-message -p -t ${session} '#{pane_id}'`);
+}
+
 /** Delete the tmux paste buffer (clipboard cleanup after CC /copy). */
 export async function deleteBuffer(): Promise<void> {
   try {
@@ -168,4 +180,179 @@ export async function sendRawInput(session: string, data: string): Promise<void>
   // Regular printable text — send literally (no Enter appended)
   const escaped = data.replace(/'/g, "'\\''");
   await tmuxExec(`send-keys -t ${session} -l '${escaped}'`);
+}
+
+// ── pipe-pane streaming ───────────────────────────────────────────────────────
+
+/** Shell-quote a string using single-quote wrapping. */
+function shellQuote(str: string): string {
+  return "'" + str.replace(/'/g, "'\\''") + "'";
+}
+
+/** Validates the FIFO path against strict character whitelist. */
+function validateFifoPath(p: string): boolean {
+  return /^[A-Za-z0-9/_.\-]+$/.test(p);
+}
+
+/** Valid session name pattern for pipe-pane. */
+const SESSION_PATTERN = /^deck_[a-z0-9_]+_(brain|w\d+)$/;
+
+/** Cached pipe-pane capability (tmux >= 2.6 supports -O). */
+let pipePaneCapability: boolean | null = null;
+
+/** Fixed path to the pipe-writer helper script. */
+const PIPE_WRITER_SCRIPT = path.join(__dirname, '../../scripts/pipe-writer.sh');
+
+/**
+ * Check if tmux supports `pipe-pane -O` (requires tmux >= 2.6).
+ * Result is cached after first call.
+ */
+export async function checkPipePaneCapability(): Promise<boolean> {
+  if (pipePaneCapability !== null) return pipePaneCapability;
+  try {
+    const { stdout } = await exec('tmux -V');
+    const match = stdout.trim().match(/^tmux\s+(\d+)\.(\d+)/);
+    if (match) {
+      const major = parseInt(match[1], 10);
+      const minor = parseInt(match[2], 10);
+      pipePaneCapability = major > 2 || (major === 2 && minor >= 6);
+    } else {
+      pipePaneCapability = false;
+    }
+  } catch {
+    pipePaneCapability = false;
+  }
+  return pipePaneCapability;
+}
+
+interface PipePaneHandle {
+  /** Readable stream delivering raw PTY bytes from the FIFO. */
+  stream: Readable;
+  cleanup: () => Promise<void>;
+}
+
+/** Track active pipe-pane handles: session → handle info for cleanup. */
+const activePipes = new Map<string, { paneId: string; fifoPath: string; dir: string; fd: number }>();
+
+/**
+ * Start a `tmux pipe-pane -O` raw PTY stream for a session.
+ * Uses a PID-scoped FIFO with O_RDWR|O_NONBLOCK to avoid blocking/premature-EOF.
+ * Returns a ReadStream and a cleanup function.
+ */
+export async function startPipePaneStream(session: string, paneId: string): Promise<PipePaneHandle> {
+  if (!SESSION_PATTERN.test(session)) {
+    throw new Error(`Invalid session name for pipe-pane: ${session}`);
+  }
+
+  // Stop any existing pipe for this session
+  await stopPipePaneStream(session).catch(() => {});
+
+  // Create PID-scoped temp dir
+  const tmpPrefix = path.join(os.tmpdir(), `codedeck-pty-${process.pid}-`);
+  const dir = await fsp.mkdtemp(tmpPrefix);
+  const fifoPath = path.join(dir, 'stream.fifo');
+
+  if (!validateFifoPath(fifoPath)) {
+    await fsp.rmdir(dir).catch(() => {});
+    throw new Error(`FIFO path failed character validation: ${fifoPath}`);
+  }
+
+  let fd = -1;
+  let stream: NetSocket | null = null;
+
+  try {
+    // Create FIFO with 0600 permissions
+    await execFile('mkfifo', ['-m', '0600', fifoPath]);
+
+    // Open FIFO with O_RDWR|O_NONBLOCK:
+    // - O_RDWR: process holds both read and write ends → no blocking on open, and
+    //   write-end stays open preventing premature EOF before pipe-pane connects.
+    // - O_NONBLOCK: required to avoid the open() syscall itself ever blocking.
+    // Do NOT use fs.createReadStream here — it uses thread-pool blocking read() which
+    // cannot be interrupted by destroy() when no data is available.
+    // Instead, wrap with net.Socket: FIFOs are epoll-pollable on Linux, so net.Socket
+    // uses non-blocking I/O multiplexing (handles EAGAIN correctly, destroy() works).
+    // Use fs.openSync to get a raw fd (no FileHandle GC issue).
+    fd = fs.openSync(fifoPath, fs.constants.O_RDWR | fs.constants.O_NONBLOCK);
+
+    // Wrap fd in a net.Socket (epoll-based, handles EAGAIN → wait, not error)
+    stream = new NetSocket({ fd, readable: true, writable: false, allowHalfOpen: true });
+
+    // Build pipe-pane command: fixed helper script + shell-quoted FIFO path
+    const cmd = shellQuote(PIPE_WRITER_SCRIPT) + ' ' + shellQuote(fifoPath);
+
+    // Start pipe-pane -O (output only, not existing history)
+    await execFile('tmux', ['pipe-pane', '-O', '-t', paneId, cmd]);
+
+    // Startup success: pipe-pane exit 0 + verify stream hasn't errored (setImmediate)
+    await new Promise<void>((resolve, reject) => {
+      setImmediate(() => {
+        // If stream emitted error synchronously before setImmediate, it would have thrown.
+        // Check stream.destroyed to detect immediate close.
+        if (stream!.destroyed) {
+          reject(new Error('Pipe stream closed immediately after pipe-pane start'));
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    const handle: PipePaneHandle = {
+      stream,
+      cleanup: async () => {
+        const info = activePipes.get(session);
+        if (info) {
+          activePipes.delete(session);
+          // Stop pipe-pane (suppress errors — pane may be gone)
+          await execFile('tmux', ['pipe-pane', '-t', info.paneId]).catch(() => {});
+          stream?.destroy();
+          await fsp.unlink(info.fifoPath).catch(() => {});
+          await fsp.rmdir(info.dir).catch(() => {});
+        }
+      },
+    };
+
+    activePipes.set(session, { paneId, fifoPath, dir, fd });
+    return handle;
+  } catch (err) {
+    // Rollback
+    stream?.destroy();
+    await execFile('tmux', ['pipe-pane', '-t', paneId]).catch(() => {});
+    await fsp.unlink(fifoPath).catch(() => {});
+    await fsp.rmdir(dir).catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * Stop an active pipe-pane stream for a session.
+ * No-op if no active stream exists.
+ */
+export async function stopPipePaneStream(session: string): Promise<void> {
+  const info = activePipes.get(session);
+  if (!info) return;
+  activePipes.delete(session);
+  await execFile('tmux', ['pipe-pane', '-t', info.paneId]).catch(() => {});
+  await fsp.unlink(info.fifoPath).catch(() => {});
+  await fsp.rmdir(info.dir).catch(() => {});
+}
+
+/**
+ * Clean up any FIFO temp dirs leftover from a previous daemon run with the same PID.
+ * Only removes dirs scoped to the current process.pid.
+ */
+export async function cleanupOrphanFifos(): Promise<void> {
+  const tmpDir = os.tmpdir();
+  const prefix = `codedeck-pty-${process.pid}-`;
+  try {
+    const entries = await fsp.readdir(tmpDir);
+    for (const entry of entries) {
+      if (entry.startsWith(prefix)) {
+        const dirPath = path.join(tmpDir, entry);
+        await fsp.rm(dirPath, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  } catch {
+    // Best-effort cleanup
+  }
 }

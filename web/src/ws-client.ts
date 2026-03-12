@@ -22,6 +22,7 @@ export interface TimelineEvent {
 export type ServerMessage =
   | { type: 'terminal.diff'; diff: TerminalDiff }
   | { type: 'terminal.history'; sessionName: string; content: string }
+  | { type: 'terminal.stream_reset'; session: string; reason: string }
   | { type: 'session.event'; event: string; session: string; state: string }
   | { type: 'session.error'; project: string; message: string }
   | { type: 'session.idle'; session: string; project: string; agentType: string }
@@ -33,6 +34,7 @@ export type ServerMessage =
   | { type: 'timeline.event'; event: TimelineEvent }
   | { type: 'timeline.replay'; sessionName: string; requestId?: string; events: TimelineEvent[]; truncated: boolean; epoch: number }
   | { type: 'timeline.history'; sessionName: string; requestId?: string; events: TimelineEvent[]; epoch: number }
+  | { type: 'command.ack'; commandId: string; status: string; session: string }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 
@@ -56,6 +58,18 @@ export class WsClient {
   private _pingSentAt: number | null = null;
   private _onLatency: ((ms: number) => void) | null = null;
 
+  /** Callback for raw PTY binary frames from daemon. */
+  private _onTerminalRaw: ((sessionName: string, data: Uint8Array) => void) | null = null;
+
+  /** Per-session stream reset recovery state. */
+  private resetState = new Map<string, {
+    count: number;
+    windowStart: number;
+    retryCount: number;
+    inCooldown: boolean;
+    retryTimer: ReturnType<typeof setTimeout> | null;
+  }>();
+
   constructor(baseUrl: string, serverId: string, token: string) {
     this.baseUrl = baseUrl;
     this.serverId = serverId;
@@ -73,6 +87,11 @@ export class WsClient {
   /** Register a callback for latency updates (called on every pong). */
   onLatency(fn: ((ms: number) => void) | null): void {
     this._onLatency = fn;
+  }
+
+  /** Register a callback for raw PTY binary frames (set by the active TerminalView). */
+  onTerminalRaw(fn: ((sessionName: string, data: Uint8Array) => void) | null): void {
+    this._onTerminalRaw = fn;
   }
 
   connect(): void {
@@ -113,6 +132,15 @@ export class WsClient {
 
   sendSessionCommand(command: 'start' | 'stop' | 'send' | 'restart', payload: object = {}): void {
     this.send({ type: `session.${command}`, ...payload });
+  }
+
+  /**
+   * Send session.send command with an auto-generated commandId for dedup/ack.
+   * Only session.send injects commandId — session.input does not.
+   */
+  sendSessionMessage(sessionName: string, text: string): void {
+    const commandId = crypto.randomUUID();
+    this.send({ type: 'session.send', sessionName, text, commandId });
   }
 
   /** Send raw keyboard input (from xterm onData) to a tmux session. */
@@ -192,6 +220,7 @@ export class WsClient {
     const url = `${wsUrl}/api/server/${this.serverId}/terminal?ticket=${encodeURIComponent(ticket)}`;
 
     this.ws = new WebSocket(url);
+    this.ws.binaryType = 'arraybuffer';
     this._connecting = false;
 
     this.ws.addEventListener('open', () => {
@@ -202,6 +231,12 @@ export class WsClient {
     });
 
     this.ws.addEventListener('message', (ev) => {
+      // Binary frame: raw PTY data
+      if (ev.data instanceof ArrayBuffer) {
+        this.handleRawFrame(ev.data);
+        return;
+      }
+
       try {
         const msg = JSON.parse(ev.data as string) as ServerMessage;
         if (msg.type === 'pong') {
@@ -210,6 +245,11 @@ export class WsClient {
             this._pingSentAt = null;
             this._onLatency?.(this._pingLatency);
           }
+          return;
+        }
+        if (msg.type === 'terminal.stream_reset') {
+          this.handleStreamReset(msg.session);
+          this.dispatch(msg); // Let TerminalView know to reset terminal state
           return;
         }
         this.dispatch(msg);
@@ -233,6 +273,70 @@ export class WsClient {
     this.ws.addEventListener('error', () => {
       this.ws?.close();
     });
+  }
+
+  /** Parse and dispatch a binary raw PTY frame (v1 protocol). */
+  private handleRawFrame(buf: ArrayBuffer): void {
+    const data = new Uint8Array(buf);
+    if (data.length < 3 || data[0] !== 0x01) return; // invalid header
+    const nameLen = (data[1] << 8) | data[2];
+    if (data.length < 3 + nameLen) return;
+    const sessionName = new TextDecoder().decode(data.slice(3, 3 + nameLen));
+    const ptyData = data.slice(3 + nameLen);
+    this._onTerminalRaw?.(sessionName, ptyData);
+  }
+
+  /**
+   * Handle terminal.stream_reset: schedule resubscribe with exponential backoff.
+   * Cooldown: 3+ resets within 60s → 30s pause before retrying.
+   */
+  private handleStreamReset(session: string): void {
+    const now = Date.now();
+    let state = this.resetState.get(session);
+    if (!state) {
+      state = { count: 0, windowStart: now, retryCount: 0, inCooldown: false, retryTimer: null };
+      this.resetState.set(session, state);
+    }
+
+    // Reset count window every 60s
+    if (now - state.windowStart > 60_000) {
+      state.count = 0;
+      state.windowStart = now;
+    }
+    state.count++;
+
+    // Cooldown: ≥3 resets in 60s → 30s pause
+    if (state.count >= 3 && !state.inCooldown) {
+      state.inCooldown = true;
+      setTimeout(() => {
+        const s = this.resetState.get(session);
+        if (s === state) {
+          s.inCooldown = false;
+          s.retryCount = 0;
+        }
+      }, 30_000);
+      return; // Don't resubscribe during cooldown
+    }
+
+    if (state.inCooldown) return;
+
+    if (state.retryCount >= 5) {
+      // Max retries — let handler show user-facing prompt (already dispatched)
+      return;
+    }
+
+    const delays = [1000, 2000, 4000, 8000, 16000];
+    const delay = delays[Math.min(state.retryCount, delays.length - 1)];
+    state.retryCount++;
+
+    if (state.retryTimer) clearTimeout(state.retryTimer);
+    state.retryTimer = setTimeout(() => {
+      const s = this.resetState.get(session);
+      if (s) s.retryTimer = null;
+      if (!this._destroyed && this._connected) {
+        this.subscribeTerminal(session);
+      }
+    }, delay);
   }
 
   private scheduleReconnect(): void {

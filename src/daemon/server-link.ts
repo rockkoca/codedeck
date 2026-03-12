@@ -95,6 +95,12 @@ export class ServerLink {
     this.ws.send(JSON.stringify({ ...((msg as object) ?? {}), seq: this.seq }));
   }
 
+  /** Send a binary WebSocket frame (raw PTY data). Best-effort: no throw on disconnect. */
+  sendBinary(data: Buffer): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(data);
+  }
+
   /** Send a timeline event to connected browsers via the server relay. */
   sendTimelineEvent(event: TimelineEvent): void {
     try {

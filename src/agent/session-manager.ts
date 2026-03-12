@@ -1,4 +1,4 @@
-import { newSession, killSession, sessionExists, listSessions as tmuxListSessions, sendKeys, sendKey, capturePane, showBuffer } from './tmux.js';
+import { newSession, killSession, sessionExists, listSessions as tmuxListSessions, sendKeys, sendKey, capturePane, showBuffer, getPaneId, cleanupOrphanFifos } from './tmux.js';
 import { ClaudeCodeDriver } from './drivers/claude-code.js';
 import { CodexDriver } from './drivers/codex.js';
 import { OpenCodeDriver } from './drivers/opencode.js';
@@ -89,6 +89,11 @@ export async function stopProject(projectName: string): Promise<void> {
   }
 }
 
+/** Clean up orphan FIFOs from previous daemon runs and reconcile session store on startup. */
+export async function initOnStartup(): Promise<void> {
+  await cleanupOrphanFifos();
+}
+
 /** Reconcile store with actual tmux on daemon start — restart missing sessions. */
 export async function restoreFromStore(): Promise<void> {
   const all = storeSessions();
@@ -173,6 +178,15 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
     logger.info({ session: name, agentType }, 'Launched session');
   }
 
+  // Always record paneId — it changes on each session creation/restart
+  const paneId = await getPaneId(name).catch(() => undefined);
+  if (paneId) {
+    const existing = getSession(name);
+    if (existing) {
+      upsertSession({ ...existing, paneId });
+    }
+  }
+
   if (!skipStore) {
     const record: SessionRecord = {
       name,
@@ -185,6 +199,7 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
       restartTimestamps: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      paneId,
     };
     upsertSession(record);
     emitSessionPersist(record, name);

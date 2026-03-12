@@ -1,5 +1,5 @@
 import { loadStore, flushStore, listSessions, upsertSession, removeSession } from '../store/session-store.js';
-import { restoreFromStore, setSessionEventCallback, setSessionPersistCallback, restartSession } from '../agent/session-manager.js';
+import { restoreFromStore, setSessionEventCallback, setSessionPersistCallback, restartSession, initOnStartup } from '../agent/session-manager.js';
 import { sessionExists } from '../agent/tmux.js';
 import { detectMemoryBackend } from '../memory/detector.js';
 import { ServerLink } from './server-link.js';
@@ -112,6 +112,9 @@ export async function startup(): Promise<DaemonContext> {
 
   await loadStore();
   logger.info('Session store loaded');
+
+  await initOnStartup();
+  logger.info('Startup cleanup done');
 
   // Clean up old timeline files (>7 days)
   timelineStore.cleanup();

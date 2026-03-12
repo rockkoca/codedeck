@@ -120,11 +120,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION_PRIMARY }}
           cache: 'npm'
-          cache-dependency-path: server/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: server
-      - run: npm test
-        working-directory: server
+      - run: npm run test:server
 
   # ── Server DB integration tests (testcontainers + real PostgreSQL) ─────────
 
@@ -146,7 +144,7 @@ jobs:
         env:
           TESTCONTAINERS_RYUK_DISABLED: 'true'
 
-  # ── E2E tests (tmux required — auto-skipped in CI via SKIP_TMUX_TESTS) ────
+  # ── E2E tests (tmux installed — tests run for real) ──────────────────────
 
   e2e-tests:
     name: E2E Tests
@@ -158,11 +156,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION_PRIMARY }}
           cache: 'npm'
-      - run: sudo apt-get install -y tmux
+      - name: Install tmux
+        run: sudo apt-get install -y tmux
+      - name: Prime tmux server (ensures socket dir exists)
+        run: tmux new-session -d -s init && tmux kill-session -t init
       - run: npm ci
       - run: npm run test:e2e
-        env:
-          SKIP_TMUX_TESTS: '1'
 
   # ── Coverage ──────────────────────────────────────────────────────────────
 

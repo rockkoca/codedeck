@@ -5,9 +5,17 @@ vi.mock('../../src/agent/tmux.js', () => ({
   capturePaneVisible: vi.fn(),
   capturePaneHistory: vi.fn(),
   getPaneSize: vi.fn(),
+  sessionExists: vi.fn().mockResolvedValue(true),
+  startPipePaneStream: vi.fn(),
+  stopPipePaneStream: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { capturePaneVisible, capturePaneHistory, getPaneSize } from '../../src/agent/tmux.js';
+// Mock session-store so getSession returns a valid paneId (needed by startPipe)
+vi.mock('../../src/store/session-store.js', () => ({
+  getSession: vi.fn().mockReturnValue({ paneId: '%1' }),
+}));
+
+import { capturePaneVisible, capturePaneHistory, getPaneSize, startPipePaneStream } from '../../src/agent/tmux.js';
 import { TerminalStreamer } from '../../src/daemon/terminal-streamer.js';
 import { TimelineEmitter } from '../../src/daemon/timeline-emitter.js';
 
@@ -18,6 +26,7 @@ import { timelineEmitter } from '../../src/daemon/timeline-emitter.js';
 const mockCapture = capturePaneVisible as ReturnType<typeof vi.fn>;
 const mockHistory = capturePaneHistory as ReturnType<typeof vi.fn>;
 const mockSize = getPaneSize as ReturnType<typeof vi.fn>;
+const mockStartPipe = startPipePaneStream as ReturnType<typeof vi.fn>;
 
 /** Flush all pending timers + microtasks so the capture loop runs. */
 const flush = () => vi.advanceTimersByTimeAsync(200);
@@ -33,6 +42,10 @@ describe('TerminalStreamer — snapshot behavior', () => {
     mockSize.mockResolvedValue({ cols: 80, rows: 4 });
     mockCapture.mockResolvedValue('line0\nline1\nline2\nline3');
     mockHistory.mockResolvedValue('');
+
+    // Mock startPipePaneStream to return a no-op stream (never emits data)
+    const noopStream = { on: vi.fn(), destroy: vi.fn() };
+    mockStartPipe.mockResolvedValue({ stream: noopStream, cleanup: vi.fn().mockResolvedValue(undefined) });
 
     // Spy on the shared timelineEmitter used by TerminalStreamer
     emitSpy = vi.spyOn(timelineEmitter, 'emit');

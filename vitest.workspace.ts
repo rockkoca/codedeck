@@ -30,6 +30,15 @@ export default defineWorkspace([
   },
   {
     test: {
+      name: 'server',
+      include: ['server/test/**/*.test.ts'],
+      exclude: ['server/test/**/*.integration.test.ts', '**/node_modules/**'],
+      environment: 'node',
+      globals: false,
+    },
+  },
+  {
+    test: {
       name: 'e2e',
       include: ['test/e2e/**/*.test.ts'],
       exclude: ['**/node_modules/**'],

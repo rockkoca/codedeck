@@ -19,6 +19,8 @@ export interface SessionRecord {
   restartTimestamps: number[];
   createdAt: number;
   updatedAt: number;
+  /** tmux pane ID (e.g. "%42") recorded at session creation. Used for pipe-pane streaming. */
+  paneId?: string;
 }
 
 export interface SessionStore {
