@@ -16,8 +16,8 @@
  */
 
 import type { Readable } from 'stream';
-import { capturePaneVisible, capturePaneHistory, getPaneSize, sessionExists, startPipePaneStream, stopPipePaneStream } from '../agent/tmux.js';
-import { getSession } from '../store/session-store.js';
+import { capturePaneVisible, capturePaneHistory, getPaneId, getPaneSize, sessionExists, startPipePaneStream, stopPipePaneStream } from '../agent/tmux.js';
+import { getSession, upsertSession } from '../store/session-store.js';
 import { processRawPtyData, resetParser } from './terminal-parser.js';
 import logger from '../util/logger.js';
 import { timelineEmitter } from './timeline-emitter.js';
@@ -269,14 +269,22 @@ export class TerminalStreamer {
 
   private async startPipe(sessionName: string, retryCount: number): Promise<void> {
     const session = getSession(sessionName);
-    if (!session?.paneId) {
+    let paneId = session?.paneId;
+    if (!paneId) {
+      // Session created before paneId persistence — fetch dynamically from tmux
+      paneId = await getPaneId(sessionName).catch(() => undefined);
+      if (paneId && session != null) {
+        upsertSession({ ...session, paneId });
+      }
+    }
+    if (!paneId) {
       logger.error({ sessionName }, 'Cannot start pipe-pane: paneId not available — restart session to fix');
       // Do not remove subscribers: they can still receive on-demand snapshots
       return;
     }
 
     try {
-      const { stream, cleanup } = await startPipePaneStream(sessionName, session.paneId);
+      const { stream, cleanup } = await startPipePaneStream(sessionName, paneId);
 
       const pipeState: PipeState = { stream, cleanup, retryCount };
       this.pipes.set(sessionName, pipeState);
@@ -297,7 +305,7 @@ export class TerminalStreamer {
         }
       });
 
-      logger.info({ sessionName, paneId: session.paneId }, 'Pipe-pane stream started');
+      logger.info({ sessionName, paneId }, 'Pipe-pane stream started');
     } catch (err) {
       logger.error({ sessionName, err }, 'Failed to start pipe-pane stream');
       if (retryCount < MAX_REBIND_ATTEMPTS) {
