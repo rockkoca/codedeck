@@ -281,8 +281,9 @@ export class TerminalStreamer {
 
     if (nowIdle && !wasIdle) {
       this.isIdle.set(sessionName, true);
-      // Note: session.state(idle) is now emitted by hook-server on 'idle' hook,
-      // not here. This flag only controls capture frame rate.
+      // Fallback idle detection for agents without hooks (Codex, OpenCode).
+      // For Claude Code, the hook-server emits idle first and the emitter deduplicates.
+      timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
     } else if (!nowIdle && wasIdle) {
       this.isIdle.set(sessionName, false);
     }
