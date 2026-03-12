@@ -163,6 +163,19 @@ export async function startup(): Promise<DaemonContext> {
         await deleteSessionFromWorker(workerUrl!, serverId, token, name);
       }
     });
+
+    // Push all active sessions from local store to DB on startup.
+    // Covers the case where DB was cleared while the daemon was running
+    // (or route was misconfigured and persists silently failed).
+    const localSessions = listSessions();
+    for (const s of localSessions) {
+      if (s.state !== 'stopped') {
+        await persistSessionToWorker(workerUrl!, serverId, token, s.name, s);
+      }
+    }
+    if (localSessions.filter((s) => s.state !== 'stopped').length > 0) {
+      logger.info({ count: localSessions.filter((s) => s.state !== 'stopped').length }, 'Pushed local sessions to server DB on startup');
+    }
   }
 
   async function persistBinding(platform: string, channelId: string, botId: string, bindingType: string, target: string): Promise<boolean> {

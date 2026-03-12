@@ -232,6 +232,8 @@ export class WsBridge {
         updateServerHeartbeat(db, this.serverId).catch((err) =>
           logger.error({ err }, 'Failed to update heartbeat'),
         );
+        // Ack heartbeat so daemon watchdog doesn't consider the connection dead
+        try { ws.send(JSON.stringify({ type: 'heartbeat_ack' })); } catch { /* ignore */ }
       }
 
       this.relayToBrowsers(msg);
