@@ -10,6 +10,7 @@ quickDataRoutes.use('/*', requireAuth());
 
 const quickDataSchema = z.object({
   history: z.array(z.string().max(500)).max(50),
+  sessionHistory: z.record(z.string(), z.array(z.string().max(500)).max(50)).default({}),
   commands: z.array(z.string().max(500)).max(200),
   phrases: z.array(z.string().max(500)).max(200),
 });
