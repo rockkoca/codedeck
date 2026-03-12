@@ -43,34 +43,26 @@ export class ServerLink {
     this.stopWatchdog();
     if (this.pongTimer) { clearTimeout(this.pongTimer); this.pongTimer = undefined; }
 
-    // Close the existing socket before creating a new one.
-    // Without this, a socket still in CONNECTING state is orphaned and will
-    // eventually reach the server as a second daemon connection — the server
-    // then closes the *current* socket with 1001 "replaced", causing an
-    // infinite reconnect loop.
-    if (this.ws) {
-      const old = this.ws;
-      this.ws = null;
-      try { old.close(); } catch { /* ignore */ }
-    }
-
     const wsUrl = this.workerUrl.replace(/^http/, 'ws') + `/api/server/${this.serverId}/ws`;
     logger.info({ url: wsUrl }, 'ServerLink: connecting');
     this.reconnecting = false;
-    this.ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl);
+    this.ws = ws;
 
-    this.ws.addEventListener('open', () => {
+    ws.addEventListener('open', () => {
+      if (this.ws !== ws) return; // replaced before open
       logger.info('ServerLink: connected');
       this.backoffMs = INITIAL_BACKOFF_MS;
       this.lastPong = Date.now();
-      // Send auth handshake immediately — DaemonBridge closes the socket if this is not
+      // Send auth handshake immediately — server closes the socket if this is not
       // the first message or if credentials are invalid (5s timeout enforced server-side).
-      this.ws!.send(JSON.stringify({ type: 'auth', serverId: this.serverId, token: this.token }));
+      ws.send(JSON.stringify({ type: 'auth', serverId: this.serverId, token: this.token }));
       this.startHeartbeat();
       this.startWatchdog();
     });
 
-    this.ws.addEventListener('error', (event) => {
+    ws.addEventListener('error', (event) => {
+      if (this.ws !== ws) return; // stale socket — a newer connection already took over
       logger.warn({ error: (event as ErrorEvent).message ?? 'unknown' }, 'ServerLink: error');
       // Close event *should* fire after error, but in edge cases (non-101 response,
       // DNS failure) it may not. Schedule reconnect as a safety net — scheduleReconnect()
@@ -79,7 +71,8 @@ export class ServerLink {
       if (!this.stopping) this.scheduleReconnect();
     });
 
-    this.ws.addEventListener('message', (event: MessageEvent) => {
+    ws.addEventListener('message', (event: MessageEvent) => {
+      if (this.ws !== ws) return; // stale socket
       this.lastPong = Date.now();
       const raw = typeof event.data === 'string' ? event.data : event.data.toString();
       try {
@@ -90,7 +83,12 @@ export class ServerLink {
       }
     });
 
-    this.ws.addEventListener('close', (event: CloseEvent) => {
+    ws.addEventListener('close', (event: CloseEvent) => {
+      // If this.ws has already been replaced by a newer socket (e.g. because we called
+      // connect() again while this socket was still in-flight), the server will close
+      // this one with 1001 "replaced" — that's expected and we must NOT reconnect,
+      // otherwise the newer connection gets kicked and we loop forever.
+      if (this.ws !== ws) return;
       logger.info({ code: event.code, reason: event.reason }, 'ServerLink: closed');
       this.stopHeartbeat();
       this.stopWatchdog();
