@@ -32,7 +32,15 @@ export default defineWorkspace([
     test: {
       name: 'server',
       include: ['server/test/**/*.test.ts'],
-      exclude: ['server/test/**/*.integration.test.ts', '**/node_modules/**'],
+      // auth-flow and proxy-addr tests depend on @hono/node-server and proxy-addr
+      // which live in server/node_modules. Exclude them from the root workspace;
+      // they run via `cd server && npm test` in their own environment.
+      exclude: [
+        'server/test/**/*.integration.test.ts',
+        'server/test/auth-flow.test.ts',
+        'server/test/proxy-addr.test.ts',
+        '**/node_modules/**',
+      ],
       environment: 'node',
       globals: false,
     },
