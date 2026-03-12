@@ -50,4 +50,5 @@ export interface TerminalDiff {
   lines: Array<[number, string]>;
   cols: number;
   rows: number;
+  fullFrame?: boolean;
 }

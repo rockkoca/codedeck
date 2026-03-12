@@ -197,16 +197,16 @@ export function processTerminalDiff(
   if (currentText.startsWith(acc.lastScreenText) && acc.lastScreenText.length > 0) {
     newText = currentText.slice(acc.lastScreenText.length).trim();
   } else if (acc.lastScreenText && currentText.length > acc.lastScreenText.length) {
-    // Content changed in a non-append way — just take the diff of last lines
+    // Content changed in a non-append way — take only genuinely new lines
     const prevLines = acc.lastScreenText.split('\n');
     const currLines = currentText.split('\n');
-    const diffLines: string[] = [];
-    for (let i = 0; i < currLines.length; i++) {
-      if (i >= prevLines.length || currLines[i] !== prevLines[i]) {
-        diffLines.push(currLines[i]);
-      }
+    // Only extract lines beyond the previous line count (truly new lines)
+    // Lines that changed within the existing range are UI redraws, not new content
+    if (currLines.length > prevLines.length) {
+      const newLines = currLines.slice(prevLines.length);
+      newText = newLines.join('\n').trim();
     }
-    newText = diffLines.join('\n').trim();
+    // If line count didn't grow, it's a redraw — skip (update baseline only)
   }
 
   acc.lastScreenText = currentText;
