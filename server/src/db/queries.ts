@@ -311,6 +311,7 @@ export interface DbSubSession {
   closed_at: number | null;
   created_at: number;
   updated_at: number;
+  cc_session_id: string | null;
 }
 
 export async function getSubSessionsByServer(db: PgDatabase, serverId: string): Promise<DbSubSession[]> {
@@ -336,15 +337,16 @@ export async function createSubSession(
   shellBin: string | null,
   cwd: string | null,
   label: string | null,
+  ccSessionId: string | null,
 ): Promise<DbSubSession> {
   const now = Date.now();
   await db
     .prepare(
-      'INSERT INTO sub_sessions (id, server_id, type, shell_bin, cwd, label, closed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)',
+      'INSERT INTO sub_sessions (id, server_id, type, shell_bin, cwd, label, closed_at, cc_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)',
     )
-    .bind(id, serverId, type, shellBin, cwd, label, now, now)
+    .bind(id, serverId, type, shellBin, cwd, label, ccSessionId, now, now)
     .run();
-  return { id, server_id: serverId, type, shell_bin: shellBin, cwd, label, closed_at: null, created_at: now, updated_at: now };
+  return { id, server_id: serverId, type, shell_bin: shellBin, cwd, label, closed_at: null, cc_session_id: ccSessionId, created_at: now, updated_at: now };
 }
 
 export async function updateSubSession(

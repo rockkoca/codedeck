@@ -6,6 +6,8 @@ export interface LaunchOptions {
   cwd?: string;
   /** When true, start a fresh session without resuming the last conversation. */
   fresh?: boolean;
+  /** CC session UUID for --session-id / --resume (CC sub-sessions only) */
+  ccSessionId?: string;
 }
 
 export interface AgentDriver {

@@ -55,6 +55,7 @@ export function useSubSessions(
       type: s.type,
       shellBin: s.shellBin,
       cwd: s.cwd,
+      ccSessionId: s.ccSessionId,
     })));
   }, [connected, ws, subSessions]);
 
@@ -71,7 +72,8 @@ export function useSubSessions(
   ): Promise<SubSession | null> => {
     if (!serverId) return null;
     try {
-      const res = await apiCreate(serverId, { type, shellBin, cwd, label });
+      const ccSessionId = type === 'claude-code' ? crypto.randomUUID() : undefined;
+      const res = await apiCreate(serverId, { type, shellBin, cwd, label, ccSessionId });
       const sub: SubSession = {
         ...res.subSession,
         sessionName: res.sessionName,
@@ -79,7 +81,7 @@ export function useSubSessions(
       };
       setSubSessions((prev) => [...prev, sub]);
       // Ask daemon to start it
-      ws?.subSessionStart(sub.id, type, shellBin, cwd);
+      ws?.subSessionStart(sub.id, type, shellBin, cwd, ccSessionId);
       return sub;
     } catch {
       return null;

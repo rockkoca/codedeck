@@ -540,6 +540,7 @@ async function handleSubSessionStart(cmd: Record<string, unknown>): Promise<void
     type,
     shellBin: cmd.shellBin as string | null | undefined,
     cwd: cmd.cwd as string | null | undefined,
+    ccSessionId: cmd.ccSessionId as string | null | undefined,
   }).catch((e: unknown) => logger.error({ err: e, id }, 'subsession.start failed'));
 }
 

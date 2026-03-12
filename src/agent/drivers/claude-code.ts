@@ -36,6 +36,10 @@ export class ClaudeCodeDriver implements AgentDriver {
 
   buildLaunchCommand(_sessionName: string, opts?: LaunchOptions): string {
     const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
+    if (opts?.ccSessionId) {
+      // Sub-session: use deterministic session ID, always fresh start for that UUID
+      return `${cwd}claude --dangerously-skip-permissions --session-id ${opts.ccSessionId}`;
+    }
     if (opts?.fresh) {
       return `${cwd}claude --dangerously-skip-permissions`;
     }
@@ -44,6 +48,11 @@ export class ClaudeCodeDriver implements AgentDriver {
   }
 
   buildResumeCommand(_sessionName: string, opts?: LaunchOptions): string {
+    const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
+    if (opts?.ccSessionId) {
+      // Resume specific session by UUID
+      return `${cwd}claude --dangerously-skip-permissions --resume ${opts.ccSessionId}`;
+    }
     return this.buildLaunchCommand(_sessionName, opts);
   }
 

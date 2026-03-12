@@ -15,7 +15,7 @@
 
 import { watch, readdir, stat, open } from 'fs/promises';
 import type { FileChangeInfo } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname, basename } from 'path';
 import { homedir } from 'os';
 import { timelineEmitter } from './timeline-emitter.js';
 import logger from '../util/logger.js';
@@ -272,6 +272,69 @@ export function stopWatching(sessionName: string): void {
   if (state.pollTimer) clearInterval(state.pollTimer);
   watchers.delete(sessionName);
   releaseFiles(sessionName);
+}
+
+/**
+ * Start watching a specific JSONL file for a session.
+ * Polls until the file appears (CC creates it on first conversation), then tails it.
+ * Used for CC sub-sessions where the file path is known from --session-id.
+ */
+export async function startWatchingFile(sessionName: string, filePath: string): Promise<void> {
+  if (watchers.has(sessionName)) {
+    stopWatching(sessionName);
+  }
+
+  // Derive projectDir from filePath (parent directory)
+  const projectDir = dirname(filePath);
+  const state: WatcherState = {
+    projectDir,
+    activeFile: null,
+    fileOffset: 0,
+    abort: new AbortController(),
+    stopped: false,
+  };
+  watchers.set(sessionName, state);
+
+  // Poll until the specific file appears (up to 120s — CC needs first conversation)
+  let appeared = false;
+  for (let i = 0; i < 120 && !state.stopped; i++) {
+    try {
+      const s = await stat(filePath);
+      state.activeFile = filePath;
+      state.fileOffset = s.size; // start from end (only new content)
+      claimFile(sessionName, filePath);
+      appeared = true;
+      break;
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  if (!appeared || state.stopped) return;
+
+  // Poll every 2s for new content
+  state.pollTimer = setInterval(() => {
+    void drainNewLines(sessionName, state);
+  }, 2000);
+
+  // Also use fs.watch on the specific file for faster updates
+  void watchFile(sessionName, state, filePath);
+}
+
+async function watchFile(sessionName: string, state: WatcherState, filePath: string): Promise<void> {
+  try {
+    const watcher = watch(dirname(filePath), { persistent: false, signal: state.abort.signal });
+    const fileName = basename(filePath);
+    for await (const event of watcher as AsyncIterable<FileChangeInfo<string>>) {
+      if (state.stopped) break;
+      if (event.filename !== fileName) continue;
+      await drainNewLines(sessionName, state);
+    }
+  } catch (err) {
+    if (!state.stopped) {
+      logger.warn({ sessionName, err }, 'jsonl-watcher: file watch error');
+    }
+  }
 }
 
 // ── Internal watcher logic ────────────────────────────────────────────────────

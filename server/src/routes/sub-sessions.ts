@@ -31,7 +31,7 @@ subSessionRoutes.post('/:id/sub-sessions', async (c) => {
   const role = await resolveServerRole(c.env.DB, serverId, userId);
   if (role !== 'owner' && role !== 'admin') return c.json({ error: 'forbidden' }, 403);
 
-  let body: { type?: string; shellBin?: string; cwd?: string; label?: string };
+  let body: { type?: string; shellBin?: string; cwd?: string; label?: string; cc_session_id?: string };
   try {
     body = await c.req.json() as typeof body;
   } catch {
@@ -56,6 +56,7 @@ subSessionRoutes.post('/:id/sub-sessions', async (c) => {
     body.shellBin ?? null,
     body.cwd ?? null,
     body.label ?? null,
+    body.cc_session_id ?? null,
   );
 
   const sessionName = `deck_sub_${id}`;

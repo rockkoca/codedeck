@@ -8,6 +8,7 @@ import { getDriver } from '../agent/session-manager.js';
 import type { AgentType } from '../agent/detect.js';
 import { timelineStore } from './timeline-store.js';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
 import logger from '../util/logger.js';
 
 export interface SubSessionRecord {
@@ -15,6 +16,7 @@ export interface SubSessionRecord {
   type: string;
   shellBin?: string | null;
   cwd?: string | null;
+  ccSessionId?: string | null;
 }
 
 export function subSessionName(id: string): string {
@@ -36,10 +38,21 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
   const launchCmd = driver.buildLaunchCommand(sessionName, {
     cwd: sub.cwd ?? undefined,
     ...(sub.shellBin ? { shellBin: sub.shellBin } : {}),
+    ...(sub.ccSessionId ? { ccSessionId: sub.ccSessionId } : {}),
   } as Parameters<typeof driver.buildLaunchCommand>[1]);
 
   await newSession(sessionName, launchCmd, { cwd: sub.cwd ?? undefined });
   logger.info({ sessionName, type: sub.type }, 'Sub-session started');
+
+  // Start JSONL watcher for CC sub-sessions pointing at specific file
+  if (agentType === 'claude-code' && sub.ccSessionId && sub.cwd) {
+    const { startWatchingFile, claudeProjectDir } = await import('./jsonl-watcher.js');
+    const projectDir = claudeProjectDir(sub.cwd);
+    const jsonlPath = path.join(projectDir, `${sub.ccSessionId}.jsonl`);
+    startWatchingFile(sessionName, jsonlPath).catch((e: unknown) =>
+      logger.warn({ err: e, sessionName }, 'jsonl-watcher startWatchingFile failed'),
+    );
+  }
 
   if (driver.postLaunch) {
     const { capturePane, sendKey } = await import('../agent/tmux.js');
@@ -53,6 +66,8 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
 /** Kill a sub-session tmux session. */
 export async function stopSubSession(sessionName: string): Promise<void> {
   await killSession(sessionName).catch(() => {});
+  const { stopWatching } = await import('./jsonl-watcher.js');
+  stopWatching(sessionName);
   logger.info({ sessionName }, 'Sub-session stopped');
 }
 
