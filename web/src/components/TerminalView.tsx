@@ -126,11 +126,17 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       const baseY = buf.baseY;
       const viewportY = buf.viewportY;
       const atBottom = viewportY >= baseY || baseY === 0;
-      // Only update user intent when NOT inside a programmatic write.
-      // During write(), xterm fires onScroll as it follows the cursor to bottom —
-      // that is NOT a user action and must not corrupt the sticky scroll intent.
-      if (writingCountRef.current === 0) {
-        autoFollowRef.current = atBottom;
+      if (atBottom) {
+        // Re-enter auto-follow only when no write is in progress.
+        // During writes, xterm fires onScroll(atBottom=true) as cursor follows bottom —
+        // that is NOT a real user action and must not override the user's scroll-up intent.
+        if (writingCountRef.current === 0) {
+          autoFollowRef.current = true;
+        }
+      } else {
+        // User scrolled up — always record intent immediately, even mid-write.
+        // This lets manual scroll work reliably while the terminal is streaming.
+        autoFollowRef.current = false;
       }
       setScrolledUp(!atBottom);
       setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
@@ -138,19 +144,7 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       if (scrollHideTimerRef.current) clearTimeout(scrollHideTimerRef.current);
       scrollHideTimerRef.current = setTimeout(() => setShowScrollbar(false), 1500);
     };
-    const onLineFeedEvent = () => {
-      // Only update UI indicators — do NOT touch autoFollowRef here.
-      // onLineFeed fires during term.write() at intermediate buffer states,
-      // which would corrupt the sticky auto-follow flag.
-      const buf = term.buffer.active;
-      const baseY = buf.baseY;
-      const viewportY = buf.viewportY;
-      const atBottom = viewportY >= baseY || baseY === 0;
-      setScrolledUp(!atBottom);
-      setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
-    };
     term.onScroll(onScrollEvent);
-    term.onLineFeed(onLineFeedEvent);
 
     termRef.current = term;
     fitRef.current = fitAddon;
