@@ -36,7 +36,9 @@ export type ServerMessage =
   | { type: 'timeline.history'; sessionName: string; requestId?: string; events: TimelineEvent[]; epoch: number }
   | { type: 'command.ack'; commandId: string; status: string; session: string }
   | { type: 'error'; message: string }
-  | { type: 'pong' };
+  | { type: 'pong' }
+  | { type: 'subsession.shells'; shells: string[] }
+  | { type: 'subsession.response'; sessionName: string; status: 'working' | 'idle'; response?: string };
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
@@ -156,6 +158,28 @@ export class WsClient {
   /** Request the current session list from the daemon. */
   requestSessionList(): void {
     this.send({ type: 'get_sessions' });
+  }
+
+  // ── Sub-session commands ──────────────────────────────────────────────────
+
+  subSessionStart(id: string, sessionType: string, shellBin?: string, cwd?: string): void {
+    this.send({ type: 'subsession.start', id, sessionType, shellBin, cwd });
+  }
+
+  subSessionStop(sessionName: string): void {
+    this.send({ type: 'subsession.stop', sessionName });
+  }
+
+  subSessionRebuildAll(subSessions: Array<{ id: string; type: string; shellBin?: string | null; cwd?: string | null }>): void {
+    this.send({ type: 'subsession.rebuild_all', subSessions });
+  }
+
+  subSessionDetectShells(): void {
+    this.send({ type: 'subsession.detect_shells' });
+  }
+
+  subSessionReadResponse(sessionName: string): void {
+    this.send({ type: 'subsession.read_response', sessionName });
   }
 
   /** Request timeline event replay from the daemon for reconnection gap-fill. */

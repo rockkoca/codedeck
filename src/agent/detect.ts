@@ -13,7 +13,7 @@ export type AgentStatus =
   | 'permission'
   | 'unknown';
 
-export type AgentType = 'claude-code' | 'codex' | 'opencode';
+export type AgentType = 'claude-code' | 'codex' | 'opencode' | 'shell';
 
 // ─── Claude Code patterns ─────────────────────────────────────────────────────
 
@@ -140,6 +140,11 @@ export function detectStatus(
         if (matchesAny(text, OC_THINKING_PATTERNS)) return 'thinking';
         return 'streaming';
       }
+      break;
+
+    case 'shell':
+      // Shell idle: last non-empty line ends with a common prompt char
+      if (/[$%›>#]\s*$/.test(tail.trimEnd())) return 'idle';
       break;
   }
 

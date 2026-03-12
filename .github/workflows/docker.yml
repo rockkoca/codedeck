@@ -74,3 +74,4 @@ jobs:
           fi
           git tag "$DATE_TAG"
           git push origin "$DATE_TAG"
+

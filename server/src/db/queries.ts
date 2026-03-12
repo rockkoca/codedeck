@@ -299,6 +299,77 @@ export async function updateCronJobRun(db: PgDatabase, id: string, lastRunAt: nu
   await db.prepare('UPDATE cron_jobs SET last_run_at = ?, next_run_at = ? WHERE id = ?').bind(lastRunAt, nextRunAt, id).run();
 }
 
+// ── Sub-sessions ──────────────────────────────────────────────────────────
+
+export interface DbSubSession {
+  id: string;
+  server_id: string;
+  type: string;
+  shell_bin: string | null;
+  cwd: string | null;
+  label: string | null;
+  closed_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function getSubSessionsByServer(db: PgDatabase, serverId: string): Promise<DbSubSession[]> {
+  const result = await db
+    .prepare('SELECT * FROM sub_sessions WHERE server_id = ? AND closed_at IS NULL ORDER BY created_at ASC')
+    .bind(serverId)
+    .all<DbSubSession>();
+  return result.results;
+}
+
+export async function getSubSessionById(db: PgDatabase, id: string, serverId: string): Promise<DbSubSession | null> {
+  return db
+    .prepare('SELECT * FROM sub_sessions WHERE id = ? AND server_id = ?')
+    .bind(id, serverId)
+    .first<DbSubSession>();
+}
+
+export async function createSubSession(
+  db: PgDatabase,
+  id: string,
+  serverId: string,
+  type: string,
+  shellBin: string | null,
+  cwd: string | null,
+  label: string | null,
+): Promise<DbSubSession> {
+  const now = Date.now();
+  await db
+    .prepare(
+      'INSERT INTO sub_sessions (id, server_id, type, shell_bin, cwd, label, closed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)',
+    )
+    .bind(id, serverId, type, shellBin, cwd, label, now, now)
+    .run();
+  return { id, server_id: serverId, type, shell_bin: shellBin, cwd, label, closed_at: null, created_at: now, updated_at: now };
+}
+
+export async function updateSubSession(
+  db: PgDatabase,
+  id: string,
+  serverId: string,
+  fields: { label?: string | null; closed_at?: number | null },
+): Promise<void> {
+  const parts: string[] = [];
+  const vals: unknown[] = [];
+  if ('label' in fields) { parts.push('label = ?'); vals.push(fields.label ?? null); }
+  if ('closed_at' in fields) { parts.push('closed_at = ?'); vals.push(fields.closed_at ?? null); }
+  if (parts.length === 0) return;
+  parts.push('updated_at = ?');
+  vals.push(Date.now(), id, serverId);
+  await db
+    .prepare(`UPDATE sub_sessions SET ${parts.join(', ')} WHERE id = ? AND server_id = ?`)
+    .bind(...vals)
+    .run();
+}
+
+export async function deleteSubSession(db: PgDatabase, id: string, serverId: string): Promise<void> {
+  await db.prepare('DELETE FROM sub_sessions WHERE id = ? AND server_id = ?').bind(id, serverId).run();
+}
+
 // ── Audit log ─────────────────────────────────────────────────────────────
 
 export async function writeAuditLog(

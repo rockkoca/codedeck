@@ -36,3 +36,69 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+
+// ── Sub-session API ───────────────────────────────────────────────────────
+
+export interface SubSessionData {
+  id: string;
+  serverId: string;
+  type: string;
+  shellBin?: string | null;
+  cwd?: string | null;
+  label?: string | null;
+  closedAt?: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export async function listSubSessions(serverId: string): Promise<SubSessionData[]> {
+  const res = await apiFetch<{ subSessions: Array<{
+    id: string; server_id: string; type: string; shell_bin: string | null;
+    cwd: string | null; label: string | null; closed_at: number | null;
+    created_at: number; updated_at: number;
+  }> }>(`/api/server/${serverId}/sub-sessions`);
+  return res.subSessions.map((s) => ({
+    id: s.id, serverId: s.server_id, type: s.type,
+    shellBin: s.shell_bin, cwd: s.cwd, label: s.label,
+    closedAt: s.closed_at, createdAt: s.created_at, updatedAt: s.updated_at,
+  }));
+}
+
+export async function createSubSession(
+  serverId: string,
+  body: { type: string; shellBin?: string; cwd?: string; label?: string },
+): Promise<{ id: string; sessionName: string; subSession: SubSessionData }> {
+  const res = await apiFetch<{ id: string; sessionName: string; subSession: {
+    id: string; server_id: string; type: string; shell_bin: string | null;
+    cwd: string | null; label: string | null; closed_at: number | null;
+    created_at: number; updated_at: number;
+  } }>(`/api/server/${serverId}/sub-sessions`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  const s = res.subSession;
+  return {
+    id: res.id,
+    sessionName: res.sessionName,
+    subSession: {
+      id: s.id, serverId: s.server_id, type: s.type,
+      shellBin: s.shell_bin, cwd: s.cwd, label: s.label,
+      closedAt: s.closed_at, createdAt: s.created_at, updatedAt: s.updated_at,
+    },
+  };
+}
+
+export async function patchSubSession(
+  serverId: string,
+  subId: string,
+  body: { label?: string | null; closedAt?: number | null },
+): Promise<void> {
+  await apiFetch(`/api/server/${serverId}/sub-sessions/${subId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteSubSession(serverId: string, subId: string): Promise<void> {
+  await apiFetch(`/api/server/${serverId}/sub-sessions/${subId}`, { method: 'DELETE' });
+}

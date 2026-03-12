@@ -10,6 +10,15 @@ import { terminalStreamer, type StreamSubscriber } from './terminal-streamer.js'
 import type { ServerLink } from './server-link.js';
 import { timelineEmitter } from './timeline-emitter.js';
 import { timelineStore } from './timeline-store.js';
+import {
+  startSubSession,
+  stopSubSession,
+  rebuildSubSessions,
+  detectShells,
+  readSubSessionResponse,
+  subSessionName,
+  type SubSessionRecord,
+} from './subsession-manager.js';
 import logger from '../util/logger.js';
 import { homedir } from 'os';
 
@@ -169,6 +178,21 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       break;
     case 'timeline.history_request':
       handleTimelineHistory(cmd, serverLink);
+      break;
+    case 'subsession.start':
+      void handleSubSessionStart(cmd);
+      break;
+    case 'subsession.stop':
+      void handleSubSessionStop(cmd);
+      break;
+    case 'subsession.rebuild_all':
+      void handleSubSessionRebuildAll(cmd);
+      break;
+    case 'subsession.detect_shells':
+      void handleSubSessionDetectShells(serverLink);
+      break;
+    case 'subsession.read_response':
+      void handleSubSessionReadResponse(cmd, serverLink);
       break;
     case 'auth_ok':
     case 'heartbeat':
@@ -499,5 +523,53 @@ function handleTimelineHistory(cmd: Record<string, unknown>, serverLink: ServerL
       events,
       epoch: timelineEmitter.epoch,
     });
+  } catch { /* not connected */ }
+}
+
+// ── Sub-session handlers ──────────────────────────────────────────────────
+
+async function handleSubSessionStart(cmd: Record<string, unknown>): Promise<void> {
+  const id = cmd.id as string | undefined;
+  const type = cmd.sessionType as string | undefined;
+  if (!id || !type) {
+    logger.warn('subsession.start: missing id or type');
+    return;
+  }
+  await startSubSession({
+    id,
+    type,
+    shellBin: cmd.shellBin as string | null | undefined,
+    cwd: cmd.cwd as string | null | undefined,
+  }).catch((e: unknown) => logger.error({ err: e, id }, 'subsession.start failed'));
+}
+
+async function handleSubSessionStop(cmd: Record<string, unknown>): Promise<void> {
+  const sName = cmd.sessionName as string | undefined;
+  if (!sName) {
+    logger.warn('subsession.stop: missing sessionName');
+    return;
+  }
+  await stopSubSession(sName).catch((e: unknown) => logger.error({ err: e, sName }, 'subsession.stop failed'));
+}
+
+async function handleSubSessionRebuildAll(cmd: Record<string, unknown>): Promise<void> {
+  const subSessions = cmd.subSessions as SubSessionRecord[] | undefined;
+  if (!Array.isArray(subSessions)) return;
+  await rebuildSubSessions(subSessions).catch((e: unknown) => logger.error({ err: e }, 'subsession.rebuild_all failed'));
+}
+
+async function handleSubSessionDetectShells(serverLink: ServerLink): Promise<void> {
+  const shells = await detectShells().catch(() => [] as string[]);
+  try {
+    serverLink.send({ type: 'subsession.shells', shells });
+  } catch { /* not connected */ }
+}
+
+async function handleSubSessionReadResponse(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
+  const sName = cmd.sessionName as string | undefined;
+  if (!sName) return;
+  const result = await readSubSessionResponse(sName).catch(() => ({ status: 'working' as const }));
+  try {
+    serverLink.send({ type: 'subsession.response', sessionName: sName, ...result });
   } catch { /* not connected */ }
 }

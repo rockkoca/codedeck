@@ -2,6 +2,7 @@ import { newSession, killSession, sessionExists, listSessions as tmuxListSession
 import { ClaudeCodeDriver } from './drivers/claude-code.js';
 import { CodexDriver } from './drivers/codex.js';
 import { OpenCodeDriver } from './drivers/opencode.js';
+import { ShellDriver } from './drivers/shell.js';
 import type { AgentDriver } from './drivers/base.js';
 import type { AgentType } from './detect.js';
 import { setupCCStopHook } from './signal.js';
@@ -61,6 +62,7 @@ export function getDriver(type: AgentType): AgentDriver {
     case 'claude-code': return new ClaudeCodeDriver();
     case 'codex': return new CodexDriver();
     case 'opencode': return new OpenCodeDriver();
+    case 'shell': return new ShellDriver();
   }
 }
 
