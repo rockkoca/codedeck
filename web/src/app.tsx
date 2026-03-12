@@ -272,8 +272,10 @@ export function App() {
       if (msg.type === 'daemon.reconnected') {
         // Daemon process (re)started — all its subscriptions are gone.
         // Re-subscribe immediately so terminal resumes without a page refresh.
-        const session = activeSessionRef.current;
-        if (session) ws.subscribeTerminal(session);
+        if (viewModeRef.current !== 'chat') {
+          const session = activeSessionRef.current;
+          if (session) ws.subscribeTerminal(session);
+        }
       }
     });
 
@@ -291,20 +293,25 @@ export function App() {
   }, [auth, selectedServerId]);
 
   // Subscribe to terminal when session changes OR when WS connects
+  // In chat mode, skip subscription — no terminal diffs are rendered and
+  // this avoids shrinking the tmux pane to mobile viewport dimensions.
   useEffect(() => {
     const ws = wsRef.current;
-    if (!ws?.connected || !activeSession) return;
+    if (!ws?.connected || !activeSession || viewMode === 'chat') return;
     ws.subscribeTerminal(activeSession);
     return () => {
       // Best-effort unsubscribe — WS may already be closed during reconnect
       try { ws.unsubscribeTerminal(activeSession); } catch { /* ignore */ }
     };
-  }, [activeSession, connected]);
+  }, [activeSession, connected, viewMode]);
 
   // Re-subscribe when tab/window becomes visible (handles sleep/wake, background tabs)
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState !== 'visible') return;
+      if (viewModeRef.current === 'chat') return;
       const ws = wsRef.current;
       const session = activeSessionRef.current;
       if (ws?.connected && session) ws.subscribeTerminal(session);
@@ -525,7 +532,7 @@ export function App() {
 
             {activeSession ? (
               viewMode === 'chat' ? (
-                <ChatView events={timelineEvents} loading={timelineLoading} />
+                <ChatView events={timelineEvents} loading={timelineLoading} sessionState={activeSessionInfo?.state} />
               ) : (
                 <TerminalView
                   key={activeSession}

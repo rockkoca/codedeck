@@ -8,9 +8,10 @@ import type { TimelineEvent } from '../ws-client.js';
 interface Props {
   events: TimelineEvent[];
   loading: boolean;
+  sessionState?: string;
 }
 
-export function ChatView({ events, loading }: Props) {
+export function ChatView({ events, loading, sessionState }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -38,7 +39,9 @@ export function ChatView({ events, loading }: Props) {
   return (
     <div class="chat-view" ref={scrollRef} onScroll={handleScroll}>
       {visible.length === 0 && (
-        <div class="chat-loading">No events yet</div>
+        <div class="chat-loading">
+          {sessionState ? `Session ${sessionState}` : 'No events yet'}
+        </div>
       )}
       {visible.map((event) => (
         <ChatEvent key={event.eventId} event={event} />
@@ -73,6 +76,7 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
       return (
         <div class="chat-event chat-assistant">
           {String(event.payload.text ?? '')}
+          <ChatTime ts={event.ts} />
         </div>
       );
 
@@ -100,12 +104,21 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
         </div>
       );
 
-    case 'session.state':
+    case 'session.state': {
+      const state = String(event.payload.state ?? '');
+      const stateLabel: Record<string, string> = {
+        idle: 'Agent idle — waiting for input',
+        running: 'Agent working...',
+        starting: 'Session starting...',
+        stopped: 'Session stopped',
+      };
       return (
         <div class="chat-event chat-system">
-          {String(event.payload.state ?? '')}
+          {stateLabel[state] ?? state}
+          <ChatTime ts={event.ts} />
         </div>
       );
+    }
 
     case 'terminal.snapshot':
       return (

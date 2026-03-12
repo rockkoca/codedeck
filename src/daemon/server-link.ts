@@ -61,8 +61,11 @@ export class ServerLink {
 
     this.ws.addEventListener('error', (event) => {
       logger.warn({ error: (event as ErrorEvent).message ?? 'unknown' }, 'ServerLink: error');
-      // Don't schedule reconnect here — close event always fires after error
-      // and will handle reconnection. Scheduling from both causes double reconnects.
+      // Close event *should* fire after error, but in edge cases (non-101 response,
+      // DNS failure) it may not. Schedule reconnect as a safety net — scheduleReconnect()
+      // is idempotent (guards with `this.reconnecting`), so no double-reconnect risk
+      // when close does fire.
+      if (!this.stopping) this.scheduleReconnect();
     });
 
     this.ws.addEventListener('message', (event: MessageEvent) => {
