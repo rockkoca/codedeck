@@ -172,6 +172,7 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       break;
     case 'auth_ok':
     case 'heartbeat':
+    case 'heartbeat_ack':
     case 'ping':
     case 'pong':
       // Expected internal messages, ignore silently
