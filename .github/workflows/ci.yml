@@ -122,6 +122,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: package-lock.json
       - run: npm ci
+      - run: npm ci
+        working-directory: server
       - run: npm run test:server
 
   # ── Server DB integration tests (testcontainers + real PostgreSQL) ─────────
@@ -161,7 +163,12 @@ jobs:
       - name: Prime tmux server (ensures socket dir exists)
         run: tmux new-session -d -s init && tmux kill-session -t init
       - run: npm ci
-      - run: npm run test:e2e
+      - name: Run pipe-pane e2e tests
+        run: npx vitest run test/e2e/pipe-pane-stream.test.ts
+      - name: Run other e2e tests (tmux-dependent tests skipped — claude not installed in CI)
+        run: npm run test:e2e
+        env:
+          SKIP_TMUX_TESTS: '1'
 
   # ── Coverage ──────────────────────────────────────────────────────────────
 
