@@ -6,6 +6,7 @@ import type { WsClient } from '../ws-client.js';
 
 interface Props {
   ws: WsClient | null;
+  defaultCwd?: string;
   onStart: (type: string, shellBin?: string, cwd?: string, label?: string) => void;
   onClose: () => void;
 }
@@ -19,11 +20,11 @@ const AGENT_TYPES = [
 
 const DEFAULT_SHELL_KEY = 'rcc_default_shell';
 
-export function StartSubSessionDialog({ ws, onStart, onClose }: Props) {
+export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Props) {
   const [type, setType] = useState('claude-code');
   const [shells, setShells] = useState<string[]>([]);
   const [shellBin, setShellBin] = useState<string>(() => localStorage.getItem(DEFAULT_SHELL_KEY) ?? '');
-  const [cwd, setCwd] = useState('');
+  const [cwd, setCwd] = useState(defaultCwd ?? '');
   const [label, setLabel] = useState('');
   const [detectingShells, setDetectingShells] = useState(false);
 

@@ -21,7 +21,7 @@ import logger from '../util/logger.js';
 
 const AUTH_TIMEOUT_MS = 5000;
 const MAX_QUEUE_SIZE = 100;
-const MAX_BROWSER_PAYLOAD = 4096; // 4KB
+const MAX_BROWSER_PAYLOAD = 65536; // 64KB (subsession.rebuild_all can include many sessions)
 const BROWSER_RATE_LIMIT = 30;    // messages
 const BROWSER_RATE_WINDOW = 10_000; // 10s
 const QUEUE_MAX_BYTES = 512 * 1024; // 512KB per (session, browser)
@@ -61,6 +61,11 @@ const BROWSER_WHITELIST = new Set([
   'session.input',
   'session.resize',
   'get_sessions',
+  'subsession.start',
+  'subsession.stop',
+  'subsession.rebuild_all',
+  'subsession.detect_shells',
+  'subsession.read_response',
 ]);
 
 // ── Terminal forwarding queue (per (session, browser)) ────────────────────────

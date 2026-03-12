@@ -35,6 +35,7 @@ export interface SessionInfo {
   agentType: string;
   state: 'running' | 'idle' | 'stopped' | 'error';
   label?: string | null;
+  projectDir?: string;
 }
 
 export interface ServerInfo {

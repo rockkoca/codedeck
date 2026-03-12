@@ -124,7 +124,7 @@ export function App() {
   // Fetch sessions from DB immediately when auth + server are available
   useEffect(() => {
     if (!auth || !selectedServerId) return;
-    apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string }> }>(
+    apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string; project_dir?: string }> }>(
       `/api/server/${selectedServerId}/sessions`,
     ).then((data) => {
       const mapped = data.sessions.map((s) => ({
@@ -133,6 +133,7 @@ export function App() {
         role: s.role as SessionInfo['role'],
         agentType: s.agent_type,
         state: s.state as SessionInfo['state'],
+        projectDir: s.project_dir,
       }));
       setSessions(mapped);
       // Only mark loaded if we got data — empty means daemon hasn't synced yet,
@@ -509,13 +510,14 @@ export function App() {
     setShowMobileServerMenu(false);
     // Immediately load sessions from D1
     try {
-      const data = await apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string }> }>(`/api/server/${serverId}/sessions`);
+      const data = await apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string; project_dir?: string }> }>(`/api/server/${serverId}/sessions`);
       setSessions(data.sessions.map((s) => ({
         name: s.name,
         project: s.project_name,
         role: s.role as SessionInfo['role'],
         agentType: s.agent_type,
         state: s.state as SessionInfo['state'],
+        projectDir: s.project_dir,
       })));
     } catch {
       // fallback: WS will populate sessions on connect
@@ -751,6 +753,7 @@ export function App() {
       {showSubDialog && (
         <StartSubSessionDialog
           ws={wsRef.current}
+          defaultCwd={activeSessionInfo?.projectDir}
           onStart={async (type, shellBin, cwd, label) => {
             setShowSubDialog(false);
             const sub = await createSubSession(type, shellBin, cwd, label);
