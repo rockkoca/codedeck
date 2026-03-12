@@ -12,13 +12,15 @@ interface Props {
   sessionState?: string;
 }
 
-/** A merged view item — either a single event or merged assistant text chunks. */
+/** A merged view item — either a single event, merged assistant text, or collapsed tool summary. */
 interface ViewItem {
   key: string;
-  type: 'event' | 'assistant-block';
+  type: 'event' | 'assistant-block' | 'tool-summary';
   event?: TimelineEvent;
   /** Merged text for assistant-block */
   text?: string;
+  /** Tool summary label for tool-summary */
+  toolLabel?: string;
   ts?: number;
   lastTs?: number;
 }
@@ -107,33 +109,31 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
 
 export function ChatView({ events, loading, sessionState }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const programmaticScrollRef = useRef(false);
+
+  const autoScrollRef = useRef(true);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
   const viewItems = useMemo(() => buildViewItems(events), [events]);
 
   const scrollToBottom = () => {
-    programmaticScrollRef.current = true;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    // Clear the flag after animation completes
-    setTimeout(() => { programmaticScrollRef.current = false; }, 500);
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   };
 
-  // Auto-scroll on new events
+  // Auto-scroll on new events — only read autoScrollRef, not setState, to avoid re-trigger loops
   useEffect(() => {
-    if (autoScroll) {
+    if (autoScrollRef.current) {
       scrollToBottom();
     }
-  }, [viewItems.length, events.length, autoScroll]);
+  }, [viewItems.length, events.length]);
 
   const handleScroll = () => {
-    // Ignore scroll events triggered by programmatic scrollIntoView
-    if (programmaticScrollRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    setAutoScroll(atBottom);
+    autoScrollRef.current = atBottom;
+    setShowScrollBtn(!atBottom);
   };
 
   if (loading) {
@@ -158,13 +158,13 @@ export function ChatView({ events, loading, sessionState }: Props) {
             <ChatEvent key={item.key} event={item.event!} />
           ),
         )}
-        <div ref={bottomRef} />
       </div>
-      {!autoScroll && (
+      {showScrollBtn && (
         <button
           class="chat-scroll-btn"
           onClick={() => {
-            setAutoScroll(true);
+            autoScrollRef.current = true;
+            setShowScrollBtn(false);
             scrollToBottom();
           }}
         >

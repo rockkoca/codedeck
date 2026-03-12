@@ -29,6 +29,8 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   const lastTouchEndRef = useRef<number>(0);
   const isTouchingRef = useRef(false);
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  // Track whether terminal is scrolled up (ref so applyDiff closure always sees latest)
+  const scrolledUpRef = useRef(false);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -116,6 +118,7 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       const baseY = buf.baseY; // total lines above viewport
       const viewportY = buf.viewportY; // current scroll offset
       const atBottom = viewportY >= baseY;
+      scrolledUpRef.current = !atBottom && baseY > 0;
       setScrolledUp(!atBottom && baseY > 0);
       setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
       // Show scrollbar briefly
@@ -180,19 +183,19 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
     }
   }, [connected, sessionName]);
 
-  // Raw PTY bytes: feed directly into xterm.js (Task 5.3)
+  // Raw PTY bytes: feed directly into xterm.js.
+  // Depend on `ws` so the handler re-registers when WsClient becomes available
+  // (on page refresh, ws is null on first render, non-null after WS connects).
   useEffect(() => {
-    const ws = wsRef.current;
     if (!ws) return;
     ws.onTerminalRaw((sName: string, data: Uint8Array) => {
       if (sName !== sessionName) return;
       termRef.current?.write(data);
     });
     return () => {
-      wsRef.current?.onTerminalRaw(null);
+      ws.onTerminalRaw(null);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionName]);
+  }, [ws, sessionName]);
 
   // Handle terminal.stream_reset — reset xterm state so stale ANSI doesn't corrupt (Task 5.4)
   useEffect(() => {
@@ -239,10 +242,14 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       term.write(buf);
     }
 
-    // Auto-scroll to bottom unless user is actively scrolling
+    // Auto-scroll to bottom unless user has scrolled up to read history.
+    // Check scrolledUpRef INSIDE setTimeout — by then xterm's write queue has
+    // settled and onScroll/onLineFeed have updated the ref to the true state.
     const touchIdle = !isTouchingRef.current && (Date.now() - lastTouchEndRef.current > 1000);
     if (touchIdle) {
-      term.scrollToBottom();
+      setTimeout(() => {
+        if (!scrolledUpRef.current) term.scrollToBottom();
+      }, 0);
     }
   }, []);
 

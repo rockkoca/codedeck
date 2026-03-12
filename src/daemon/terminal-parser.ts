@@ -34,6 +34,9 @@ const CC_CHROME_PATTERNS = [
   /^[>❯]\s*(Read|Edit|Write|Bash|Grep|Glob|Agent|Skill|WebFetch|WebSearch|LSP|NotebookEdit|TodoWrite|AskUserQuestion|TaskCreate|TaskUpdate|TaskGet|TaskList|TaskOutput|TaskStop|ToolSearch|EnterPlanMode|ExitPlanMode)\b/,
   /^[<]\s*(done|error|result)/i,
   /^[*●○◉⬤]\s*(Accomplishing|Thinking|Working|Reading|Searching|Running|Generating|Planning|Waiting)/i,
+  // "Agent working.•." / "Agent idle - waiting for input" / "Agent running..." Claude Code status lines
+  /^Agent\s+(working|idle|running|thinking|stopped|paused|waiting)/i,
+  /^Agent\s+idle\s*[-–]/i,
   /^\s*[LI⎿├│└┌─]\s/,  // tree/indent markers
   /^Running\.*\s*\(\d/,  // "Running... (23s..."
   /^thought for/i,

@@ -16,6 +16,7 @@ import {
 } from '../store/session-store.js';
 import logger from '../util/logger.js';
 import { timelineEmitter } from '../daemon/timeline-emitter.js';
+import { startWatching, stopWatching, isWatching } from '../daemon/jsonl-watcher.js';
 
 // Restart loop prevention: max 3 restarts within 5 minutes
 const MAX_RESTARTS = 3;
@@ -82,6 +83,7 @@ export async function startProject(config: ProjectConfig): Promise<void> {
 export async function stopProject(projectName: string): Promise<void> {
   const sessions = storeSessions(projectName);
   for (const s of sessions) {
+    stopWatching(s.name);
     await killSession(s.name).catch(() => {});
     removeSession(s.name);
     emitSessionPersist(null, s.name);
@@ -102,12 +104,16 @@ export async function restoreFromStore(): Promise<void> {
   const all = storeSessions();
   const live = await tmuxListSessions();
 
-  // 1. Restart store sessions missing from tmux
+  // 1. Restart store sessions missing from tmux; start jsonl-watcher for live ones
   for (const s of all) {
     if (s.state === 'stopped') continue;
     if (!live.includes(s.name)) {
       logger.info({ session: s.name }, 'Missing on restore, restarting');
       await restartSession(s);
+    } else if (s.agentType === 'claude-code' && s.projectDir && !isWatching(s.name)) {
+      startWatching(s.name, s.projectDir).catch((e) =>
+        logger.warn({ err: e, session: s.name }, 'jsonl-watcher start failed (restore)'),
+      );
     }
   }
 
@@ -144,6 +150,11 @@ export async function restoreFromStore(): Promise<void> {
     upsertSession(record);
     emitSessionPersist(record, name);
     emitSessionEvent('started', name, 'running');
+    if (record.agentType === 'claude-code' && projectDir) {
+      startWatching(name, projectDir).catch((e) =>
+        logger.warn({ err: e, session: name }, 'jsonl-watcher start failed (restore)'),
+      );
+    }
     logger.info({ session: name, projectDir }, 'Discovered unregistered tmux session, registered');
   }
 }
@@ -247,6 +258,13 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
   }
 
   emitSessionEvent('started', name, 'running');
+
+  // Start JSONL watcher for claude-code sessions to get structured chat events
+  if (agentType === 'claude-code') {
+    startWatching(name, projectDir).catch((e) =>
+      logger.warn({ err: e, session: name }, 'jsonl-watcher start failed'),
+    );
+  }
 
   // Auto-dismiss startup prompts (trust folder, settings errors, update dialogs)
   if (driver.postLaunch) {

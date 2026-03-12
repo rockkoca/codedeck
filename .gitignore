@@ -19,8 +19,8 @@ worker/dist/
 mobile/ios/
 mobile/android/
 
-# Deploy scripts with server-specific info
-scripts/deploy-k8s.sh
+# Deploy script with server-specific info
+scripts/deploy.sh
 
 # System
 .DS_Store

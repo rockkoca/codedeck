@@ -19,10 +19,11 @@ import type { Readable } from 'stream';
 import { capturePaneVisible, capturePaneHistory, getPaneId, getPaneSize, sessionExists, startPipePaneStream, stopPipePaneStream } from '../agent/tmux.js';
 import { getSession, upsertSession } from '../store/session-store.js';
 import { processRawPtyData, resetParser } from './terminal-parser.js';
+import { isWatching } from './jsonl-watcher.js';
 import logger from '../util/logger.js';
 import { timelineEmitter } from './timeline-emitter.js';
 
-const IDLE_THRESHOLD_MS = 30_000; // 30s without raw bytes → idle
+const IDLE_THRESHOLD_MS = 5_000; // 5s without raw bytes → idle (Stop hook fires immediately; this is fallback)
 const MAX_RAW_BUFFER = 256 * 1024; // 256KB per-subscriber snapshot-pending buffer
 const REBIND_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000];
 const MAX_REBIND_ATTEMPTS = 5;
@@ -388,8 +389,10 @@ export class TerminalStreamer {
     }
     this.resetIdleTimer(sessionName);
 
-    // Text extraction (KEEP lines only → assistant.text)
-    processRawPtyData(sessionName, data);
+    // Text extraction — skip if JSONL watcher is active (higher quality source)
+    if (!isWatching(sessionName)) {
+      processRawPtyData(sessionName, data);
+    }
 
     // Forward to subscribers
     const subs = this.subscribers.get(sessionName);

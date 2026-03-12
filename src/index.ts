@@ -8,7 +8,7 @@ import { bindFlow } from './bind/bind-flow.js';
 import logger from './util/logger.js';
 import { execSync } from 'child_process';
 import { homedir } from 'os';
-import { existsSync } from 'fs';
+import { existsSync, realpathSync } from 'fs';
 import { resolve } from 'path';
 
 const program = new Command()
@@ -109,7 +109,8 @@ program
       .description('Rebuild and restart the codedeck daemon service')
       .option('--no-build', 'Skip rebuild step')
       .action(async (opts: { build: boolean }) => {
-        const projectRoot = resolve(process.argv[1], '../..'); // dist/index.js → project root
+        const realScript = realpathSync(process.argv[1]);
+        const projectRoot = resolve(realScript, '../..'); // dist/index.js → project root
 
         if (opts.build) {
           console.log('Building...');
@@ -124,7 +125,7 @@ program
         const platform = process.platform;
 
         if (platform === 'darwin') {
-          const plist = resolve(homedir(), 'Library/LaunchAgents/cc.codedeck.daemon.plist');
+          const plist = resolve(homedir(), 'Library/LaunchAgents/codedeck.daemon.plist');
           if (!existsSync(plist)) {
             console.error(`Plist not found: ${plist}`);
             process.exit(1);

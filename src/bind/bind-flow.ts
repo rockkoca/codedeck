@@ -6,8 +6,9 @@ import logger from '../util/logger.js';
 
 const CREDS_DIR = join(homedir(), '.codedeck');
 const CREDS_PATH = join(CREDS_DIR, 'server.json');
-const PLIST_LABEL = 'cc.codedeck.daemon';
+const PLIST_LABEL = 'codedeck.daemon';
 const PLIST_PATH = join(homedir(), 'Library', 'LaunchAgents', `${PLIST_LABEL}.plist`);
+const OLD_PLIST_PATH = join(homedir(), 'Library', 'LaunchAgents', 'cc.codedeck.daemon.plist');
 
 interface ServerCredentials {
   serverId: string;
@@ -148,6 +149,14 @@ async function installLaunchAgent(): Promise<void> {
 
   await mkdir(launchAgentsDir, { recursive: true });
   await writeFile(PLIST_PATH, plist, 'utf8');
+
+  // Migrate: unload and remove old cc.codedeck.daemon plist if present
+  const { existsSync, unlinkSync } = await import('fs');
+  if (existsSync(OLD_PLIST_PATH)) {
+    try { execSync(`launchctl unload "${OLD_PLIST_PATH}" 2>/dev/null`, { stdio: 'ignore' }); } catch { /* ok */ }
+    try { unlinkSync(OLD_PLIST_PATH); } catch { /* ok */ }
+    console.log('Removed old cc.codedeck.daemon.plist');
+  }
 
   // Unload existing (ignore error), then load fresh
   try { execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null`, { stdio: 'ignore' }); } catch { /* ok */ }

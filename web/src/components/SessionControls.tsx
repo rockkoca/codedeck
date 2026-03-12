@@ -82,7 +82,12 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     }
   }, [detectedModel, model]);
 
-  const disabled = !ws?.connected || !activeSession;
+  const connected = !!ws?.connected;
+  const hasSession = !!activeSession;
+  // Input only disabled when there's no session at all (can type while disconnected)
+  const inputDisabled = !hasSession;
+  // Send/action buttons disabled when disconnected or no session
+  const disabled = !connected || !hasSession;
   const isClaudeCode = activeSession?.agentType === 'claude-code';
 
   // Close menus when clicking outside
@@ -232,7 +237,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     onAfterAction?.();
   };
 
-  const placeholder = disabled ? 'Not connected' : `Send to ${sessionDisplayName ?? activeSession?.name ?? 'session'}…`;
+  const placeholder = !hasSession ? 'No session' : !connected ? `Reconnecting… (send queued)` : `Send to ${sessionDisplayName ?? activeSession?.name ?? 'session'}…`;
 
   return (
     <div class="controls-wrapper">
@@ -322,8 +327,8 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
         */}
         <div
           ref={divRef}
-          class={`controls-input${disabled ? ' controls-input-disabled' : ''}`}
-          contenteditable={disabled ? 'false' : 'true'}
+          class={`controls-input${inputDisabled ? ' controls-input-disabled' : ''}`}
+          contenteditable={inputDisabled ? 'false' : 'true'}
           role="textbox"
           aria-multiline="true"
           aria-label="Message input"
@@ -336,7 +341,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
         <button
           class="btn btn-primary"
           onClick={handleSend}
-          disabled={disabled || !hasText}
+          disabled={inputDisabled || !hasText || !connected}
         >
           Send
         </button>

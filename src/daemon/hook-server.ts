@@ -60,6 +60,28 @@ function tryBind(server: http.Server, port: number): Promise<void> {
   });
 }
 
+function extractToolSummary(tool: string, input?: Record<string, unknown>): string {
+  if (!input) return '';
+  switch (tool) {
+    case 'Bash': {
+      const cmd = String(input['command'] ?? '');
+      return cmd.split('\n').find((l) => l.trim()) ?? cmd;
+    }
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+      return String(input['file_path'] ?? '');
+    case 'Glob':
+      return String(input['pattern'] ?? '');
+    case 'Grep':
+      return `${input['pattern'] ?? ''}${input['path'] ? ` in ${input['path']}` : ''}`;
+    case 'Agent':
+      return String(input['description'] ?? '');
+    default:
+      return '';
+  }
+}
+
 export async function startHookServer(onHook: HookCallback): Promise<{ server: http.Server; port: number }> {
   const preferredPort = await loadSavedPort();
 
@@ -95,10 +117,12 @@ export async function startHookServer(onHook: HookCallback): Promise<{ server: h
           onHook({ event: 'notification', session, title, message });
         } else if (event === 'tool_start') {
           const tool = (msg['tool'] as string | undefined) ?? 'unknown';
+          const toolInput = msg['tool_input'] as Record<string, unknown> | undefined;
+          const input = extractToolSummary(tool, toolInput);
           logger.debug({ session, tool }, 'Hook: tool start');
           onHook({ event: 'tool_start', session, tool });
           timelineEmitter.emit(session, 'session.state', { state: 'running' }, { source: 'hook' });
-          timelineEmitter.emit(session, 'tool.call', { tool }, { source: 'hook' });
+          timelineEmitter.emit(session, 'tool.call', { tool, ...(input ? { input } : {}) }, { source: 'hook' });
         } else if (event === 'tool_end') {
           logger.debug({ session }, 'Hook: tool end');
           onHook({ event: 'tool_end', session });

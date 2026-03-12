@@ -85,16 +85,25 @@ ${CURL_BASE(port)} \\
 
 function buildPreToolScript(port: number): string {
   return `#!/bin/bash
-# Codedeck CC PreToolUse Hook — reports active tool to daemon
+# Codedeck CC PreToolUse Hook — reports active tool with input to daemon
 
 INPUT=$(cat)
 
 ${SESSION_PREAMBLE}
 
-TOOL_NAME=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name','unknown'))" 2>/dev/null || echo "unknown")
+PAYLOAD=$(echo "$INPUT" | SESSION_NAME="$SESSION_NAME" python3 -c "
+import sys, json, os
+data = json.load(sys.stdin)
+tool = data.get('tool_name', 'unknown')
+tool_input = data.get('tool_input', {})
+session = os.environ.get('SESSION_NAME', '')
+print(json.dumps({'event':'tool_start','session':session,'tool':tool,'tool_input':tool_input}))
+" 2>/dev/null)
+
+[ -z "$PAYLOAD" ] && PAYLOAD="{\\"event\\":\\"tool_start\\",\\"session\\":\\"$SESSION_NAME\\",\\"tool\\":\\"unknown\\"}"
 
 ${CURL_BASE(port)} \\
-  -d "{\\"event\\":\\"tool_start\\",\\"session\\":\\"$SESSION_NAME\\",\\"tool\\":\\"$TOOL_NAME\\"}" \\
+  -d "$PAYLOAD" \\
   --max-time 2 &>/dev/null || true
 `;
 }
