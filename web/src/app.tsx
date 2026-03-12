@@ -123,14 +123,19 @@ export function App() {
     apiFetch<{ sessions: Array<{ name: string; project_name: string; role: string; agent_type: string; state: string }> }>(
       `/api/server/${selectedServerId}/sessions`,
     ).then((data) => {
-      setSessions(data.sessions.map((s) => ({
+      const mapped = data.sessions.map((s) => ({
         name: s.name,
         project: s.project_name,
         role: s.role as SessionInfo['role'],
         agentType: s.agent_type,
         state: s.state as SessionInfo['state'],
-      })));
+      }));
+      setSessions(mapped);
       setSessionsLoaded(true);
+      // Auto-select first session if none was previously saved
+      if (mapped.length > 0 && !localStorage.getItem('rcc_session')) {
+        setActiveSession(mapped[0].name);
+      }
     }).catch(() => {/* WS fallback */});
   }, [auth, selectedServerId]);
 
