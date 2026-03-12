@@ -122,6 +122,29 @@ interface WatcherState {
 
 const watchers = new Map<string, WatcherState>();
 
+/** Which session has claimed each JSONL file path (prevents cross-session stealing). */
+const claimedFiles = new Map<string, string>(); // filePath → sessionName
+
+function claimFile(sessionName: string, filePath: string): void {
+  // Release any previous file claimed by this session
+  for (const [fp, sn] of claimedFiles) {
+    if (sn === sessionName) { claimedFiles.delete(fp); break; }
+  }
+  claimedFiles.set(filePath, sessionName);
+}
+
+function releaseFiles(sessionName: string): void {
+  for (const [fp, sn] of claimedFiles) {
+    if (sn === sessionName) claimedFiles.delete(fp);
+  }
+}
+
+/** Returns true if filePath is unclaimed or already claimed by sessionName. */
+function canClaim(sessionName: string, filePath: string): boolean {
+  const owner = claimedFiles.get(filePath);
+  return !owner || owner === sessionName;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 const HISTORY_LINES = 500; // max lines to scan for recent assistant.text history
@@ -208,9 +231,12 @@ export async function startWatching(sessionName: string, workDir: string): Promi
   };
   watchers.set(sessionName, state);
 
-  // Find the current active JSONL file, emit recent history, then tail from EOF
+  // Find the current active JSONL file, emit recent history, then tail from EOF.
+  // Only claim an unclaimed file; if the latest is already claimed by another session,
+  // start with no active file and wait for a new one to appear.
   const latest = await findLatestJsonl(projectDir);
-  if (latest) {
+  if (latest && canClaim(sessionName, latest)) {
+    claimFile(sessionName, latest);
     try {
       const s = await stat(latest);
       state.activeFile = latest;
@@ -245,6 +271,7 @@ export function stopWatching(sessionName: string): void {
   state.abort.abort();
   if (state.pollTimer) clearInterval(state.pollTimer);
   watchers.delete(sessionName);
+  releaseFiles(sessionName);
 }
 
 // ── Internal watcher logic ────────────────────────────────────────────────────
@@ -276,14 +303,18 @@ async function watchDir(sessionName: string, state: WatcherState): Promise<void>
 
       const changedFile = join(state.projectDir, event.filename);
 
-      // If a new file appeared that is newer than our active file, switch to it
+      // If a new file appeared that is newer than our active file, switch to it.
+      // Skip if another session has already claimed it.
       if (changedFile !== state.activeFile) {
+        if (!canClaim(sessionName, changedFile)) continue; // claimed by another session
         const isNewer = await checkNewer(changedFile, state.activeFile);
         if (isNewer) {
           logger.debug({ sessionName, file: event.filename }, 'jsonl-watcher: switching to new JSONL file');
+          claimFile(sessionName, changedFile);
           state.activeFile = changedFile;
           state.fileOffset = 0;
         } else if (!state.activeFile) {
+          claimFile(sessionName, changedFile);
           state.activeFile = changedFile;
           state.fileOffset = 0;
         } else {
