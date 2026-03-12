@@ -349,7 +349,10 @@ async function handleResize(cmd: Record<string, unknown>): Promise<void> {
   const rows = cmd.rows as number | undefined;
   if (!sessionName || !cols || !rows) return;
   try {
-    await resizeSession(sessionName, Math.max(cols, 40), Math.max(rows, 10));
+    // Subtract 1 col so tmux is always slightly narrower than the browser terminal.
+    // xterm fitAddon rounds down but container width may have sub-character remainder,
+    // causing tmux output to wrap at a wider width and misalign with xterm's display.
+    await resizeSession(sessionName, Math.max(cols - 1, 40), Math.max(rows, 10));
     terminalStreamer.invalidateSize(sessionName);
   } catch (err) {
     logger.error({ sessionName, cols, rows, err }, 'session.resize failed');
