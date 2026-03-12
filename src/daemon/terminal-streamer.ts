@@ -272,7 +272,8 @@ export class TerminalStreamer {
     let paneId = session?.paneId;
     if (!paneId) {
       // Session created before paneId persistence — fetch dynamically from tmux
-      paneId = await getPaneId(sessionName).catch(() => undefined);
+      const fetched = getPaneId(sessionName);
+      paneId = fetched != null ? await fetched.catch(() => undefined) : undefined;
       if (paneId && session != null) {
         upsertSession({ ...session, paneId });
       }

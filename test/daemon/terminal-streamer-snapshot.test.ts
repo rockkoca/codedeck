@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../../src/agent/tmux.js', () => ({
   capturePaneVisible: vi.fn(),
   capturePaneHistory: vi.fn(),
+  getPaneId: vi.fn().mockResolvedValue('%1'),
   getPaneSize: vi.fn(),
   sessionExists: vi.fn().mockResolvedValue(true),
   startPipePaneStream: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('../../src/agent/tmux.js', () => ({
 // Mock session-store so getSession returns a valid paneId (needed by startPipe)
 vi.mock('../../src/store/session-store.js', () => ({
   getSession: vi.fn().mockReturnValue({ paneId: '%1' }),
+  upsertSession: vi.fn(),
 }));
 
 import { capturePaneVisible, capturePaneHistory, getPaneSize, startPipePaneStream } from '../../src/agent/tmux.js';
