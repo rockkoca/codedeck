@@ -33,6 +33,10 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   // Only changed by real user scroll actions (onScroll), NOT by onLineFeed/writes.
   // This prevents intermediate xterm write states from corrupting the follow flag.
   const autoFollowRef = useRef(true);
+  // Count of in-progress term.write() calls. While > 0, onScroll must NOT update
+  // autoFollowRef — xterm fires onScroll internally during write (cursor-follow),
+  // which would corrupt the user's sticky intent.
+  const writingCountRef = useRef(0);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -122,8 +126,12 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       const baseY = buf.baseY;
       const viewportY = buf.viewportY;
       const atBottom = viewportY >= baseY || baseY === 0;
-      // Update user intent: if they scrolled to bottom, re-enter auto-follow
-      autoFollowRef.current = atBottom;
+      // Only update user intent when NOT inside a programmatic write.
+      // During write(), xterm fires onScroll as it follows the cursor to bottom —
+      // that is NOT a user action and must not corrupt the sticky scroll intent.
+      if (writingCountRef.current === 0) {
+        autoFollowRef.current = atBottom;
+      }
       setScrolledUp(!atBottom);
       setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
       setShowScrollbar(true);
@@ -170,7 +178,13 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
           if (i < linesRef.current.length - 1) buf += '\r\n';
         }
         buf += '\x1b[J';
-        term.write(buf);
+        const savedLine = term.buffer.active.viewportY;
+        const wasScrolledUp = !autoFollowRef.current;
+        writingCountRef.current++;
+        term.write(buf, () => {
+          writingCountRef.current--;
+          if (wasScrolledUp) term.scrollToLine(savedLine);
+        });
       }
     });
     if (containerRef.current) observer.observe(containerRef.current);
@@ -205,16 +219,13 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       if (sName !== sessionName) return;
       const term = termRef.current;
       if (!term) return;
-      if (!autoFollowRef.current) {
-        // User has scrolled up — write data but restore viewport so xterm's
-        // cursor-following doesn't yank the view back to bottom.
-        const savedLine = term.buffer.active.viewportY;
-        term.write(data, () => {
-          if (!autoFollowRef.current) term.scrollToLine(savedLine);
-        });
-      } else {
-        term.write(data);
-      }
+      const savedLine = term.buffer.active.viewportY;
+      const wasScrolledUp = !autoFollowRef.current;
+      writingCountRef.current++;
+      term.write(data, () => {
+        writingCountRef.current--;
+        if (wasScrolledUp) term.scrollToLine(savedLine);
+      });
     });
   }
   // Cleanup on unmount only
@@ -256,14 +267,13 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
         if (i < linesRef.current.length - 1) buf += '\r\n';
       }
       buf += '\x1b[J';
-      if (!autoFollowRef.current) {
-        const savedLine = term.buffer.active.viewportY;
-        term.write(buf, () => {
-          if (!autoFollowRef.current) term.scrollToLine(savedLine);
-        });
-      } else {
-        term.write(buf);
-      }
+      const savedLine = term.buffer.active.viewportY;
+      const wasScrolledUp = !autoFollowRef.current;
+      writingCountRef.current++;
+      term.write(buf, () => {
+        writingCountRef.current--;
+        if (wasScrolledUp) term.scrollToLine(savedLine);
+      });
     } else if (diff.lines.length > 0) {
       // Partial update: only write changed lines using cursor addressing
       let buf = '';
