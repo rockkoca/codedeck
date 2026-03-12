@@ -1,5 +1,5 @@
 *, *::before, *::after { box-sizing: border-box; }
-html, body, #app { margin: 0; padding: 0; height: 100%; width: 100%; }
+html, body, #app { margin: 0; padding: 0; height: 100%; width: 100%; touch-action: pan-x pan-y; }
 body {
   background: #0f172a;
   color: #e2e8f0;
