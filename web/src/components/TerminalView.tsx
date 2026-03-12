@@ -94,6 +94,10 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
           fitDone = true;
         }
       }, 400);
+      // Auto-focus terminal on mount for desktop keyboard input
+      if (!isMobile) {
+        requestAnimationFrame(() => term.focus());
+      }
     }
 
     // Forward all keyboard input to the tmux session
