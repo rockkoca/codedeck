@@ -9,6 +9,7 @@ import { routeMessage, type InboundMessage, type RouterContext } from '../router
 import { terminalStreamer, type StreamSubscriber } from './terminal-streamer.js';
 import type { ServerLink } from './server-link.js';
 import { timelineEmitter } from './timeline-emitter.js';
+import { timelineStore } from './timeline-store.js';
 import logger from '../util/logger.js';
 import { homedir } from 'os';
 
@@ -66,6 +67,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       break;
     case 'timeline.replay_request':
       handleTimelineReplay(cmd, serverLink);
+      break;
+    case 'timeline.history_request':
+      handleTimelineHistory(cmd, serverLink);
       break;
     case 'auth_ok':
     case 'heartbeat':
@@ -305,14 +309,15 @@ function handleTimelineReplay(cmd: Record<string, unknown>, serverLink: ServerLi
   }
 
   if (requestEpoch !== timelineEmitter.epoch) {
-    // Daemon restarted — epoch mismatch
+    // Epoch mismatch — serve current epoch events from file store
+    const events = timelineStore.read(sessionName, { epoch: timelineEmitter.epoch });
     try {
       serverLink.send({
         type: 'timeline.replay',
         sessionName,
         requestId,
-        events: [],
-        truncated: true,
+        events,
+        truncated: false,
         epoch: timelineEmitter.epoch,
       });
     } catch { /* not connected */ }
@@ -327,6 +332,34 @@ function handleTimelineReplay(cmd: Record<string, unknown>, serverLink: ServerLi
       requestId,
       events,
       truncated,
+      epoch: timelineEmitter.epoch,
+    });
+  } catch { /* not connected */ }
+}
+
+/** Handle timeline.history_request — browser requesting full session history on open. */
+function handleTimelineHistory(cmd: Record<string, unknown>, serverLink: ServerLink): void {
+  const sessionName = cmd.sessionName as string | undefined;
+  const requestId = cmd.requestId as string | undefined;
+  const limit = (cmd.limit as number | undefined) ?? 200;
+
+  if (!sessionName) {
+    logger.warn('timeline.history_request: missing sessionName');
+    return;
+  }
+
+  // Read from file store — current epoch first, fall back to any
+  let events = timelineStore.read(sessionName, { epoch: timelineEmitter.epoch, limit });
+  if (events.length === 0) {
+    events = timelineStore.read(sessionName, { limit });
+  }
+
+  try {
+    serverLink.send({
+      type: 'timeline.history',
+      sessionName,
+      requestId,
+      events,
       epoch: timelineEmitter.epoch,
     });
   } catch { /* not connected */ }

@@ -5,6 +5,7 @@ import { detectMemoryBackend } from '../memory/detector.js';
 import { ServerLink } from './server-link.js';
 import { handleWebCommand, setRouterContext } from './command-handler.js';
 import { timelineEmitter } from './timeline-emitter.js';
+import { timelineStore } from './timeline-store.js';
 import { startHookServer } from './hook-server.js';
 import { setupCCHooks } from '../agent/signal.js';
 import type http from 'http';
@@ -111,6 +112,9 @@ export async function startup(): Promise<DaemonContext> {
 
   await loadStore();
   logger.info('Session store loaded');
+
+  // Clean up old timeline files (>7 days)
+  timelineStore.cleanup();
 
   const { backend: memory, mode } = await detectMemoryBackend();
   logger.info({ mode }, 'Memory backend selected');

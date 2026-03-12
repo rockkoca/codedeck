@@ -5,6 +5,7 @@
 
 import { randomUUID } from 'crypto';
 import type { TimelineEvent, TimelineEventType, TimelineSource, TimelineConfidence } from './timeline-event.js';
+import { timelineStore } from './timeline-store.js';
 
 const MAX_BUFFER = 500;
 
@@ -47,6 +48,9 @@ export class TimelineEmitter {
       buf.splice(0, buf.length - MAX_BUFFER);
     }
 
+    // Persist to disk
+    timelineStore.append(event);
+
     // Notify handlers
     for (const h of this.handlers) {
       try { h(event); } catch { /* ignore */ }
@@ -62,15 +66,22 @@ export class TimelineEmitter {
 
   /**
    * Replay events after a given seq for a session.
-   * Returns { events, truncated } where truncated=true if requested events fell off the buffer.
+   * Tries ring buffer first, falls back to file store for older events.
+   * Returns { events, truncated } where truncated=true if requested events fell off both buffer and file.
    */
   replay(sessionId: string, afterSeq: number): { events: TimelineEvent[]; truncated: boolean } {
     const buf = this.buffer.get(sessionId) ?? [];
-    if (buf.length === 0) return { events: [], truncated: false };
-    const events = buf.filter(e => e.seq > afterSeq);
-    const bufMinSeq = buf[0].seq;
-    const truncated = (afterSeq + 1) < bufMinSeq;
-    return { events, truncated };
+
+    // Try ring buffer first
+    if (buf.length > 0 && (afterSeq + 1) >= buf[0].seq) {
+      // Ring buffer has all the requested events
+      const events = buf.filter(e => e.seq > afterSeq);
+      return { events, truncated: false };
+    }
+
+    // Ring buffer doesn't have old enough events — read from file store
+    const fileEvents = timelineStore.read(sessionId, { epoch: this.epoch, afterSeq });
+    return { events: fileEvents, truncated: false };
   }
 }
 

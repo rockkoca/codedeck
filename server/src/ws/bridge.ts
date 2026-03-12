@@ -23,6 +23,7 @@ const BROWSER_WHITELIST = new Set([
   'terminal.unsubscribe',
   'terminal.snapshot_request',
   'timeline.replay_request',
+  'timeline.history_request',
   'session.start',
   'session.stop',
   'session.restart',

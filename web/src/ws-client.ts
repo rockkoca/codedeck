@@ -32,6 +32,7 @@ export type ServerMessage =
   | { type: 'outbound'; platform: string; channelId: string; content: string }
   | { type: 'timeline.event'; event: TimelineEvent }
   | { type: 'timeline.replay'; sessionName: string; requestId?: string; events: TimelineEvent[]; truncated: boolean; epoch: number }
+  | { type: 'timeline.history'; sessionName: string; requestId?: string; events: TimelineEvent[]; epoch: number }
   | { type: 'error'; message: string }
   | { type: 'pong' };
 
@@ -139,6 +140,13 @@ export class WsClient {
   /** Request a terminal snapshot (fullFrame) for a session. */
   sendSnapshotRequest(sessionName: string): void {
     this.send({ type: 'terminal.snapshot_request', sessionName });
+  }
+
+  /** Request full timeline history for a session (used on first load). */
+  sendTimelineHistoryRequest(sessionName: string, limit = 200): string {
+    const requestId = crypto.randomUUID();
+    this.send({ type: 'timeline.history_request', sessionName, requestId, limit });
+    return requestId;
   }
 
   private async openSocket(): Promise<void> {
