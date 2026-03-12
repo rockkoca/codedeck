@@ -32,14 +32,14 @@ const DEFAULT_H = 420;
 const MIN_W = 300;
 const MIN_H = 200;
 
-function loadLocal(id: string): { geom: WindowGeometry; viewMode: ViewMode } {
+function loadLocal(id: string, mobile: boolean): { geom: WindowGeometry; viewMode: ViewMode } {
   try {
     const raw = localStorage.getItem(LOCAL_KEY(id));
     if (raw) return JSON.parse(raw) as { geom: WindowGeometry; viewMode: ViewMode };
   } catch { /* ignore */ }
   const cx = Math.max(0, (window.innerWidth - DEFAULT_W) / 2);
   const cy = Math.max(0, (window.innerHeight - DEFAULT_H) / 2 - 80);
-  return { geom: { x: cx, y: cy, w: DEFAULT_W, h: DEFAULT_H }, viewMode: 'terminal' };
+  return { geom: { x: cx, y: cy, w: DEFAULT_W, h: DEFAULT_H }, viewMode: mobile ? 'chat' : 'terminal' };
 }
 
 function saveLocal(id: string, geom: WindowGeometry, viewMode: ViewMode) {
@@ -51,8 +51,10 @@ function saveLocal(id: string, geom: WindowGeometry, viewMode: ViewMode) {
 export function SubSessionWindow({
   sub, ws, connected, onDiff, onHistory, onMinimize, onClose, zIndex, onFocus,
 }: Props) {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   const { events } = useTimeline(sub.sessionName, ws);
-  const initial = loadLocal(sub.id);
+  const initial = loadLocal(sub.id, isMobile);
   const [geom, setGeom] = useState<WindowGeometry>(initial.geom);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.viewMode);
   const [input, setInput] = useState('');
@@ -65,12 +67,11 @@ export function SubSessionWindow({
   const termScrollRef = useRef<(() => void) | null>(null);
   const chatScrollRef = useRef<(() => void) | null>(null);
 
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
   // Persist on change
   useEffect(() => {
     saveLocal(sub.id, geom, viewMode);
   }, [sub.id, geom, viewMode]);
+
 
   // ── Dragging ──────────────────────────────────────────────────────────────
   const dragStart = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
