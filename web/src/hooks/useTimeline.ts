@@ -10,6 +10,10 @@ import { TimelineDB } from '../timeline-db.js';
 
 const MAX_MEMORY_EVENTS = 500;
 const ECHO_WINDOW_MS = 2000;
+// Dedup window for user.message from JSONL vs web-UI-sent: JSONL watcher polls every 2s,
+// so the same message can arrive twice (once from command-handler, once from JSONL).
+// 30s is generous enough to catch the delay while not hiding legitimate repeats in practice.
+const USER_MSG_DEDUP_WINDOW_MS = 30_000;
 
 /** Normalize text for echo comparison: strip prompt prefixes, collapse whitespace. */
 function normalizeForEcho(text: string): string {
@@ -124,7 +128,7 @@ export function useTimeline(
         const event = msg.event;
         if (event.sessionId !== sessionId) return;
 
-        // Echo dedup
+        // Echo dedup: hide assistant.text that echoes a recent user message (e.g. prompt repeat)
         if (event.type === 'assistant.text' && event.payload.text) {
           const normalized = normalizeForEcho(String(event.payload.text));
           setEvents((prev) => {
@@ -135,6 +139,22 @@ export function useTimeline(
                 normalizeForEcho(String(e.payload.text ?? '')) === normalized,
             );
             if (recentUserMsg) event.hidden = true;
+            return prev;
+          });
+        }
+
+        // Dedup user.message: JSONL watcher re-emits web-UI-sent messages ~2s later.
+        // If an identical user.message already exists within 30s, hide the duplicate.
+        if (event.type === 'user.message' && event.payload.text) {
+          const text = String(event.payload.text).trim();
+          setEvents((prev) => {
+            const isDup = prev.some(
+              (e) =>
+                e.type === 'user.message' &&
+                Math.abs(e.ts - event.ts) < USER_MSG_DEDUP_WINDOW_MS &&
+                String(e.payload.text ?? '').trim() === text,
+            );
+            if (isDup) event.hidden = true;
             return prev;
           });
         }
