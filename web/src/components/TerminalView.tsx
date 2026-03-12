@@ -37,6 +37,10 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   // autoFollowRef — xterm fires onScroll internally during write (cursor-follow),
   // which would corrupt the user's sticky intent.
   const writingCountRef = useRef(0);
+  // True while a fit/resize is in progress — suppress scroll-up intent detection
+  // because fitAddon.fit() causes xterm buffer reflow which can fire onScroll
+  // with viewportY=0 even though the user never scrolled up.
+  const fittingRef = useRef(false);
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -87,7 +91,9 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       const doFit = () => {
         const el = containerRef.current;
         if (el && el.clientWidth > 0 && el.clientHeight > 0) {
+          fittingRef.current = true;
           fitAddon.fit();
+          requestAnimationFrame(() => { fittingRef.current = false; });
           fitDone = true;
         }
       };
@@ -98,7 +104,9 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       // Fallback: force a fit after 400ms for slow mobile renders
       fitTimer = setTimeout(() => {
         if (!fitDone) {
+          fittingRef.current = true;
           fitAddon.fit();
+          requestAnimationFrame(() => { fittingRef.current = false; });
           fitDone = true;
         }
       }, 400);
@@ -134,9 +142,12 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
           autoFollowRef.current = true;
         }
       } else {
-        // User scrolled up — always record intent immediately, even mid-write.
-        // This lets manual scroll work reliably while the terminal is streaming.
-        autoFollowRef.current = false;
+        // User scrolled up — record intent, UNLESS a fit/resize is in progress.
+        // fitAddon.fit() causes xterm buffer reflow which fires onScroll with
+        // viewportY=0; that must not be treated as a real user scroll-up.
+        if (!fittingRef.current) {
+          autoFollowRef.current = false;
+        }
       }
       setScrolledUp(!atBottom);
       setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
@@ -153,17 +164,33 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
     onFocusFn?.(() => term.focus());
 
     // Expose fit function so parent can trigger resize on send / focus
-    onFitFn?.(() => { fitAddon.fit(); });
+    const doFitAndSnap = () => {
+      fittingRef.current = true;
+      fitAddon.fit();
+      // Use rAF so the reflow onScroll events fire before we clear fittingRef
+      requestAnimationFrame(() => {
+        fittingRef.current = false;
+        term.scrollToBottom();
+        autoFollowRef.current = true;
+      });
+    };
+    onFitFn?.(doFitAndSnap);
 
     // Re-fit when window regains focus or tab becomes visible.
-    // fitAddon.fit() triggers term.onResize which syncs to tmux only if dimensions changed.
-    const onWindowFocus = () => { fitAddon.fit(); };
-    const onVisibilityChange = () => { if (document.visibilityState === 'visible') fitAddon.fit(); };
+    const onWindowFocus = () => { doFitAndSnap(); };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') { doFitAndSnap(); }
+    };
     window.addEventListener('focus', onWindowFocus);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     const observer = new ResizeObserver(() => {
+      fittingRef.current = true;
       fitAddon.fit();
+      // Snap to bottom immediately after fit (reflow can reset viewportY to 0)
+      term.scrollToBottom();
+      autoFollowRef.current = true;
+      requestAnimationFrame(() => { fittingRef.current = false; });
       // Re-paint buffered content in place so resize doesn't flash blank
       if (linesRef.current.length > 0) {
         let buf = '\x1b[H';
@@ -175,6 +202,9 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
         writingCountRef.current++;
         term.write(buf, () => {
           writingCountRef.current--;
+          // Snap to bottom again after content is rewritten
+          autoFollowRef.current = true;
+          term.scrollToBottom();
         });
       }
     });
