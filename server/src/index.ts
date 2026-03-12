@@ -88,7 +88,7 @@ export function buildApp(env: Env) {
   app.route('/api/cron', cronApiRoutes);
   app.route('/api/push', pushRoutes);
   app.route('/api/quick-data', quickDataRoutes);
-  app.route('/api', sessionMgmtRoutes);
+  app.route('/api/server', sessionMgmtRoutes);
 
   app.get('/health', (c) => c.json({ ok: true, ts: Date.now() }));
 
