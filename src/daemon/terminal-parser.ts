@@ -41,6 +41,17 @@ const CC_CHROME_PATTERNS = [
   /^ctrl\+/i,  // "ctrl+b ctrl+b..."
   /^Co-Authored-By:/,
   /^EOF$/,
+  // Claude Code TUI tool-execution status lines (ink full-screen redraw emits these every tick)
+  /^[\u23F5\u23F8\u23F9\u25B6\u25A0]/,  // ⏵ ⏸ ⏹ ▶ ■ — tool spinner/status prefixes
+  /\(running\)\s*$/,                     // "... (running)"
+  /\(\d+(\.\d+)?s(\s+elapsed)?\)\s*$/,  // "... (5s)" or "... (5s elapsed)"
+  /^[✓✗]\s*(Read|Edit|Write|Bash|Grep|Glob|Agent|Skill|WebFetch|WebSearch|LSP|NotebookEdit|TodoWrite|AskUserQuestion|TaskCreate|TaskUpdate|TaskGet|TaskList|TaskOutput|TaskStop|ToolSearch)\b/, // tool result lines
+  /^⎿/,                                  // result indent (U+2B3F)
+  /^[·•]\s*(done|error|result|output|result)/i,
+  /^\s*Context\s+[\u2580-\u259F\u2588█░▒▓]/,  // "Context ████░░░" progress bar
+  /^\s*(Context|Usage)\s+\d+%/,          // "Context 75%" / "Usage 66%"
+  /^\s*\d+\s+(CLAUDE\.md|hooks?)/i,      // "1 CLAUDE.md | 4 hooks"
+  /^\s*[✓✗]\s+Bash\s+×/,                // "✓ Bash ×11"
 ];
 
 export function classifyLine(stripped: string): LineClass {
@@ -239,6 +250,8 @@ const THROTTLE_MS = 500;
 interface SessionAcc {
   pendingText: string;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Lines seen in current throttle window — prevents duplicate lines from TUI redraws. */
+  seenLines: Set<string>;
 }
 
 const accumulators = new Map<string, SessionAcc>();
@@ -246,7 +259,7 @@ const accumulators = new Map<string, SessionAcc>();
 function getAcc(sessionName: string): SessionAcc {
   let acc = accumulators.get(sessionName);
   if (!acc) {
-    acc = { pendingText: '', timer: null };
+    acc = { pendingText: '', timer: null, seenLines: new Set() };
     accumulators.set(sessionName, acc);
   }
   return acc;
@@ -266,6 +279,7 @@ function flushAcc(sessionName: string): void {
 
   acc.pendingText = '';
   acc.timer = null;
+  acc.seenLines.clear();
 }
 
 /**
@@ -284,7 +298,8 @@ export function processRawPtyData(sessionName: string, data: Buffer): void {
   for (const line of newLines) {
     const stripped = stripAnsi(line).trimEnd();
     const cls = classifyLine(stripped);
-    if (cls === 'KEEP') {
+    if (cls === 'KEEP' && !acc.seenLines.has(stripped)) {
+      acc.seenLines.add(stripped);
       if (acc.pendingText) {
         acc.pendingText += '\n' + stripped;
       } else {
