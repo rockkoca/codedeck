@@ -159,6 +159,8 @@ export function App() {
   const quickData = useQuickData();
   const activeSessionRef = useRef(activeSession);
   activeSessionRef.current = activeSession;
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
 
   const setActiveSession = useCallback((name: string | null) => {
     if (name) localStorage.setItem('rcc_session', name);
@@ -170,8 +172,8 @@ export function App() {
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
   const historyApplyersRef = useRef<Map<string, (content: string) => void>>(new Map());
   const inputRef = useRef<HTMLDivElement>(null);
-  const termFocusFnRef = useRef<(() => void) | null>(null);
-  const termFitFnRef = useRef<(() => void) | null>(null);
+  const termFocusFnsRef = useRef<Map<string, () => void>>(new Map());
+  const termFitFnsRef = useRef<Map<string, () => void>>(new Map());
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const defaultViewMode: ViewMode = isMobile ? 'chat' : 'terminal';
@@ -197,9 +199,10 @@ export function App() {
   }, [activeSession, defaultViewMode]);
 
   const focusTerminal = useCallback(() => {
-    termFitFnRef.current?.();
-    if (!isMobile) termFocusFnRef.current?.();
-  }, [isMobile]);
+    if (!activeSession) return;
+    termFitFnsRef.current.get(activeSession)?.();
+    if (!isMobile) termFocusFnsRef.current.get(activeSession)?.();
+  }, [activeSession, isMobile]);
 
   // Timeline events for chat view
   const { events: timelineEvents, loading: timelineLoading } = useTimeline(activeSession, wsRef.current);
@@ -291,13 +294,12 @@ export function App() {
       }
       if (msg.type === 'daemon.reconnected') {
         // Daemon process (re)started — all its subscriptions are gone.
-        // Re-subscribe immediately so terminal resumes without a page refresh.
-        const session = activeSessionRef.current;
-        if (session) {
-          ws.subscribeTerminal(session);
-          const mode = viewModesRef.current[session] ?? defaultViewMode;
+        // Re-subscribe all sessions immediately so terminals resume without a page refresh.
+        for (const s of sessionsRef.current) {
+          ws.subscribeTerminal(s.name);
+          const mode = viewModesRef.current[s.name] ?? defaultViewMode;
           if (mode === 'chat') {
-            ws.sendResize(session, 200, 50);
+            ws.sendResize(s.name, 200, 50);
           }
         }
       }
@@ -316,22 +318,38 @@ export function App() {
     };
   }, [auth, selectedServerId]);
 
-  // Subscribe to terminal when session changes OR when WS connects.
+  // Subscribe to terminal for ALL sessions when connected.
   // Always subscribe (even in chat mode) so timeline events are generated
   // from terminal diff parsing. In chat mode, restore tmux to a large
   // viewport so the agent isn't cramped by mobile screen dimensions.
+  // Use serialized session names as dep to avoid re-subscribing on state updates.
+  const sessionNamesKey = sessions.map((s) => s.name).sort().join(',');
   useEffect(() => {
     const ws = wsRef.current;
-    if (!ws?.connected || !activeSession) return;
-    ws.subscribeTerminal(activeSession);
-    if (viewMode === 'chat') {
-      // Restore tmux to a comfortable size for the agent
-      ws.sendResize(activeSession, 200, 50);
+    if (!ws?.connected || sessions.length === 0) return;
+    const names = sessions.map((s) => s.name);
+    for (const name of names) {
+      ws.subscribeTerminal(name);
+      const mode = viewModesRef.current[name] ?? defaultViewMode;
+      if (mode === 'chat') {
+        ws.sendResize(name, 200, 50);
+      }
     }
     return () => {
-      try { ws.unsubscribeTerminal(activeSession); } catch { /* ignore */ }
+      for (const name of names) {
+        try { ws.unsubscribeTerminal(name); } catch { /* ignore */ }
+      }
     };
-  }, [activeSession, connected, viewMode]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, sessionNamesKey]);
+
+  // When switching to a session in terminal mode, trigger fit (display:none → flex needs refit)
+  useEffect(() => {
+    if (!activeSession || viewMode !== 'terminal') return;
+    requestAnimationFrame(() => {
+      termFitFnsRef.current.get(activeSession)?.();
+    });
+  }, [activeSession, viewMode]);
 
   // Re-subscribe when tab/window becomes visible (handles sleep/wake, background tabs)
   const viewModesRef = useRef(viewModes);
@@ -573,27 +591,41 @@ export function App() {
               </div>
             )}
 
-            {activeSession ? (
-              viewMode === 'chat' ? (
-                <ChatView events={timelineEvents} loading={timelineLoading} sessionState={activeSessionInfo?.state} />
-              ) : (
-                <TerminalView
-                  key={activeSession}
-                  sessionName={activeSession}
-                  ws={wsRef.current}
-                  connected={connected}
-                  onDiff={(apply) => registerDiffApplyer(activeSession, apply)}
-                  onHistory={(apply) => registerHistoryApplyer(activeSession, apply)}
-                  onFocusFn={(fn) => { termFocusFnRef.current = fn; }}
-                  onFitFn={(fn) => { termFitFnRef.current = fn; }}
-                />
-              )
-            ) : !sessionsLoaded ? (
+            {/* Terminal views: all sessions kept alive, show/hide via CSS */}
+            {sessions.map((s) => {
+              const isActive = s.name === activeSession;
+              const sViewMode = viewModes[s.name] ?? defaultViewMode;
+              const visible = isActive && sViewMode === 'terminal';
+              return (
+                <div
+                  key={s.name}
+                  style={{ display: visible ? 'flex' : 'none', flex: 1, overflow: 'hidden' }}
+                >
+                  <TerminalView
+                    sessionName={s.name}
+                    ws={wsRef.current}
+                    connected={connected}
+                    onDiff={(apply) => registerDiffApplyer(s.name, apply)}
+                    onHistory={(apply) => registerHistoryApplyer(s.name, apply)}
+                    onFocusFn={(fn) => { termFocusFnsRef.current.set(s.name, fn); }}
+                    onFitFn={(fn) => { termFitFnsRef.current.set(s.name, fn); }}
+                  />
+                </div>
+              );
+            })}
+
+            {/* Chat view for active session in chat mode */}
+            {activeSession && viewMode === 'chat' && (
+              <ChatView events={timelineEvents} loading={timelineLoading} sessionState={activeSessionInfo?.state} />
+            )}
+
+            {!activeSession && !sessionsLoaded && (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
                 <div class="spinner" />
                 <div>Connecting...</div>
               </div>
-            ) : (
+            )}
+            {!activeSession && sessionsLoaded && (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569', flexDirection: 'column', gap: 12 }}>
                 <div style={{ fontSize: 32 }}>⌨</div>
                 <div>Select a session or start a new one</div>

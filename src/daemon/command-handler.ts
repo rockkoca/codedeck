@@ -3,8 +3,8 @@
  * Commands arrive as JSON objects with a `type` field.
  */
 import { startProject, stopProject, type ProjectConfig } from '../agent/session-manager.js';
-import { sendKeys, sendRawInput, resizeSession } from '../agent/tmux.js';
-import { listSessions } from '../store/session-store.js';
+import { sendKeys, sendKeysDelayedEnter, sendRawInput, resizeSession } from '../agent/tmux.js';
+import { listSessions, getSession } from '../store/session-store.js';
 import { routeMessage, type InboundMessage, type RouterContext } from '../router/message-router.js';
 import { terminalStreamer, type StreamSubscriber } from './terminal-streamer.js';
 import type { ServerLink } from './server-link.js';
@@ -309,8 +309,17 @@ async function handleSend(cmd: Record<string, unknown>, serverLink: ServerLink):
 
   // Serialized write via per-session mutex
   const release = await getMutex(sessionName).acquire();
+  // Codex TUI has paste-burst detection: when characters arrive in rapid succession
+  // it treats them (including the trailing \r) as a paste, so Enter doesn't submit.
+  // Send text and Enter as two separate commands with a short delay to avoid this.
+  const sessionRecord = getSession(sessionName);
+  const isCodex = sessionRecord?.agentType === 'codex';
   try {
-    await sendKeys(sessionName, text);
+    if (isCodex) {
+      await sendKeysDelayedEnter(sessionName, text);
+    } else {
+      await sendKeys(sessionName, text);
+    }
     timelineEmitter.emit(sessionName, 'user.message', { text });
     // Emit accepted ack (accepted_legacy for fallback IDs so callers can distinguish)
     const status = isLegacy ? 'accepted_legacy' : 'accepted';
