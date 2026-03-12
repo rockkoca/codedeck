@@ -284,13 +284,17 @@ export function App() {
         });
       }
       if (msg.type === 'session_list') {
-        setSessions(msg.sessions.map((s) => ({
-          name: s.name,
-          project: s.project,
-          role: s.role as SessionInfo['role'],
-          agentType: s.agentType,
-          state: s.state as SessionInfo['state'],
-        })));
+        setSessions((prev) => msg.sessions.map((s) => {
+          const existing = prev.find((p) => p.name === s.name);
+          return {
+            name: s.name,
+            project: s.project,
+            role: s.role as SessionInfo['role'],
+            agentType: s.agentType,
+            state: s.state as SessionInfo['state'],
+            projectDir: existing?.projectDir,
+          };
+        }));
         setSessionsLoaded(true);
       }
       if (msg.type === 'terminal.diff') {
@@ -744,6 +748,7 @@ export function App() {
           connected={connected}
           onDiff={registerDiffApplyer}
           onHistory={registerHistoryApplyer}
+          onMinimize={() => setOpenSubIds((prev) => { const s = new Set(prev); s.delete(sub.id); return s; })}
           onClose={() => closeSubSession(sub.id)}
           zIndex={subZIndexes.get(sub.id) ?? 1000}
           onFocus={() => bringSubToFront(sub.id)}

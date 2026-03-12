@@ -240,11 +240,13 @@ body {
 
 /* ── Sub-session bar ──────────────────────────────────────────────────────── */
 .subsession-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: #0d1117; border-top: 1px solid #1e293b; overflow-x: auto; flex-shrink: 0; min-height: 36px; }
-.subsession-card { display: flex; align-items: center; gap: 4px; padding: 3px 10px; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #94a3b8; cursor: pointer; font-size: 12px; white-space: nowrap; transition: background 0.15s, border-color 0.15s; }
+.subsession-card { display: flex; align-items: center; gap: 5px; padding: 4px 12px; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #94a3b8; cursor: pointer; font-size: 13px; white-space: nowrap; transition: background 0.15s, border-color 0.15s; max-width: 160px; }
 .subsession-card:hover { background: #253348; border-color: #475569; }
 .subsession-card.open { border-color: #3b82f6; color: #93c5fd; background: #1e3a5f; }
-.subsession-card-icon { font-size: 13px; }
-.subsession-card-badge { font-size: 10px; color: #f59e0b; }
+.subsession-card.mobile { padding: 3px 8px; font-size: 12px; max-width: 60px; }
+.subsession-card-icon { font-size: 14px; flex-shrink: 0; }
+.subsession-card-label { overflow: hidden; text-overflow: ellipsis; }
+.subsession-card-badge { font-size: 10px; color: #f59e0b; flex-shrink: 0; }
 .subsession-add-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #1e293b; border: 1px dashed #475569; border-radius: 6px; color: #64748b; cursor: pointer; font-size: 18px; flex-shrink: 0; transition: background 0.15s, color 0.15s; }
 .subsession-add-btn:hover { background: #253348; color: #94a3b8; border-color: #64748b; }
 
@@ -256,8 +258,11 @@ body {
 .subsession-mode-btn { background: none; border: 1px solid transparent; border-radius: 4px; color: #64748b; cursor: pointer; font-size: 13px; padding: 2px 5px; transition: all 0.15s; }
 .subsession-mode-btn:hover { border-color: #475569; color: #94a3b8; }
 .subsession-mode-btn.active { border-color: #3b82f6; color: #93c5fd; background: #1e3a5f; }
+.subsession-minimize-btn { background: none; border: none; color: #64748b; cursor: pointer; font-size: 14px; padding: 0 4px; line-height: 1; transition: color 0.15s; }
+.subsession-minimize-btn:hover { color: #94a3b8; }
 .subsession-close-btn { background: none; border: none; color: #64748b; cursor: pointer; font-size: 16px; padding: 0 4px; line-height: 1; transition: color 0.15s; }
 .subsession-close-btn:hover { color: #ef4444; }
+.subsession-close-confirm-label { font-size: 11px; color: #f87171; padding: 0 2px; }
 .subsession-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .subsession-input-bar { display: flex; gap: 6px; padding: 6px 8px; background: #0d1117; border-top: 1px solid #1e293b; flex-shrink: 0; }
 .subsession-input { flex: 1; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-family: inherit; font-size: 13px; padding: 5px 10px; outline: none; }

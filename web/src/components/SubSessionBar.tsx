@@ -17,6 +17,8 @@ interface Props {
   onNew: () => void;
 }
 
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
 export function SubSessionBar({ subSessions, openIds, onOpen, onNew }: Props) {
   return (
     <div class="subsession-bar">
@@ -26,15 +28,16 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew }: Props) {
           : sub.type);
         const icon = TYPE_ICON[sub.type] ?? '⚡';
         const isOpen = openIds.has(sub.id);
+        const displayLabel = isMobile ? label.slice(0, 2) : label;
         return (
           <button
             key={sub.id}
-            class={`subsession-card${isOpen ? ' open' : ''}`}
+            class={`subsession-card${isOpen ? ' open' : ''}${isMobile ? ' mobile' : ''}`}
             onClick={() => onOpen(sub.id)}
             title={label}
           >
             <span class="subsession-card-icon">{icon}</span>
-            <span class="subsession-card-label">{label}</span>
+            <span class="subsession-card-label">{displayLabel}</span>
             {sub.state === 'starting' && <span class="subsession-card-badge">…</span>}
             {sub.state === 'unknown' && <span class="subsession-card-badge">?</span>}
           </button>

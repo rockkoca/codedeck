@@ -18,6 +18,7 @@ interface Props {
   connected: boolean;
   onDiff: (sessionName: string, apply: (d: TerminalDiff) => void) => void;
   onHistory: (sessionName: string, apply: (c: string) => void) => void;
+  onMinimize: () => void;
   onClose: () => void;
   zIndex: number;
   onFocus: () => void;
@@ -48,13 +49,14 @@ function saveLocal(id: string, geom: WindowGeometry, viewMode: ViewMode) {
 }
 
 export function SubSessionWindow({
-  sub, ws, connected, onDiff, onHistory, onClose, zIndex, onFocus,
+  sub, ws, connected, onDiff, onHistory, onMinimize, onClose, zIndex, onFocus,
 }: Props) {
   const { events } = useTimeline(sub.sessionName, ws);
   const initial = loadLocal(sub.id);
   const [geom, setGeom] = useState<WindowGeometry>(initial.geom);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.viewMode);
   const [input, setInput] = useState('');
+  const [confirmClose, setConfirmClose] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const geomRef = useRef(geom);
   geomRef.current = geom;
@@ -173,7 +175,16 @@ export function SubSessionWindow({
             onClick={() => setViewMode('terminal')}
             title="Terminal view"
           >⌨</button>
-          <button class="subsession-close-btn" onClick={onClose} title="Close">×</button>
+          <button class="subsession-minimize-btn" onClick={onMinimize} title="Minimize">─</button>
+          {confirmClose ? (
+            <>
+              <span class="subsession-close-confirm-label">Terminate?</span>
+              <button class="subsession-close-btn" onClick={onClose} title="Confirm close">✓</button>
+              <button class="subsession-minimize-btn" onClick={() => setConfirmClose(false)} title="Cancel">✕</button>
+            </>
+          ) : (
+            <button class="subsession-close-btn" onClick={() => setConfirmClose(true)} title="Close (terminate)">×</button>
+          )}
         </div>
       </div>
 
