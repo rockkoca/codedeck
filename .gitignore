@@ -19,6 +19,9 @@ worker/dist/
 mobile/ios/
 mobile/android/
 
+# Deploy scripts with server-specific info
+scripts/deploy-k8s.sh
+
 # System
 .DS_Store
 Thumbs.db
