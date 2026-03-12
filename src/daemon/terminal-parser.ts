@@ -1,6 +1,6 @@
 /**
  * Terminal diff → assistant.text extraction.
- * Only extracts from scrolled diffs (newLineCount > 0).
+ * Extracts text from terminal changes with dedup and throttling.
  * Conservative classification: HIDE known chrome, KEEP everything else.
  */
 
@@ -54,9 +54,6 @@ export function classifyLine(stripped: string): LineClass {
 /**
  * Extract assistant text from new lines that appeared due to scrolling.
  * Only call when scrolled=true && newLineCount > 0.
- * @param allLines All current screen lines (with ANSI)
- * @param rows Total visible rows
- * @param newLineCount Number of new lines at the bottom
  */
 export function extractScrolledText(
   allLines: string[],
@@ -79,13 +76,64 @@ export function extractScrolledText(
   return kept.join('\n');
 }
 
+// ── Streaming text accumulator (per-session throttle + dedup) ────────────────
+
+const THROTTLE_MS = 500;
+
+interface SessionAcc {
+  /** Current screen text snapshot (stripped, KEEP lines only) */
+  lastScreenText: string;
+  /** Accumulated new text since last emit */
+  pendingText: string;
+  /** Timer for throttled emit */
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+const accumulators = new Map<string, SessionAcc>();
+
+function getAcc(sessionName: string): SessionAcc {
+  let acc = accumulators.get(sessionName);
+  if (!acc) {
+    acc = { lastScreenText: '', pendingText: '', timer: null };
+    accumulators.set(sessionName, acc);
+  }
+  return acc;
+}
+
+function flushAcc(sessionName: string): void {
+  const acc = accumulators.get(sessionName);
+  if (!acc || !acc.pendingText) return;
+
+  timelineEmitter.emit(sessionName, 'assistant.text', {
+    text: acc.pendingText,
+    streaming: true,
+  }, {
+    source: 'terminal-parse',
+    confidence: 'low',
+  });
+
+  acc.pendingText = '';
+  acc.timer = null;
+}
+
 /**
- * Process a terminal diff and emit assistant.text for changed content.
- * Called from terminal-streamer after each diff.
- *
- * Two modes:
- * 1. Scrolled: extract new lines at the bottom (bulk text)
- * 2. In-place changes: extract changed line content as streaming chunks
+ * Extract the visible "content" text from screen lines — used to detect
+ * what actually changed between frames.
+ */
+function screenContentText(allLines: string[]): string {
+  const kept: string[] = [];
+  for (const line of allLines) {
+    const stripped = stripAnsi(line).trimEnd();
+    if (classifyLine(stripped) === 'KEEP') {
+      kept.push(stripped);
+    }
+  }
+  return kept.join('\n');
+}
+
+/**
+ * Process a terminal diff and emit assistant.text for meaningful changes.
+ * Throttled to emit at most every 500ms, deduplicates unchanged content.
  */
 export function processTerminalDiff(
   sessionName: string,
@@ -93,10 +141,10 @@ export function processTerminalDiff(
   rows: number,
   scrolled: boolean,
   newLineCount: number,
-  changedLines?: Array<[number, string]>,
+  _changedLines?: Array<[number, string]>,
   isFullFrame?: boolean,
 ): void {
-  // Scrolled: bulk extract new bottom lines
+  // Scrolled: emit immediately (bulk text that scrolled off)
   if (scrolled && newLineCount > 0) {
     const text = extractScrolledText(allLines, rows, newLineCount);
     if (text) {
@@ -104,28 +152,56 @@ export function processTerminalDiff(
         source: 'terminal-parse',
         confidence: 'low',
       });
+      // Update screen snapshot after scroll
+      const acc = getAcc(sessionName);
+      acc.lastScreenText = screenContentText(allLines);
     }
     return;
   }
 
-  // In-place changes (streaming typing): extract changed text
-  if (!isFullFrame && changedLines && changedLines.length > 0) {
-    const kept: string[] = [];
-    for (const [, line] of changedLines) {
-      const stripped = stripAnsi(line).trimEnd();
-      const cls = classifyLine(stripped);
-      if (cls === 'KEEP' && stripped.length > 0) {
-        kept.push(stripped);
+  // Full frame: just update the baseline, don't emit
+  if (isFullFrame) {
+    const acc = getAcc(sessionName);
+    acc.lastScreenText = screenContentText(allLines);
+    return;
+  }
+
+  // In-place changes: compare full screen text to find new content
+  const acc = getAcc(sessionName);
+  const currentText = screenContentText(allLines);
+
+  if (currentText === acc.lastScreenText) return; // no meaningful change
+
+  // Find the new text: what's in current but extends beyond previous
+  // Simple approach: if current starts with previous content, the diff is the tail
+  let newText = '';
+  if (currentText.startsWith(acc.lastScreenText) && acc.lastScreenText.length > 0) {
+    newText = currentText.slice(acc.lastScreenText.length).trim();
+  } else if (acc.lastScreenText && currentText.length > acc.lastScreenText.length) {
+    // Content changed in a non-append way — just take the diff of last lines
+    const prevLines = acc.lastScreenText.split('\n');
+    const currLines = currentText.split('\n');
+    const diffLines: string[] = [];
+    for (let i = 0; i < currLines.length; i++) {
+      if (i >= prevLines.length || currLines[i] !== prevLines[i]) {
+        diffLines.push(currLines[i]);
       }
     }
-    if (kept.length > 0) {
-      timelineEmitter.emit(sessionName, 'assistant.text', {
-        text: kept.join('\n'),
-        streaming: true,
-      }, {
-        source: 'terminal-parse',
-        confidence: 'low',
-      });
-    }
+    newText = diffLines.join('\n').trim();
+  }
+
+  acc.lastScreenText = currentText;
+
+  if (!newText) return;
+
+  // Accumulate and throttle
+  if (acc.pendingText) {
+    acc.pendingText += '\n' + newText;
+  } else {
+    acc.pendingText = newText;
+  }
+
+  if (!acc.timer) {
+    acc.timer = setTimeout(() => flushAcc(sessionName), THROTTLE_MS);
   }
 }
