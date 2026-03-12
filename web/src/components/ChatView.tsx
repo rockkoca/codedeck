@@ -101,23 +101,25 @@ export function ChatView({ events, loading, sessionState }: Props) {
   }
 
   return (
-    <div class="chat-view" ref={scrollRef} onScroll={handleScroll}>
-      {viewItems.length === 0 && (
-        <div class="chat-loading">
-          {sessionState ? `Session ${sessionState}` : 'No events yet'}
-        </div>
-      )}
-      {viewItems.map((item) =>
-        item.type === 'assistant-block' ? (
-          <div key={item.key} class="chat-event chat-assistant">
-            <RichText text={item.text!} />
-            <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
+    <div class="chat-view-wrap">
+      <div class="chat-view" ref={scrollRef} onScroll={handleScroll}>
+        {viewItems.length === 0 && (
+          <div class="chat-loading">
+            {sessionState ? `Session ${sessionState}` : 'No events yet'}
           </div>
-        ) : (
-          <ChatEvent key={item.key} event={item.event!} />
-        ),
-      )}
-      <div ref={bottomRef} />
+        )}
+        {viewItems.map((item) =>
+          item.type === 'assistant-block' ? (
+            <div key={item.key} class="chat-event chat-assistant">
+              <RichText text={item.text!} />
+              <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
+            </div>
+          ) : (
+            <ChatEvent key={item.key} event={item.event!} />
+          ),
+        )}
+        <div ref={bottomRef} />
+      </div>
       {!autoScroll && (
         <button
           class="chat-scroll-btn"

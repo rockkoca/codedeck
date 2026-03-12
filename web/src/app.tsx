@@ -130,10 +130,12 @@ export function App() {
         agentType: s.agent_type,
         state: s.state as SessionInfo['state'],
       })));
+      setSessionsLoaded(true);
     }).catch(() => {/* WS fallback */});
   }, [auth, selectedServerId]);
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [activeSession, setActiveSessionState] = useState<string | null>(
     () => localStorage.getItem('rcc_session'),
   );
@@ -214,6 +216,7 @@ export function App() {
           agentType: s.agentType,
           state: s.state as SessionInfo['state'],
         })));
+        setSessionsLoaded(true);
       }
       if (msg.type === 'terminal.diff') {
         const apply = diffApplyersRef.current.get(msg.diff.sessionName);
@@ -388,6 +391,7 @@ export function App() {
     localStorage.setItem('rcc_server', serverId);
     if (serverName) { localStorage.setItem('rcc_server_name', serverName); setSelectedServerName(serverName); }
     setSessions([]);
+    setSessionsLoaded(false);
     setActiveSession(null);
     setSelectedServerId(serverId);
     setShowMobileServerMenu(false);
@@ -537,6 +541,7 @@ export function App() {
               renameRequest={renameRequest}
               onRenameHandled={() => setRenameRequest(null)}
               onRenameSession={handleRenameSession}
+              sessionsLoaded={sessionsLoaded}
             />
 
             {/* Desktop view mode toggle — mobile uses the one in mobile-server-bar */}

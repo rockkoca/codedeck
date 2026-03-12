@@ -20,6 +20,8 @@ interface Props {
   onRenameHandled?: () => void;
   /** Called when user commits a rename — updates project_name in D1 */
   onRenameSession?: (sessionName: string, newProjectName: string) => void;
+  /** True once sessions have been loaded (from API or WS) */
+  sessionsLoaded?: boolean;
 }
 
 interface CtxMenu { x: number; y: number; session: SessionInfo }
@@ -30,7 +32,7 @@ const AGENT_BADGE: Record<string, { label: string; color: string }> = {
   'opencode':    { label: 'oc', color: '#059669' },
 };
 
-export function SessionTabs({ sessions, activeSession, connected, latencyMs, idleAlerts, onAlertDismiss, activeTools, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession }: Props) {
+export function SessionTabs({ sessions, activeSession, connected, latencyMs, idleAlerts, onAlertDismiss, activeTools, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession, sessionsLoaded }: Props) {
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
@@ -92,7 +94,7 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
   return (
     <div class="tab-bar" role="tablist">
       {sessions.length === 0 && (
-        <span class="tab-empty">No active sessions</span>
+        <span class="tab-empty">{sessionsLoaded ? 'No active sessions' : 'Connecting...'}</span>
       )}
 
       {sessions.map((s) => {
