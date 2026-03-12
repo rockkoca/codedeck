@@ -284,6 +284,10 @@ export async function startWatchingFile(sessionName: string, filePath: string): 
     stopWatching(sessionName);
   }
 
+  // Pre-claim the file path immediately — before the file even exists — so that
+  // the main session's watchDir cannot steal it when CC creates the file.
+  claimFile(sessionName, filePath);
+
   // Derive projectDir from filePath (parent directory)
   const projectDir = dirname(filePath);
   const state: WatcherState = {
