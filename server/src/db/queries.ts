@@ -65,6 +65,7 @@ export interface DbSession {
 
 export interface QuickData {
   history: string[];
+  sessionHistory?: Record<string, string[]>;
   commands: string[];
   phrases: string[];
 }
@@ -265,7 +266,7 @@ export async function updateProjectName(db: PgDatabase, serverId: string, sessio
 
 // ── Quick data ────────────────────────────────────────────────────────────
 
-const EMPTY_QUICK_DATA: QuickData = { history: [], commands: [], phrases: [] };
+const EMPTY_QUICK_DATA: QuickData = { history: [], sessionHistory: {}, commands: [], phrases: [] };
 
 export async function getQuickData(db: PgDatabase, userId: string): Promise<QuickData> {
   const row = await db.prepare('SELECT data FROM user_quick_data WHERE user_id = ?').bind(userId).first<{ data: string }>();
