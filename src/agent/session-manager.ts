@@ -239,13 +239,6 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
   const { name, projectName, role, agentType, projectDir, skipStore, extraEnv, fresh } = opts;
   const driver = getDriver(agentType);
 
-  // For CC sessions: use stored ccSessionId or generate a new one for deterministic JSONL path
-  let ccSessionId = opts.ccSessionId;
-  if (agentType === 'claude-code' && !ccSessionId) {
-    const existing = getSession(name);
-    ccSessionId = existing?.ccSessionId ?? randomUUID();
-  }
-
   // Configure agent-specific hooks/signals
   if (agentType === 'claude-code') {
     await setupCCStopHook().catch((e) => logger.warn({ err: e }, 'CC hook setup failed'));
@@ -258,6 +251,22 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
   }
 
   const exists = await sessionExists(name);
+
+  // For CC sessions: resolve ccSessionId only when actually launching a new tmux session.
+  // If the session already exists in tmux, use the stored UUID (if any) but don't generate
+  // a fresh one — that would point startWatchingFile at a non-existent file.
+  let ccSessionId = opts.ccSessionId;
+  if (agentType === 'claude-code') {
+    const stored = getSession(name)?.ccSessionId;
+    if (stored) {
+      ccSessionId = stored;
+    } else if (!exists) {
+      // Launching fresh — generate UUID now so JSONL path is deterministic
+      ccSessionId = ccSessionId ?? randomUUID();
+    }
+    // If exists and no stored UUID: ccSessionId stays undefined → fall back to dir scan
+  }
+
   if (!exists) {
     const launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh, ccSessionId });
     await newSession(name, launchCmd, { cwd: projectDir, env: extraEnv });
