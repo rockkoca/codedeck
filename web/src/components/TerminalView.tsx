@@ -186,26 +186,32 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
 
     const lines = linesRef.current;
     for (const [lineIdx, content] of diff.lines) {
-      // Fill any sparse gaps created by out-of-bounds assignment
       while (lines.length <= lineIdx) lines.push('');
       lines[lineIdx] = content;
     }
     while (lines.length < diff.rows) lines.push('');
     linesRef.current = lines.slice(0, diff.rows);
 
-    // In-place overwrite: move cursor home, write each line clearing remainder,
-    // then clear from cursor to end of display. Avoids \x1b[2J which pushes
-    // the current screen into scrollback, causing duplicate content on scroll-up.
-    let buf = '\x1b[H';
-    for (let i = 0; i < linesRef.current.length; i++) {
-      buf += (linesRef.current[i] ?? '') + '\x1b[K';
-      if (i < linesRef.current.length - 1) buf += '\r\n';
+    if (diff.fullFrame) {
+      // Full frame: rewrite entire screen from cursor home
+      let buf = '\x1b[H';
+      for (let i = 0; i < linesRef.current.length; i++) {
+        buf += (linesRef.current[i] ?? '') + '\x1b[K';
+        if (i < linesRef.current.length - 1) buf += '\r\n';
+      }
+      buf += '\x1b[J';
+      term.write(buf);
+    } else if (diff.lines.length > 0) {
+      // Partial update: only write changed lines using cursor addressing
+      let buf = '';
+      for (const [lineIdx, content] of diff.lines) {
+        // CSI row;col H — 1-based row addressing
+        buf += `\x1b[${lineIdx + 1};1H${content}\x1b[K`;
+      }
+      term.write(buf);
     }
-    buf += '\x1b[J'; // clear remaining rows below
-    term.write(buf);
 
     // Auto-scroll to bottom unless user is actively scrolling
-    // (touched within the last 1 second)
     const touchIdle = !isTouchingRef.current && (Date.now() - lastTouchEndRef.current > 1000);
     if (touchIdle) {
       term.scrollToBottom();
