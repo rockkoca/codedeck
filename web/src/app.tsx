@@ -272,9 +272,12 @@ export function App() {
       if (msg.type === 'daemon.reconnected') {
         // Daemon process (re)started — all its subscriptions are gone.
         // Re-subscribe immediately so terminal resumes without a page refresh.
-        if (viewModeRef.current !== 'chat') {
-          const session = activeSessionRef.current;
-          if (session) ws.subscribeTerminal(session);
+        const session = activeSessionRef.current;
+        if (session) {
+          ws.subscribeTerminal(session);
+          if (viewModeRef.current === 'chat') {
+            ws.sendResize(session, 200, 50);
+          }
         }
       }
     });
@@ -292,15 +295,19 @@ export function App() {
     };
   }, [auth, selectedServerId]);
 
-  // Subscribe to terminal when session changes OR when WS connects
-  // In chat mode, skip subscription — no terminal diffs are rendered and
-  // this avoids shrinking the tmux pane to mobile viewport dimensions.
+  // Subscribe to terminal when session changes OR when WS connects.
+  // Always subscribe (even in chat mode) so timeline events are generated
+  // from terminal diff parsing. In chat mode, restore tmux to a large
+  // viewport so the agent isn't cramped by mobile screen dimensions.
   useEffect(() => {
     const ws = wsRef.current;
-    if (!ws?.connected || !activeSession || viewMode === 'chat') return;
+    if (!ws?.connected || !activeSession) return;
     ws.subscribeTerminal(activeSession);
+    if (viewMode === 'chat') {
+      // Restore tmux to a comfortable size for the agent
+      ws.sendResize(activeSession, 200, 50);
+    }
     return () => {
-      // Best-effort unsubscribe — WS may already be closed during reconnect
       try { ws.unsubscribeTerminal(activeSession); } catch { /* ignore */ }
     };
   }, [activeSession, connected, viewMode]);
@@ -311,10 +318,13 @@ export function App() {
   useEffect(() => {
     const handler = () => {
       if (document.visibilityState !== 'visible') return;
-      if (viewModeRef.current === 'chat') return;
       const ws = wsRef.current;
       const session = activeSessionRef.current;
-      if (ws?.connected && session) ws.subscribeTerminal(session);
+      if (!ws?.connected || !session) return;
+      ws.subscribeTerminal(session);
+      if (viewModeRef.current === 'chat') {
+        ws.sendResize(session, 200, 50);
+      }
     };
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
