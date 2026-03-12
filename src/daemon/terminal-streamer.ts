@@ -7,7 +7,7 @@ import { capturePaneVisible, capturePaneHistory } from '../agent/tmux.js';
 import { getPaneSize } from '../agent/tmux.js';
 import logger from '../util/logger.js';
 import { timelineEmitter } from './timeline-emitter.js';
-import { processTerminalDiff } from './terminal-parser.js';
+import { processTerminalDiff, stripAnsi } from './terminal-parser.js';
 
 const ACTIVE_INTERVAL_MS = 100; // 10 FPS
 const IDLE_INTERVAL_MS = 1000; // 1 FPS
@@ -229,10 +229,20 @@ export class TerminalStreamer {
       newLineCount = scrollInfo.newLineCount;
     }
 
+    // Determine if the diff is a "real" content change (not just cursor blink / ANSI escape changes).
+    // Compare stripped content to detect meaningful changes for idle state tracking.
+    const hasRealChange = isFullFrame || diff.some(([i, line]) => {
+      const prev = previousLines[i] ?? '';
+      return stripAnsi(prev).trimEnd() !== stripAnsi(line).trimEnd();
+    });
+
     if (diff.length > 0 || isFullFrame) {
       this.lastFrames.set(sessionName, currentLines);
-      this.lastChangeAt.set(sessionName, Date.now());
-      this.isIdle.set(sessionName, false);
+      // Only reset idle timer for real content changes, not cursor blink
+      if (hasRealChange) {
+        this.lastChangeAt.set(sessionName, Date.now());
+        this.isIdle.set(sessionName, false);
+      }
 
       const payload: TerminalDiff = {
         sessionName,
