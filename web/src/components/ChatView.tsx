@@ -69,17 +69,27 @@ export function ChatView({ events, loading, sessionState }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const programmaticScrollRef = useRef(false);
 
   const viewItems = useMemo(() => buildViewItems(events), [events]);
+
+  const scrollToBottom = () => {
+    programmaticScrollRef.current = true;
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Clear the flag after animation completes
+    setTimeout(() => { programmaticScrollRef.current = false; }, 500);
+  };
 
   // Auto-scroll on new events
   useEffect(() => {
     if (autoScroll) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollToBottom();
     }
   }, [viewItems.length, events.length, autoScroll]);
 
   const handleScroll = () => {
+    // Ignore scroll events triggered by programmatic scrollIntoView
+    if (programmaticScrollRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -112,8 +122,8 @@ export function ChatView({ events, loading, sessionState }: Props) {
         <button
           class="chat-scroll-btn"
           onClick={() => {
-            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
             setAutoScroll(true);
+            scrollToBottom();
           }}
         >
           ↓
