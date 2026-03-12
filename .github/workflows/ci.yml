@@ -25,7 +25,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
-  # ── Typecheck (all three TS projects) ─────────────────────────────────────
+  # ── Typecheck (daemon + server) ───────────────────────────────────────────
 
   typecheck:
     name: Typecheck
@@ -37,16 +37,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION_PRIMARY }}
           cache: 'npm'
       - run: npm ci
-      - name: Install worker deps
-        run: npm ci
-        working-directory: worker
       - name: Install server deps
         run: npm ci
         working-directory: server
       - name: Daemon
         run: npx tsc --noEmit
-      - name: Worker
-        run: npx tsc -p worker/tsconfig.json --noEmit
       - name: Server
         run: npx tsc --noEmit
         working-directory: server
@@ -80,20 +75,6 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run test:unit
-
-  # ── CF Worker tests (Miniflare) ───────────────────────────────────────────
-
-  worker-tests:
-    name: Worker Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION_PRIMARY }}
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run test:worker
 
   # ── Web frontend tests ────────────────────────────────────────────────────
 
@@ -178,7 +159,7 @@ jobs:
   coverage:
     name: Coverage Report
     runs-on: ubuntu-latest
-    needs: [unit-tests, worker-tests, web-tests]
+    needs: [unit-tests, web-tests]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -203,7 +184,7 @@ jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, secret-scan, unit-tests, worker-tests, web-tests, server-tests, server-db-tests, e2e-tests]
+    needs: [lint, typecheck, secret-scan, unit-tests, web-tests, server-tests, server-db-tests, e2e-tests]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       id-token: write

@@ -12,15 +12,6 @@ export default defineWorkspace([
   },
   {
     test: {
-      name: 'worker',
-      include: ['worker/test/**/*.test.ts'],
-      exclude: ['**/node_modules/**'],
-      environment: 'node',
-      globals: false,
-    },
-  },
-  {
-    test: {
       name: 'web',
       include: ['web/test/**/*.test.ts'],
       exclude: ['**/node_modules/**'],
