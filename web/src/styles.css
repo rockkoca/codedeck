@@ -213,7 +213,7 @@ body {
 .chat-view-wrap { flex: 1; position: relative; overflow: hidden; }
 .chat-view { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
 .chat-event { margin: 2px 0; min-width: 0; }
-.chat-user { background: #1e3a5f; border-radius: 8px; padding: 6px 12px; margin-left: 40px; text-align: right; word-break: break-all; overflow-wrap: break-word; }
+.chat-user { background: #1e3a5f; border-radius: 8px; padding: 6px 12px; align-self: flex-end; max-width: 80%; width: fit-content; text-align: left; word-break: break-all; overflow-wrap: break-word; }
 .chat-assistant { padding: 4px 0; word-break: break-word; overflow-wrap: break-word; line-height: 1.5; }
 .chat-rich-text { white-space: pre-wrap; }
 .chat-code-block { background: #1a1a2e; border-radius: 8px; margin: 8px 0; overflow: hidden; }
