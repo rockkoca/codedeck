@@ -63,6 +63,9 @@ async function findLatestJsonl(dir: string): Promise<string | null> {
 interface ContentBlock {
   type: string;
   text?: string;
+  thinking?: string;
+  name?: string;
+  input?: Record<string, unknown>;
 }
 
 /**
@@ -91,6 +94,10 @@ function parseLine(sessionName: string, line: string): void {
         timelineEmitter.emit(sessionName, 'assistant.text', {
           text: block.text,
           streaming: false,
+        }, { source: 'daemon', confidence: 'high' });
+      } else if (block.type === 'thinking' && block.thinking) {
+        timelineEmitter.emit(sessionName, 'assistant.thinking', {
+          text: block.thinking,
         }, { source: 'daemon', confidence: 'high' });
       }
     }
@@ -187,6 +194,11 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
           if (block.type === 'text' && block.text) {
             timelineEmitter.emit(sessionName, 'assistant.text', {
               text: block.text, streaming: false,
+            }, { source: 'daemon', confidence: 'high' });
+            count++;
+          } else if (block.type === 'thinking' && block.thinking) {
+            timelineEmitter.emit(sessionName, 'assistant.thinking', {
+              text: block.thinking,
             }, { source: 'daemon', confidence: 'high' });
             count++;
           }

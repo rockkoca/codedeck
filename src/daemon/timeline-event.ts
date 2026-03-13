@@ -6,6 +6,7 @@
 export type TimelineEventType =
   | 'user.message'
   | 'assistant.text'
+  | 'assistant.thinking'
   | 'tool.call'
   | 'tool.result'
   | 'mode.state'

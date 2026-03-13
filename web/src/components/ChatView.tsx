@@ -36,7 +36,7 @@ interface ViewItem {
  *  - Deduplicate consecutive session.state events with same state (keep last)
  */
 function buildViewItems(events: TimelineEvent[]): ViewItem[] {
-  const visible = events.filter((e) => !e.hidden);
+  const visible = events.filter((e) => !e.hidden && e.type !== 'assistant.thinking');
 
   // Pre-pass: merge tool.call+tool.result pairs and dedup session.state
   const consolidated: TimelineEvent[] = [];
@@ -133,6 +133,21 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
 
   const viewItems = useMemo(() => buildViewItems(events), [events]);
 
+  // Extract active thinking status: show last thinking text if no assistant.text came after it
+  const thinkingText = useMemo(() => {
+    let lastThinking: string | null = null;
+    let thinkingTs = 0;
+    for (const e of events) {
+      if (e.type === 'assistant.thinking' && e.payload.text) {
+        lastThinking = String(e.payload.text);
+        thinkingTs = e.ts;
+      } else if (e.type === 'assistant.text' && e.ts > thinkingTs) {
+        lastThinking = null; // response arrived, thinking done
+      }
+    }
+    return lastThinking;
+  }, [events]);
+
   const scrollToBottom = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -218,23 +233,13 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
           ),
         )}
       </div>
-      {/* Thinking indicator — fixed at bottom, doesn't scroll with chat */}
-      {(() => {
-        let lastUserIdx = -1;
-        let hasResponse = false;
-        for (let i = viewItems.length - 1; i >= 0; i--) {
-          const vi = viewItems[i];
-          if (vi.type === 'assistant-block' || (vi.type === 'event' && (vi.event?.type === 'tool.call' || vi.event?.type === 'assistant.text'))) {
-            hasResponse = true; break;
-          }
-          if (vi.type === 'event' && vi.event?.type === 'user.message') {
-            lastUserIdx = i; break;
-          }
-        }
-        return lastUserIdx >= 0 && !hasResponse
-          ? <div class="chat-thinking-bar"><span class="chat-thinking-dots">●●●</span> 思考中...</div>
-          : null;
-      })()}
+      {/* Thinking status bar — fixed at bottom, shows real CC thinking from JSONL */}
+      {thinkingText && (
+        <div class="chat-thinking-bar">
+          <span class="chat-thinking-dots">●●●</span>
+          {' '}{truncate(thinkingText, 120)}
+        </div>
+      )}
       {showScrollBtn && (
         <button
           class="chat-scroll-btn"
