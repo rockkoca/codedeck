@@ -396,8 +396,12 @@ export class TerminalStreamer {
       this.resetIdleTimer(sessionName);
     }
 
-    // Text extraction — skip if a structured watcher is active (higher quality source)
-    if (!hasStructuredWatcher) {
+    // Text extraction — skip if a structured watcher is active (higher quality source),
+    // or if this is a sub-session (deck_sub_*): sub-sessions always use JSONL or TerminalView,
+    // never terminal-parse for chat timeline events. This prevents garbled output during
+    // the window between daemon restart and the codex watcher being re-established.
+    const isSubSession = sessionName.startsWith('deck_sub_');
+    if (!hasStructuredWatcher && !isSubSession) {
       processRawPtyData(sessionName, data);
     }
 
