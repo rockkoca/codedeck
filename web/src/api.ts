@@ -5,9 +5,15 @@
  */
 
 let _baseUrl = '';
+let _onAuthExpired: (() => void) | null = null;
 
 export function configure(baseUrl: string): void {
   _baseUrl = baseUrl.replace(/\/$/, '');
+}
+
+/** Register a callback invoked when the session expires and refresh fails. */
+export function onAuthExpired(cb: () => void): void {
+  _onAuthExpired = cb;
 }
 
 function getCsrfToken(): string | null {
@@ -57,8 +63,8 @@ export async function apiFetch<T = unknown>(
       }
       return retryRes.json() as Promise<T>;
     }
-    // Refresh failed — session expired, redirect to login
-    window.location.href = '/';
+    // Refresh failed — session expired
+    _onAuthExpired?.();
     throw new ApiError(401, 'session_expired');
   }
 

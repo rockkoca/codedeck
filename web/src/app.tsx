@@ -13,7 +13,7 @@ import { StartSubSessionDialog } from './components/StartSubSessionDialog.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
 import { WsClient } from './ws-client.js';
-import { configure as configureApi, apiFetch } from './api.js';
+import { configure as configureApi, apiFetch, onAuthExpired } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
 
 type ViewMode = 'terminal' | 'chat';
@@ -70,6 +70,15 @@ export function App() {
     return () => vv.removeEventListener('resize', update);
   }, []);
 
+  // When session expires mid-session (refresh failed), clear auth and show login.
+  // Registered once so any apiFetch 401 after refresh failure lands here.
+  useEffect(() => {
+    onAuthExpired(() => {
+      localStorage.removeItem('rcc_auth');
+      setAuth(null);
+    });
+  }, []);
+
   // Verify session via /api/auth/user/me on mount (cookie-based auth)
   // Also handles post-OAuth redirect: cookie was set by server, we just need to confirm.
   useEffect(() => {
@@ -80,7 +89,7 @@ export function App() {
       localStorage.setItem('rcc_auth', JSON.stringify(authState));
       setAuth(authState);
     }).catch(() => {
-      // Not authenticated — clear stale localStorage and show login
+      // Not authenticated — clear stale localStorage and show login (no reload)
       localStorage.removeItem('rcc_auth');
       setAuth(null);
     });
