@@ -108,7 +108,7 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
     <div
       class={`subcard${isOpen ? ' subcard-open' : ''}`}
       style={{ width: effectiveW, height: cardH, minWidth: effectiveW, position: 'relative' }}
-      onClick={(e) => { if (!draggingRef.current) onOpen(); }}
+      onClick={() => { if (!draggingRef.current) onOpen(); }}
     >
       {/* Header */}
       <div class="subcard-header">
