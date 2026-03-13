@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import type { Env } from '../env.js';
 import { createUser, getUserById } from '../db/queries.js';
 import { randomHex, sha256Hex, signJwt, verifyJwt } from '../security/crypto.js';
@@ -10,9 +11,31 @@ import { z } from 'zod';
 
 export const authRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; role: string } }>();
 
+// Task 5: Cache-Control: no-store on all auth endpoints
+authRoutes.use('/*', async (c, next) => {
+  await next();
+  c.header('Cache-Control', 'no-store');
+  c.header('Pragma', 'no-cache');
+});
+
 // ── Shared auth helper ────────────────────────────────────────────────────
-// Resolves the authenticated user ID from Bearer token (JWT or API key).
-async function resolveUserId(c: { req: { header(name: string): string | undefined }; env: Env }): Promise<string | null> {
+// Resolves the authenticated user ID from cookie (browser) or Bearer token (API key / CLI).
+// Accepts any Hono Context with Bindings: Env — Variables generic is intentionally widened.
+type AnyAuthContext = { req: { header(name: string): string | undefined }; env: Env };
+
+async function resolveUserId(c: AnyAuthContext): Promise<string | null> {
+  // Task 1: Try rcc_session cookie first (parse manually to avoid Hono Context type constraint)
+  const cookieHeader = c.req.header('cookie') ?? '';
+  const cookieMatch = cookieHeader.match(/(?:^|;\s*)rcc_session=([^;]+)/);
+  const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : null;
+  if (cookieToken && c.env.JWT_SIGNING_KEY) {
+    const jwt = verifyJwt(cookieToken, c.env.JWT_SIGNING_KEY);
+    if (jwt && typeof jwt.sub === 'string' && jwt.type !== 'ws-ticket') {
+      const user = await getUserById(c.env.DB, jwt.sub);
+      if (user) return user.id;
+    }
+  }
+
   const auth = c.req.header('Authorization');
   if (!auth?.startsWith('Bearer ')) return null;
   const bearerToken = auth.slice(7);
@@ -81,26 +104,11 @@ authRoutes.get('/user/:id', async (c) => {
 // Platform identity linking is handled exclusively through verified OAuth flows
 // (e.g., github-auth.ts). No public endpoint is exposed to prevent identity pre-claiming.
 
-// GET /api/auth/user/me — get authenticated user (Bearer API key or JWT)
+// GET /api/auth/user/me — get authenticated user (cookie, Bearer API key or JWT)
 authRoutes.get('/user/me', async (c) => {
-  const auth = c.req.header('Authorization');
-  if (!auth?.startsWith('Bearer ')) return c.json({ error: 'unauthorized' }, 401);
-  const bearerToken = auth.slice(7);
-
-  // Try JWT first (web session tokens) — reject single-use ws-ticket tokens
-  const jwt = verifyJwt(bearerToken, c.env.JWT_SIGNING_KEY);
-  if (jwt && typeof jwt.sub === 'string' && jwt.type !== 'ws-ticket') {
-    const user = await getUserById(c.env.DB, jwt.sub);
-    if (user) return c.json(user);
-  }
-
-  // Fall back to API key check
-  const keyHash = sha256Hex(bearerToken);
-  const row = await c.env.DB.prepare(
-    'SELECT user_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL',
-  ).bind(keyHash).first<{ user_id: string }>();
-  if (!row) return c.json({ error: 'unauthorized' }, 401);
-  const user = await getUserById(c.env.DB, row.user_id);
+  const userId = await resolveUserId(c);
+  if (!userId) return c.json({ error: 'unauthorized' }, 401);
+  const user = await getUserById(c.env.DB, userId);
   if (!user) return c.json({ error: 'not_found' }, 404);
   return c.json(user);
 });
@@ -249,23 +257,25 @@ authRoutes.post('/ws-ticket', async (c) => {
   return c.json({ ticket });
 });
 
-// POST /api/auth/refresh — refresh JWT access token
-const refreshSchema = z.object({ refreshToken: z.string() });
+// POST /api/auth/refresh — refresh JWT access token (cookie or JSON body)
+const refreshSchema = z.object({ refreshToken: z.string().optional() });
 
 authRoutes.post('/refresh', async (c) => {
   const ip = c.get('clientIp' as never) as string ?? 'unknown';
 
   // Check lockout before attempting auth
-  const lockout = checkAuthLockout(ip);
+  const lockout = await checkAuthLockout(c.env.DB, ip);
   if (lockout.locked) {
     return c.json({ error: 'too_many_attempts', retryAfterMs: lockout.lockedUntil ? lockout.lockedUntil - Date.now() : 0 }, 429);
   }
 
+  // Task 5: Support rcc_refresh cookie (browser) or JSON body (CLI)
+  const cookieRefresh = getCookie(c, 'rcc_refresh');
   const body = await c.req.json().catch(() => null);
   const parsed = refreshSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
+  const refreshToken = cookieRefresh ?? parsed.data?.refreshToken;
+  if (!refreshToken) return c.json({ error: 'invalid_body' }, 400);
 
-  const { refreshToken } = parsed.data;
   const tokenHash = sha256Hex(refreshToken);
 
   const row = await c.env.DB.prepare(
@@ -275,7 +285,7 @@ authRoutes.post('/refresh', async (c) => {
     .first<{ id: string; user_id: string; family_id: string }>();
 
   if (!row) {
-    recordAuthFailure(ip);
+    await recordAuthFailure(c.env.DB, ip);
     return c.json({ error: 'invalid_token' }, 401);
   }
 
@@ -293,5 +303,41 @@ authRoutes.post('/refresh', async (c) => {
     .bind(newRefreshId, row.user_id, newRefreshHash, row.family_id, Date.now() + 30 * 24 * 3600 * 1000, Date.now())
     .run();
 
+  const isSecure = c.env.NODE_ENV === 'production';
+
+  if (cookieRefresh) {
+    // Browser cookie flow: set new cookies and rotate CSRF token
+    setCookie(c, 'rcc_session', accessToken, {
+      httpOnly: true, secure: isSecure, sameSite: 'Lax', path: '/', maxAge: 900,
+    });
+    setCookie(c, 'rcc_refresh', newRefresh, {
+      httpOnly: true, secure: isSecure, sameSite: 'Lax', path: '/api/auth/refresh', maxAge: 30 * 86400,
+    });
+    setCookie(c, 'rcc_csrf', randomHex(32), {
+      httpOnly: false, secure: isSecure, sameSite: 'Lax', path: '/', maxAge: 86400,
+    });
+    return c.json({ ok: true });
+  }
+
+  // CLI / API body flow: return tokens in JSON (backward-compatible)
   return c.json({ accessToken, refreshToken: newRefresh });
+});
+
+// POST /api/auth/logout — clear session cookies + invalidate refresh tokens
+authRoutes.post('/logout', async (c) => {
+  const userId = await resolveUserId(c);
+
+  // Clear all auth cookies regardless of auth state
+  deleteCookie(c, 'rcc_session', { path: '/' });
+  deleteCookie(c, 'rcc_refresh', { path: '/api/auth/refresh' });
+  deleteCookie(c, 'rcc_csrf', { path: '/' });
+
+  // Invalidate all active refresh tokens for the user
+  if (userId) {
+    await c.env.DB.prepare(
+      'UPDATE refresh_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+    ).bind(Date.now(), userId).run();
+  }
+
+  return c.json({ ok: true });
 });

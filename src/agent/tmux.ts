@@ -44,7 +44,7 @@ export async function capturePaneHistory(session: string, lines = 1000): Promise
 /** Send a string of keys to a tmux pane (newline = Enter). */
 export async function sendKeys(session: string, keys: string): Promise<void> {
   const escaped = keys.replace(/'/g, "'\\''");
-  await tmuxExec(`send-keys -t ${session} '${escaped}' Enter`);
+  await tmuxExec(`send-keys -t ${session} -- '${escaped}' Enter`);
 }
 
 /**
@@ -56,7 +56,7 @@ export async function sendKeys(session: string, keys: string): Promise<void> {
  */
 export async function sendKeysDelayedEnter(session: string, keys: string): Promise<void> {
   const escaped = keys.replace(/'/g, "'\\''");
-  await tmuxExec(`send-keys -t ${session} '${escaped}'`);
+  await tmuxExec(`send-keys -t ${session} -- '${escaped}'`);
   await new Promise<void>((r) => setTimeout(r, 80));
   await tmuxExec(`send-keys -t ${session} Enter`);
 }
@@ -199,7 +199,7 @@ export async function sendRawInput(session: string, data: string): Promise<void>
 
   // Regular printable text — send literally (no Enter appended)
   const escaped = data.replace(/'/g, "'\\''");
-  await tmuxExec(`send-keys -t ${session} -l '${escaped}'`);
+  await tmuxExec(`send-keys -t ${session} -l -- '${escaped}'`);
 }
 
 // ── pipe-pane streaming ───────────────────────────────────────────────────────

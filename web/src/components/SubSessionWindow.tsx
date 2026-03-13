@@ -101,15 +101,25 @@ export function SubSessionWindow({
   // ── Dragging ──────────────────────────────────────────────────────────────
   const dragStart = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
 
-  const onHeaderMouseDown = useCallback((e: MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return;
+  const DRAG_MARGIN = 32; // px — minimum visible edge to keep in viewport
+
+  const clampPos = useCallback((x: number, y: number, w: number) => ({
+    x: Math.min(Math.max(x, DRAG_MARGIN - w), window.innerWidth - DRAG_MARGIN),
+    y: Math.min(Math.max(y, 0), window.innerHeight - DRAG_MARGIN),
+  }), []);
+
+  const startDrag = useCallback((e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, textarea, [contenteditable]')) return;
     dragStart.current = { mx: e.clientX, my: e.clientY, ox: geomRef.current.x, oy: geomRef.current.y };
     onFocus();
     const onMove = (me: MouseEvent) => {
       if (!dragStart.current) return;
       const dx = me.clientX - dragStart.current.mx;
       const dy = me.clientY - dragStart.current.my;
-      setGeom((g) => ({ ...g, x: dragStart.current!.ox + dx, y: dragStart.current!.oy + dy }));
+      setGeom((g) => {
+        const { x, y } = clampPos(dragStart.current!.ox + dx, dragStart.current!.oy + dy, g.w);
+        return { ...g, x, y };
+      });
     };
     const onUp = () => {
       dragStart.current = null;
@@ -119,7 +129,9 @@ export function SubSessionWindow({
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
     e.preventDefault();
-  }, [onFocus]);
+  }, [onFocus, clampPos]);
+
+  const onHeaderMouseDown = startDrag;
 
   // ── Resizing ──────────────────────────────────────────────────────────────
   type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -207,14 +219,16 @@ export function SubSessionWindow({
       </div>
 
       {/* Full SessionControls — identical to main session */}
-      <SessionControls
-        ws={ws}
-        activeSession={sessionInfo}
-        inputRef={inputRef}
-        quickData={quickData}
-        hideShortcuts={false}
-        onSend={scrollToBottom}
-      />
+      <div onMouseDown={startDrag} style={{ cursor: 'grab' }}>
+        <SessionControls
+          ws={ws}
+          activeSession={sessionInfo}
+          inputRef={inputRef}
+          quickData={quickData}
+          hideShortcuts={false}
+          onSend={scrollToBottom}
+        />
+      </div>
     </div>
   );
 }

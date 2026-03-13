@@ -35,6 +35,7 @@ import { jobDispatchCron } from './cron/job-dispatch.js';
 import { WsBridge } from './ws/bridge.js';
 import { MemoryRateLimiter } from './ws/rate-limiter.js';
 import { rateLimiter } from './security/lockout.js';
+import { csrfMiddleware } from './security/csrf.js';
 import { verifyJwt } from './security/crypto.js';
 import { resolveServerRole } from './security/authorization.js';
 import logger from './util/logger.js';
@@ -77,6 +78,9 @@ export function buildApp(env: Env) {
     c.set('clientIp' as never, clientIp);
     await next();
   });
+
+  // Task 4: CSRF protection for all API write operations (skips Bearer auth and safe methods)
+  app.use('/api/*', csrfMiddleware());
 
   app.route('/api/auth', authRoutes);
   app.route('/api/auth/github', githubAuthRoutes);
@@ -199,8 +203,9 @@ function setupWebSocketUpgrade(server: import('node:http').Server, env: Env) {
         socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n'); socket.destroy(); return;
       }
 
+      const userId = payload.sub as string;
       wss.handleUpgrade(req, socket, head, (ws) => {
-        WsBridge.get(serverId).handleBrowserConnection(ws);
+        WsBridge.get(serverId).handleBrowserConnection(ws, userId, env.DB);
       });
     }
   });
@@ -216,6 +221,9 @@ function validateOrigin(origin: string, env: Env): boolean {
 function scheduleCrons(env: Env) {
   cron.schedule('*/5 * * * *', () => {
     healthCheckCron(env).catch((err) => logger.error({ err }, 'Health check cron failed'));
+    // Clean up expired auth lockout records older than 1 day
+    env.DB.exec("DELETE FROM auth_lockout WHERE locked_until < NOW() - INTERVAL '1 day'")
+      .catch((err) => logger.error({ err }, 'Auth lockout cleanup failed'));
   });
   cron.schedule('* * * * *', () => {
     jobDispatchCron(env).catch((err) => logger.error({ err }, 'Job dispatch cron failed'));

@@ -1,14 +1,4 @@
-interface AuthState {
-  token: string;
-  userId: string;
-  baseUrl: string;
-}
-
-interface Props {
-  onLogin: (state: AuthState) => void;
-}
-
-export function LoginPage({ onLogin: _onLogin }: Props) {
+export function LoginPage() {
   const handleGithub = () => {
     window.location.href = '/api/auth/github?reauth=1';
   };

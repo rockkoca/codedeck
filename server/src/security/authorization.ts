@@ -3,6 +3,7 @@
  * Enforces owner/admin/member/unauthenticated permission matrix.
  */
 import type { Context, Next } from 'hono';
+import { getCookie } from 'hono/cookie';
 import type { Env } from '../env.js';
 import type { PgDatabase } from '../db/client.js';
 import { sha256Hex, verifyJwt } from './crypto.js';
@@ -17,9 +18,19 @@ interface AuthContext {
 
 /**
  * Resolve auth context from request.
- * Uses Bearer token (API key) or JWT access token.
+ * Priority: rcc_session cookie → Authorization: Bearer (API key / JWT).
+ * Bearer is preserved for daemon server-token, API keys, and CLI clients.
  */
 async function resolveAuth(c: Context<{ Bindings: Env }>): Promise<AuthContext | null> {
+  // Task 1: Try HttpOnly session cookie first (browser sessions)
+  const cookieToken = getCookie(c, 'rcc_session');
+  if (cookieToken && c.env.JWT_SIGNING_KEY) {
+    const payload = verifyJwt(cookieToken, c.env.JWT_SIGNING_KEY);
+    if (payload && typeof payload.sub === 'string' && payload.type !== 'ws-ticket') {
+      return { userId: payload.sub, role: (payload.role as Role) ?? 'member' };
+    }
+  }
+
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return null;
 

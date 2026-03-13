@@ -19,7 +19,6 @@ import type { SessionInfo, TerminalDiff } from './types.js';
 type ViewMode = 'terminal' | 'chat';
 
 interface AuthState {
-  token: string;
   userId: string;
   baseUrl: string;
 }
@@ -43,7 +42,7 @@ export function App() {
     try {
       const raw = localStorage.getItem('rcc_auth');
       const state = raw ? (JSON.parse(raw) as AuthState) : null;
-      if (state) configureApi(state.baseUrl, state.token);
+      if (state) configureApi(state.baseUrl);
       return state;
     } catch {
       return null;
@@ -71,22 +70,26 @@ export function App() {
     return () => vv.removeEventListener('resize', update);
   }, []);
 
-  // Handle OAuth callback token in URL
+  // Verify session via /api/auth/user/me on mount (cookie-based auth)
+  // Also handles post-OAuth redirect: cookie was set by server, we just need to confirm.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    const userId = params.get('userId');
-    if (token && userId) {
-      const authState: AuthState = { token, userId, baseUrl: window.location.origin };
+    const baseUrl = window.location.origin;
+    configureApi(baseUrl);
+    apiFetch<{ id: string }>('/api/auth/user/me').then((user) => {
+      const authState: AuthState = { userId: user.id, baseUrl };
       localStorage.setItem('rcc_auth', JSON.stringify(authState));
       setAuth(authState);
-      window.history.replaceState({}, '', '/');
-    }
+    }).catch(() => {
+      // Not authenticated — clear stale localStorage and show login
+      localStorage.removeItem('rcc_auth');
+      setAuth(null);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Configure API client when auth changes
   useEffect(() => {
-    if (auth) configureApi(auth.baseUrl, auth.token);
+    if (auth) configureApi(auth.baseUrl);
   }, [auth]);
 
   // Load servers list whenever auth is available
@@ -267,7 +270,7 @@ export function App() {
   useEffect(() => {
     if (!auth || !selectedServerId) return;
 
-    const ws = new WsClient(auth.baseUrl, selectedServerId, auth.token);
+    const ws = new WsClient(auth.baseUrl, selectedServerId);
     wsRef.current = ws;
 
     const unsub = ws.onMessage((msg) => {
@@ -492,12 +495,10 @@ export function App() {
     return () => document.removeEventListener('keydown', handler);
   }, [activeSession, connected]);
 
-  const handleLogin = useCallback((state: AuthState) => {
-    localStorage.setItem('rcc_auth', JSON.stringify(state));
-    setAuth(state);
-  }, []);
-
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } catch { /* ignore — clear local state regardless */ }
     localStorage.removeItem('rcc_auth');
     localStorage.removeItem('rcc_server');
     localStorage.removeItem('rcc_server_name');
@@ -564,7 +565,7 @@ export function App() {
   }, []);
 
   if (!auth) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <LoginPage />;
   }
 
   const activeSessionInfo = sessions.find((s) => s.name === activeSession) ?? null;

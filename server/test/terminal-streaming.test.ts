@@ -64,7 +64,7 @@ async function setupStreamingBridge() {
   await flush();
 
   const browserWs = new MockWs();
-  bridge.handleBrowserConnection(browserWs as never);
+  bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb());
 
   return { serverId, bridge, daemonWs, browserWs };
 }
@@ -116,8 +116,8 @@ describe('Terminal streaming integration', () => {
     // Add two more browsers
     const browser2 = new MockWs();
     const browser3 = new MockWs();
-    bridge.handleBrowserConnection(browser2 as never);
-    bridge.handleBrowserConnection(browser3 as never);
+    bridge.handleBrowserConnection(browser2 as never, 'test-user', makeDb());
+    bridge.handleBrowserConnection(browser3 as never, 'test-user', makeDb());
 
     expect(bridge.browserCount).toBe(3);
 
@@ -136,7 +136,7 @@ describe('Terminal streaming integration', () => {
       type: 'terminal.subscribe',
       session: 'deck_myapp_brain',
     }));
-    // sync — browser→daemon forwarding is synchronous
+    await flush(); // terminal.subscribe ownership check is async
     expect(daemonWs.sent.some((s) => s.includes('terminal.subscribe'))).toBe(true);
   });
 
@@ -146,7 +146,7 @@ describe('Terminal streaming integration', () => {
 
     // Browser connects before daemon
     const browserWs = new MockWs();
-    bridge.handleBrowserConnection(browserWs as never);
+    bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb());
 
     // Browser sends messages — they queue up
     browserWs.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'sess1' }));

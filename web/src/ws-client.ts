@@ -50,7 +50,6 @@ export class WsClient {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private token: string;
   private baseUrl: string;
   private serverId: string;
   private _connected = false;
@@ -72,10 +71,9 @@ export class WsClient {
     retryTimer: ReturnType<typeof setTimeout> | null;
   }>();
 
-  constructor(baseUrl: string, serverId: string, token: string) {
+  constructor(baseUrl: string, serverId: string) {
     this.baseUrl = baseUrl;
     this.serverId = serverId;
-    this.token = token;
   }
 
   get connected(): boolean {
@@ -234,12 +232,15 @@ export class WsClient {
     // _connecting=true forever and all subsequent reconnect timers are no-ops.
     let ticket: string;
     try {
+      const csrfMatch = document.cookie.match(/(?:^|;\s*)rcc_csrf=([^;]+)/);
+      const csrf = csrfMatch ? decodeURIComponent(csrfMatch[1]) : null;
       const res = await fetch(`${this.baseUrl}/api/auth/ws-ticket`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.token}`,
+          ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
         },
+        credentials: 'include',
         body: JSON.stringify({ serverId: this.serverId }),
         signal: AbortSignal.timeout(10_000),
       });

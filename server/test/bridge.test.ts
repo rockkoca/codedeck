@@ -134,7 +134,7 @@ describe('WsBridge', () => {
       await flushAsync();
 
       const browserWs = new MockWs();
-      bridge.handleBrowserConnection(browserWs as never);
+      bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb('valid-hash'));
       return { bridge, daemonWs, browserWs };
     }
 
@@ -177,13 +177,14 @@ describe('WsBridge', () => {
       await flushAsync();
 
       const browserWs = new MockWs();
-      bridge.handleBrowserConnection(browserWs as never);
+      bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb('valid-hash'));
       return { daemonWs, browserWs };
     }
 
     it('forwards whitelisted type', async () => {
       const { daemonWs, browserWs } = await setupBridge();
       browserWs.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'x' }));
+      await flushAsync(); // terminal.subscribe ownership check is async
       expect(daemonWs.sentStrings.some((s) => s.includes('terminal.subscribe'))).toBe(true);
     });
 
@@ -216,7 +217,7 @@ describe('WsBridge', () => {
 
       // Browser sends message before daemon connects (goes to queue)
       const browserWs = new MockWs();
-      bridge.handleBrowserConnection(browserWs as never);
+      bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb('valid-hash'));
       browserWs.emit('message', JSON.stringify({ type: 'get_sessions' }));
 
       // Daemon connects and authenticates
@@ -316,7 +317,7 @@ describe('WsBridge', () => {
       const { bridge, daemonWs } = await setupAuth();
 
       const browserWs = new MockWs();
-      bridge.handleBrowserConnection(browserWs as never);
+      bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb('valid-hash'));
       browserWs.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'sess4' }));
       await flushAsync();
 
@@ -353,7 +354,7 @@ describe('WsBridge', () => {
       await flushAsync();
 
       const browserWs = new MockWs();
-      bridge.handleBrowserConnection(browserWs as never);
+      bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb('valid-hash'));
       browserWs.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'sessR' }));
       await flushAsync();
 
@@ -377,7 +378,7 @@ describe('WsBridge', () => {
       const bridge = WsBridge.get(serverId);
 
       const browserWs = new MockWs();
-      bridge.handleBrowserConnection(browserWs as never);
+      bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb('valid-hash'));
 
       // Browser subscribes while daemon is offline → goes to queue
       browserWs.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'sessD' }));

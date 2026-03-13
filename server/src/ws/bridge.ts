@@ -126,6 +126,12 @@ export class WsBridge {
   /** browser socket → set of subscribed session names */
   private browserSubscriptions = new Map<WebSocket, Set<string>>();
 
+  /** browser socket → userId (for session ownership checks) */
+  private browserUserIds = new Map<WebSocket, string>();
+
+  /** db reference for session ownership checks */
+  private db: PgDatabase | null = null;
+
   /**
    * Per-session daemon subscription reference count.
    * Forward terminal.subscribe to daemon only on 0→1.
@@ -268,9 +274,11 @@ export class WsBridge {
 
   // ── Browser connection ─────────────────────────────────────────────────────
 
-  handleBrowserConnection(ws: WebSocket): void {
+  handleBrowserConnection(ws: WebSocket, userId: string, db: PgDatabase): void {
+    this.db = db;
     this.browserSockets.add(ws);
     this.browserSubscriptions.set(ws, new Set());
+    this.browserUserIds.set(ws, userId);
 
     ws.on('message', (data) => {
       const raw = (data as Buffer).toString();
@@ -305,8 +313,15 @@ export class WsBridge {
 
       // Track terminal subscriptions for binary routing + ref-counted daemon forwarding
       if (msg.type === 'terminal.subscribe' && typeof msg.session === 'string') {
-        this.addBrowserSessionSubscription(ws, msg.session, raw);
-        return; // forwarding handled inside (only on 0→1)
+        const sessionName = msg.session;
+        void this.verifySessionOwnership(sessionName).then((allowed) => {
+          if (!allowed) {
+            logger.warn({ serverId: this.serverId, sessionName }, 'terminal.subscribe: session not owned by this server — rejected');
+            return;
+          }
+          this.addBrowserSessionSubscription(ws, sessionName, raw);
+        });
+        return;
       } else if (msg.type === 'terminal.unsubscribe' && typeof msg.session === 'string') {
         this.removeBrowserSessionSubscription(ws, msg.session);
         return; // forwarding handled inside (only on 1→0)
@@ -330,7 +345,7 @@ export class WsBridge {
 
   private relayToBrowsers(msg: Record<string, unknown>): void {
     if (msg.type === 'terminal_update') {
-      // Route snapshot only to browsers subscribed to this session
+      // Route only to browsers subscribed to this session
       const sessionName = (msg.diff as Record<string, unknown> | undefined)?.sessionName as string | undefined;
       const outJson = JSON.stringify({ ...msg, type: 'terminal.diff' });
       if (sessionName) {
@@ -344,6 +359,34 @@ export class WsBridge {
     if (msg.type === 'session_event') {
       this.broadcastToBrowsers(JSON.stringify({ ...msg, type: 'session.event' }));
       return;
+    }
+
+    // Route timeline events only to browsers subscribed to the relevant session.
+    // Broadcasting would leak events across sessions and across users.
+    if (msg.type === 'timeline.event') {
+      const sessionId = (msg.event as Record<string, unknown> | undefined)?.sessionId as string | undefined;
+      if (sessionId) {
+        this.sendToSessionSubscribers(sessionId, JSON.stringify(msg));
+      }
+      return;
+    }
+
+    // Route command.ack only to the session's subscribers
+    if (msg.type === 'command.ack') {
+      const sessionName = msg.session as string | undefined;
+      if (sessionName) {
+        this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+        return;
+      }
+    }
+
+    // Route subsession.response only to the session's subscribers
+    if (msg.type === 'subsession.response') {
+      const sessionName = msg.sessionName as string | undefined;
+      if (sessionName) {
+        this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+        return;
+      }
     }
 
     this.broadcastToBrowsers(JSON.stringify(msg));
@@ -448,6 +491,7 @@ export class WsBridge {
 
   private cleanupBrowserSocket(ws: WebSocket): void {
     this.browserSockets.delete(ws);
+    this.browserUserIds.delete(ws);
     const sessions = this.browserSubscriptions.get(ws);
     if (sessions) {
       for (const sessionName of [...sessions]) {
@@ -456,6 +500,38 @@ export class WsBridge {
       }
     }
     this.browserSubscriptions.delete(ws);
+  }
+
+  /**
+   * Verify that a session name belongs to this server.
+   * Checks both regular sessions and sub-sessions.
+   */
+  private async verifySessionOwnership(sessionName: string): Promise<boolean> {
+    if (!this.db) return true; // no db = dev/test mode, allow all
+    try {
+      // Check regular sessions
+      const row = await this.db
+        .prepare('SELECT 1 FROM sessions WHERE server_id = $1 AND name = $2 LIMIT 1')
+        .bind(this.serverId, sessionName)
+        .first<Record<string, unknown>>();
+      if (row) return true;
+
+      // Check sub-sessions: name is deck_sub_{id}
+      const subMatch = sessionName.match(/^deck_sub_([a-z0-9]+)$/);
+      if (subMatch) {
+        const subId = subMatch[1];
+        const subRow = await this.db
+          .prepare('SELECT 1 FROM sub_sessions WHERE server_id = $1 AND id = $2 LIMIT 1')
+          .bind(this.serverId, subId)
+          .first<Record<string, unknown>>();
+        if (subRow) return true;
+      }
+
+      return false;
+    } catch (err) {
+      logger.warn({ serverId: this.serverId, sessionName, err }, 'verifySessionOwnership: db error — allowing');
+      return true; // fail-open to avoid breaking on transient DB issues
+    }
   }
 
   private broadcastToBrowsers(json: string): void {

@@ -1,26 +1,66 @@
 /**
- * Fetch wrapper with Bearer token auth for the Codedeck API.
+ * Fetch wrapper with cookie-based auth for the Codedeck API.
+ * Credentials (rcc_session) are sent automatically via HttpOnly cookie.
+ * CSRF token is read from the rcc_csrf cookie and sent as X-CSRF-Token.
  */
 
-let _token: string | null = null;
 let _baseUrl = '';
 
-export function configure(baseUrl: string, token: string): void {
+export function configure(baseUrl: string): void {
   _baseUrl = baseUrl.replace(/\/$/, '');
-  _token = token;
+}
+
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)rcc_csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+// Single-flight lock: at most one refresh in progress at a time.
+let refreshPromise: Promise<boolean> | null = null;
+
+async function doRefresh(): Promise<boolean> {
+  // Use rawFetch so the CSRF token is automatically attached
+  const res = await rawFetch('/api/auth/refresh', { method: 'POST' });
+  return res.ok;
+}
+
+async function rawFetch(path: string, opts: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(opts.headers);
+  if (!headers.has('Content-Type') && opts.body) {
+    headers.set('Content-Type', 'application/json');
+  }
+  const method = (opts.method ?? 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    const csrf = getCsrfToken();
+    if (csrf) headers.set('X-CSRF-Token', csrf);
+  }
+  return fetch(`${_baseUrl}${path}`, { ...opts, headers, credentials: 'include' });
 }
 
 export async function apiFetch<T = unknown>(
   path: string,
   opts: RequestInit = {},
 ): Promise<T> {
-  const headers = new Headers(opts.headers);
-  if (_token) headers.set('Authorization', `Bearer ${_token}`);
-  if (!headers.has('Content-Type') && opts.body) {
-    headers.set('Content-Type', 'application/json');
-  }
+  const res = await rawFetch(path, opts);
 
-  const res = await fetch(`${_baseUrl}${path}`, { ...opts, headers });
+  if (res.status === 401 && path !== '/api/auth/refresh') {
+    // Single-flight: multiple concurrent 401s share one refresh attempt
+    if (!refreshPromise) {
+      refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
+    }
+    const ok = await refreshPromise;
+    if (ok) {
+      const retryRes = await rawFetch(path, opts);
+      if (!retryRes.ok) {
+        const body = await retryRes.text().catch(() => '');
+        throw new ApiError(retryRes.status, body);
+      }
+      return retryRes.json() as Promise<T>;
+    }
+    // Refresh failed — session expired, redirect to login
+    window.location.href = '/';
+    throw new ApiError(401, 'session_expired');
+  }
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');

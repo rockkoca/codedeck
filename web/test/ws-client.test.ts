@@ -66,25 +66,25 @@ describe('WsClient', () => {
     vi.clearAllTimers();
   });
 
-  it('can be instantiated with baseUrl, serverId, token', () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token-abc');
+  it('can be instantiated with baseUrl and serverId', () => {
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     expect(client).toBeInstanceOf(WsClient);
   });
 
   it('starts disconnected before connect() is called', () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token-abc');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     expect(client.connected).toBe(false);
   });
 
   it('opens a WebSocket on connect()', async () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token-abc');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     client.connect();
     await flushAsync();
     expect(lastWs).not.toBeNull();
   });
 
   it('builds the correct WebSocket URL with ws:// and ticket', async () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'my-token');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     client.connect();
     await flushAsync();
     expect(lastWs!.url).toContain('ws://localhost:8787');
@@ -93,7 +93,7 @@ describe('WsClient', () => {
   });
 
   it('sets connected=true after WebSocket open event', async () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     client.connect();
     await flushAsync();
     lastWs!.emit('open');
@@ -101,7 +101,7 @@ describe('WsClient', () => {
   });
 
   it('dispatches terminal.diff messages to registered handlers', async () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     const handler = vi.fn<Parameters<MessageHandler>>();
     client.onMessage(handler);
     client.connect();
@@ -119,7 +119,7 @@ describe('WsClient', () => {
   });
 
   it('does not dispatch pong messages to handlers', async () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     const handler = vi.fn();
     client.onMessage(handler);
     client.connect();
@@ -135,7 +135,7 @@ describe('WsClient', () => {
   });
 
   it('unregisters a handler when the returned cleanup is called', async () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     const handler = vi.fn();
     const unsub = client.onMessage(handler);
     unsub();
@@ -149,7 +149,7 @@ describe('WsClient', () => {
   });
 
   it('disconnect() sets connected=false and closes the socket', async () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     client.connect();
     await flushAsync();
     lastWs!.emit('open');
@@ -161,7 +161,7 @@ describe('WsClient', () => {
 
   it('schedules reconnect after WebSocket closes', async () => {
     vi.useFakeTimers();
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     client.connect();
     // Flush the fetch promise with fake timers active
     await vi.advanceTimersByTimeAsync(0);
@@ -178,7 +178,7 @@ describe('WsClient', () => {
   });
 
   it('send() throws when not connected', () => {
-    const client = new WsClient('http://localhost:8787', 'srv-1', 'token');
+    const client = new WsClient('http://localhost:8787', 'srv-1');
     expect(() => client.send({ type: 'ping' })).toThrow('WebSocket not connected');
   });
 });
