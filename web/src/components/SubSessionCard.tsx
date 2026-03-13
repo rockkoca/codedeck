@@ -1,6 +1,6 @@
 /**
  * SubSessionCard — preview card showing live chat/terminal content for a sub-session.
- * Non-shell: scaled-down ChatView preview. Shell: scaled-down TerminalView preview.
+ * Content renders at native size (no scaling) — card acts as a clipped viewport.
  */
 import { useRef } from 'preact/hooks';
 import { ChatView } from './ChatView.js';
@@ -22,10 +22,6 @@ const STATE_BADGE: Record<string, string> = {
   unknown: '?',
   stopped: '■',
 };
-
-// Virtual size of the content inside the card (rendered full-size, then CSS-scaled)
-const VIRTUAL_W = 700;
-const VIRTUAL_H = 440;
 
 interface Props {
   sub: SubSession;
@@ -58,31 +54,26 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
         {sub.state === 'running' && <span class="subcard-running">●</span>}
       </div>
 
-      {/* Preview — scaled down, non-interactive */}
+      {/* Preview — native size, clipped by card overflow:hidden, non-interactive */}
       <div class="subcard-preview">
-        <div
-          class="subcard-preview-inner"
-          style={{ width: VIRTUAL_W, height: VIRTUAL_H }}
-        >
-          {isShell ? (
-            <TerminalView
-              sessionName={sub.sessionName}
-              ws={ws}
-              connected={connected}
-              onDiff={(apply) => onDiff(sub.sessionName, apply)}
-              onHistory={(apply) => onHistory(sub.sessionName, apply)}
-              onScrollBottomFn={(fn) => { termScrollRef.current = fn; }}
-            />
-          ) : (
-            <ChatView
-              events={events}
-              loading={false}
-              refreshing={refreshing}
-              sessionId={sub.sessionName}
-              preview
-            />
-          )}
-        </div>
+        {isShell ? (
+          <TerminalView
+            sessionName={sub.sessionName}
+            ws={ws}
+            connected={connected}
+            onDiff={(apply) => onDiff(sub.sessionName, apply)}
+            onHistory={(apply) => onHistory(sub.sessionName, apply)}
+            onScrollBottomFn={(fn) => { termScrollRef.current = fn; }}
+          />
+        ) : (
+          <ChatView
+            events={events}
+            loading={false}
+            refreshing={refreshing}
+            sessionId={sub.sessionName}
+            preview
+          />
+        )}
       </div>
     </div>
   );

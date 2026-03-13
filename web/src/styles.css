@@ -271,12 +271,10 @@ body {
 .subcard-badge { font-size: 10px; color: #f59e0b; }
 .subcard-running { font-size: 8px; color: #4ade80; }
 
-.subcard-preview { flex: 1; overflow: hidden; position: relative; pointer-events: none; }
-.subcard-preview-inner { transform: scale(0.5); transform-origin: top left; position: absolute; top: 0; left: 0; }
+.subcard-preview { flex: 1; overflow: hidden; pointer-events: none; }
 
 @media (max-width: 640px) {
   .subcard { width: 260px; height: 190px; min-width: 260px; }
-  .subcard-preview-inner { transform: scale(0.37); }
   .subcard-double { grid-auto-columns: 260px; }
 }
 
