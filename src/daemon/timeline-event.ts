@@ -12,7 +12,8 @@ export type TimelineEventType =
   | 'mode.state'
   | 'session.state'
   | 'terminal.snapshot'
-  | 'command.ack';
+  | 'command.ack'
+  | 'agent.status';
 
 export type TimelineSource = 'daemon' | 'hook' | 'terminal-parse';
 export type TimelineConfidence = 'high' | 'medium' | 'low';

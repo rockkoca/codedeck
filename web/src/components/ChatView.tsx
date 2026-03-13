@@ -36,7 +36,7 @@ interface ViewItem {
  *  - Deduplicate consecutive session.state events with same state (keep last)
  */
 function buildViewItems(events: TimelineEvent[]): ViewItem[] {
-  const visible = events.filter((e) => !e.hidden && e.type !== 'assistant.thinking');
+  const visible = events.filter((e) => !e.hidden && e.type !== 'assistant.thinking' && e.type !== 'agent.status');
 
   // Pre-pass: merge tool.call+tool.result pairs and dedup session.state
   const consolidated: TimelineEvent[] = [];
@@ -133,19 +133,23 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
 
   const viewItems = useMemo(() => buildViewItems(events), [events]);
 
-  // Extract active thinking status: show last thinking text until any other event arrives after it
-  const thinkingText = useMemo(() => {
-    let lastThinking: string | null = null;
+  // Extract active status: show last thinking or agent.status until any other event arrives after it
+  const statusText = useMemo(() => {
+    let lastStatus: string | null = null;
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i];
       if (e.type === 'assistant.thinking' && e.payload.text) {
-        lastThinking = String(e.payload.text);
+        lastStatus = String(e.payload.text);
         break;
       }
-      // Any non-thinking event after the last thinking means thinking is done
-      if (e.type !== 'assistant.thinking') break;
+      if (e.type === 'agent.status' && e.payload.label) {
+        lastStatus = String(e.payload.label);
+        break;
+      }
+      // Any other event type means status is done
+      if (e.type !== 'assistant.thinking' && e.type !== 'agent.status') break;
     }
-    return lastThinking;
+    return lastStatus;
   }, [events]);
 
   const scrollToBottom = () => {
@@ -234,10 +238,10 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
         )}
       </div>
       {/* Thinking status bar — fixed at bottom, shows real CC thinking from JSONL */}
-      {thinkingText && (
+      {statusText && (
         <div class="chat-thinking-bar">
           <span class="chat-thinking-dots">●●●</span>
-          {' '}{truncate(thinkingText, 120)}
+          {' '}{truncate(statusText, 120)}
         </div>
       )}
       {showScrollBtn && (

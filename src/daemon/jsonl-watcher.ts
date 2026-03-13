@@ -85,6 +85,64 @@ function parseLine(sessionName: string, line: string): void {
     return;
   }
 
+  // Progress events — transient status for status bar display (no message.content)
+  if (raw['type'] === 'progress') {
+    const data = raw['data'] as Record<string, unknown> | undefined;
+    if (!data) return;
+    const progressType = String(data['type'] ?? '');
+    switch (progressType) {
+      case 'bash_progress': {
+        const elapsed = data['elapsedTimeSeconds'] as number | undefined;
+        timelineEmitter.emit(sessionName, 'agent.status', {
+          status: 'bash_running',
+          label: `Bash running${elapsed ? ` (${Math.round(elapsed)}s)` : ''}...`,
+        }, { source: 'daemon', confidence: 'high' });
+        break;
+      }
+      case 'agent_progress': {
+        const msg = String(data['message'] ?? 'working');
+        timelineEmitter.emit(sessionName, 'agent.status', {
+          status: 'agent_working',
+          label: `Sub-agent: ${msg}`,
+        }, { source: 'daemon', confidence: 'high' });
+        break;
+      }
+      case 'mcp_progress': {
+        const toolName = String(data['toolName'] ?? 'tool');
+        const server = String(data['serverName'] ?? '');
+        const mStatus = String(data['status'] ?? 'started');
+        if (mStatus === 'started') {
+          timelineEmitter.emit(sessionName, 'agent.status', {
+            status: 'mcp_running',
+            label: `MCP: ${server ? server + '/' : ''}${toolName}...`,
+          }, { source: 'daemon', confidence: 'high' });
+        }
+        break;
+      }
+      case 'waiting_for_task': {
+        const desc = String(data['taskDescription'] ?? 'task');
+        timelineEmitter.emit(sessionName, 'agent.status', {
+          status: 'waiting',
+          label: `Waiting: ${desc}`,
+        }, { source: 'daemon', confidence: 'high' });
+        break;
+      }
+    }
+    return;
+  }
+
+  // System events — compact_boundary etc. (no message.content)
+  if (raw['type'] === 'system') {
+    const subtype = String(raw['subtype'] ?? '');
+    if (subtype === 'compact_boundary') {
+      timelineEmitter.emit(sessionName, 'agent.status', {
+        status: 'compacting',
+        label: 'Compacting conversation...',
+      }, { source: 'daemon', confidence: 'high' });
+    }
+    return;
+  }
+
   const msg = raw['message'] as Record<string, unknown> | undefined;
   if (!msg) return;
   const content = msg['content'];
