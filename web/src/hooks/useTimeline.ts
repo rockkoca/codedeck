@@ -194,12 +194,30 @@ export function useTimeline(
         historyRequestIdRef.current = null;
         historyLoadedRef.current = sessionId;
 
+        const oldEpoch = epochRef.current;
         epochRef.current = msg.epoch;
+
         if (msg.events.length > 0) {
           const maxSeq = msg.events.reduce((max, e) => Math.max(max, e.seq), 0);
           seqRef.current = Math.max(seqRef.current, maxSeq);
-          mergeEvents(msg.events);
-          dbRef.current?.putEvents(msg.events).catch(() => {});
+
+          // If epoch changed, replace events entirely — don't mix epochs (breaks merge order)
+          if (oldEpoch !== 0 && oldEpoch !== msg.epoch) {
+            setEvents(msg.events);
+            if (dbRef.current) {
+              dbRef.current.clearSessionEpoch(sessionId, oldEpoch).catch(() => {});
+              dbRef.current.putEvents(msg.events).catch(() => {});
+            }
+          } else {
+            mergeEvents(msg.events);
+            dbRef.current?.putEvents(msg.events).catch(() => {});
+          }
+        } else if (oldEpoch !== 0 && oldEpoch !== msg.epoch) {
+          // Epoch changed but no events — clear stale cache
+          setEvents([]);
+          if (dbRef.current) {
+            dbRef.current.clearSessionEpoch(sessionId, oldEpoch).catch(() => {});
+          }
         }
         setLoading(false);
         setRefreshing(false);
