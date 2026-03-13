@@ -2,6 +2,9 @@ import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 
 export default defineConfig({
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [preact()],
   server: {
     port: 3000,

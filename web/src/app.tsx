@@ -592,6 +592,9 @@ export function App() {
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ padding: '12px 16px', borderTop: '1px solid #334155' }}>
+          <div style={{ fontSize: 10, color: '#475569', marginBottom: 8, textAlign: 'center' }}>
+            {(() => { try { const d = new Date(__BUILD_TIME__); return `Build: ${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; } catch { return ''; } })()}
+          </div>
           <button class="btn btn-secondary" style={{ width: '100%', fontSize: 11 }} onClick={handleLogout}>
             Log Out
           </button>
