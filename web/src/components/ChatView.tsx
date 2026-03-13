@@ -201,13 +201,14 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   }, [onScrollBottomFn]);
 
   // Auto-scroll on new events — use requestAnimationFrame so DOM has updated
+  // In preview mode, always scroll to bottom (no user interaction possible)
   useEffect(() => {
-    if (autoScrollRef.current) {
+    if (preview || autoScrollRef.current) {
       requestAnimationFrame(() => {
         scrollToBottom();
       });
     }
-  }, [viewItems.length, events.length]);
+  }, [viewItems.length, events.length, preview]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
