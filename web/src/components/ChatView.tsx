@@ -64,8 +64,8 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
         const next = visible[resultIdx];
         consumedIds.add(next.eventId); // mark tool.result as consumed
         const toolName = String(ev.payload.tool ?? 'tool');
-        const input = ev.payload.input ? ` ${truncate(String(ev.payload.input), 60)}` : '';
-        const status = next.payload.error ? `✗ ${truncate(String(next.payload.error), 60)}` : '✓';
+        const input = ev.payload.input ? ` ${String(ev.payload.input)}` : '';
+        const status = next.payload.error ? `✗ ${String(next.payload.error)}` : '✓';
         consolidated.push({
           ...ev,
           type: 'tool.call',
@@ -251,7 +251,7 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
       {!preview && statusText && (
         <div class="chat-thinking-bar">
           <span class="chat-thinking-dots">●●●</span>
-          {' '}{truncate(statusText, 120)}
+          {' '}{statusText}
         </div>
       )}
       {!preview && showScrollBtn && (
@@ -357,10 +357,6 @@ function ChatTime({ ts }: { ts: number }) {
       {new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
     </div>
   );
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : s.slice(0, max) + '...';
 }
 
 // ── Lightweight Markdown renderer ─────────────────────────────────────────
