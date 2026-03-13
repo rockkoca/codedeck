@@ -221,7 +221,7 @@ body {
 .chat-code-block code { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', monospace; color: #e2e8f0; }
 .chat-code-lang { background: #2a2a4a; color: #94a3b8; font-size: 11px; padding: 4px 12px; font-family: sans-serif; }
 .chat-inline-code { background: #1e293b; color: #93c5fd; padding: 1px 5px; border-radius: 3px; font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', monospace; font-size: 0.9em; }
-.chat-tool { color: #94a3b8; font-size: 14px; line-height: 1.6; min-height: 28px; padding: 6px 10px; background: #1e293b; border-radius: 6px; border-left: 3px solid #3b82f6; overflow: visible; white-space: nowrap; text-overflow: ellipsis; flex-shrink: 0; }
+.chat-tool { color: #94a3b8; font-size: 14px; line-height: 1.6; min-height: 28px; padding: 6px 10px; background: #1e293b; border-radius: 6px; border-left: 3px solid #3b82f6; overflow: visible; white-space: normal; word-break: break-all; flex-shrink: 0; }
 .chat-tool-icon { margin-right: 6px; font-weight: bold; color: #60a5fa; font-size: 14px; }
 .chat-tool-name { color: #c4b5fd; font-weight: 600; margin-right: 6px; font-size: 14px; }
 .chat-tool-input { color: #94a3b8; font-size: 13px; }

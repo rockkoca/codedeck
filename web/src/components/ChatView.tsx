@@ -129,6 +129,7 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
 
 export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const autoScrollRef = useRef(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -159,6 +160,8 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     if (!el) return;
     autoScrollRef.current = true;
     el.scrollTop = el.scrollHeight;
+    // Fallback: scrollIntoView on sentinel (more reliable in flex/preview containers)
+    bottomRef.current?.scrollIntoView({ block: 'end' });
   };
 
   // On session change, reset scroll position to bottom
@@ -226,7 +229,7 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   return (
     <div class="chat-view-wrap">
       {refreshing && <div class="chat-refreshing">↻ 同步最新消息...</div>}
-      <div class="chat-view" ref={scrollRef} onScroll={handleScroll}>
+      <div class="chat-view" ref={scrollRef} onScroll={preview ? undefined : handleScroll}>
         {viewItems.length === 0 && (
           <div class="chat-loading">
             {sessionState ? `Session ${sessionState}` : 'No events yet'}
@@ -242,6 +245,7 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
             <ChatEvent key={item.key} event={item.event!} />
           ),
         )}
+        <div ref={bottomRef} />
       </div>
       {/* Thinking status bar — fixed at bottom, shows real CC thinking from JSONL */}
       {!preview && statusText && (
