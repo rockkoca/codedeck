@@ -13,7 +13,7 @@ export type AgentStatus =
   | 'permission'
   | 'unknown';
 
-export type AgentType = 'claude-code' | 'codex' | 'opencode' | 'shell';
+export type AgentType = 'claude-code' | 'codex' | 'opencode' | 'shell' | 'gemini';
 
 // ─── Claude Code patterns ─────────────────────────────────────────────────────
 
@@ -82,6 +82,26 @@ const OC_TOOL_PATTERNS = [
   /\btool\b/i,
 ];
 
+// ─── Gemini CLI patterns ───────────────────────────────────────────────────────
+
+const GEMINI_IDLE_PATTERNS = [
+  />\s*$/m,                            // > prompt (primary — confirmed from TUI)
+  /❯\s*$/m,                            // ❯ prompt (fallback)
+];
+
+const GEMINI_SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+const GEMINI_THINKING_PATTERNS = [
+  /\bThinking\b/i,
+  /\bGenerating\b/i,
+];
+
+const GEMINI_TOOL_PATTERNS = [
+  /\bRunning\b/i,
+  /\bExecuting\b/i,
+  /tool_use/i,
+];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function hasSpinner(lines: string[], spinners: string[]): boolean {
@@ -138,6 +158,16 @@ export function detectStatus(
       if (matchesAny(text, OC_TOOL_PATTERNS)) return 'tool_running';
       if (hasSpinner(lines, OC_SPINNER_CHARS)) {
         if (matchesAny(text, OC_THINKING_PATTERNS)) return 'thinking';
+        return 'streaming';
+      }
+      break;
+
+    case 'gemini':
+      if (matchesAny(tail, GEMINI_IDLE_PATTERNS) && !hasSpinner(lines, GEMINI_SPINNER_CHARS))
+        return 'idle';
+      if (matchesAny(text, GEMINI_TOOL_PATTERNS)) return 'tool_running';
+      if (hasSpinner(lines, GEMINI_SPINNER_CHARS)) {
+        if (matchesAny(text, GEMINI_THINKING_PATTERNS)) return 'thinking';
         return 'streaming';
       }
       break;

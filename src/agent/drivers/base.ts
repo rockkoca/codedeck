@@ -12,6 +12,8 @@ export interface LaunchOptions {
   codexSessionId?: string;
   /** Codex model override — passed as `-m MODEL` flag on launch. */
   codexModel?: string;
+  /** Gemini session UUID for `gemini --resume <UUID>`. */
+  geminiSessionId?: string;
 }
 
 export interface AgentDriver {

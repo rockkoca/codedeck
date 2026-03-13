@@ -25,6 +25,8 @@ export interface SessionRecord {
   ccSessionId?: string;
   /** Codex session UUID extracted from rollout filename, used for `codex resume <UUID>`. */
   codexSessionId?: string;
+  /** Gemini session UUID obtained from stream-json init event, used for `gemini --resume <UUID>`. */
+  geminiSessionId?: string;
 }
 
 export interface SessionStore {
