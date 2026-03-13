@@ -381,17 +381,23 @@ export class TerminalStreamer {
   // ── Raw data handling ───────────────────────────────────────────────────────
 
   private onRawData(sessionName: string, data: Buffer): void {
-    // Dual-layer idle detection (Task 3.5): any raw bytes → session active
-    const wasIdle = this.idleState.get(sessionName) ?? false;
-    this.lastRawAt.set(sessionName, Date.now());
-    if (wasIdle) {
-      this.idleState.set(sessionName, false);
-      timelineEmitter.emit(sessionName, 'session.state', { state: 'running' });
+    const hasStructuredWatcher = isWatching(sessionName) || isCodexWatching(sessionName);
+
+    // Idle detection: skip for sessions with a structured watcher (CC/Codex).
+    // Those sessions get authoritative idle/running signals via hooks and JSONL events,
+    // so raw bytes (cursor blink, prompt redraws) must not cause spurious oscillation.
+    if (!hasStructuredWatcher) {
+      const wasIdle = this.idleState.get(sessionName) ?? false;
+      this.lastRawAt.set(sessionName, Date.now());
+      if (wasIdle) {
+        this.idleState.set(sessionName, false);
+        timelineEmitter.emit(sessionName, 'session.state', { state: 'running' });
+      }
+      this.resetIdleTimer(sessionName);
     }
-    this.resetIdleTimer(sessionName);
 
     // Text extraction — skip if a structured watcher is active (higher quality source)
-    if (!isWatching(sessionName) && !isCodexWatching(sessionName)) {
+    if (!hasStructuredWatcher) {
       processRawPtyData(sessionName, data);
     }
 
