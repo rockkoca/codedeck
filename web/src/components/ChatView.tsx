@@ -95,7 +95,8 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
 
   for (const event of consolidated) {
     if (event.type === 'assistant.text') {
-      const text = String(event.payload.text ?? '');
+      // Trim and collapse 3+ consecutive blank lines to 1 (CC output often has many trailing newlines)
+      const text = String(event.payload.text ?? '').trim().replace(/\n{3,}/g, '\n\n');
       if (!text) continue;
       if (pendingText.length === 0) {
         pendingKey = event.eventId;
@@ -232,9 +233,10 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
 
     case 'session.state': {
       const state = String(event.payload.state ?? '');
+      // Don't show 'running' — tool.call events already indicate activity
+      if (state === 'running') return null;
       const stateLabel: Record<string, string> = {
         idle: 'Agent idle — waiting for input',
-        running: 'Agent working...',
         starting: 'Session starting...',
         stopped: 'Session stopped',
       };
