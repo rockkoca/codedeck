@@ -397,4 +397,83 @@ describe('WsBridge', () => {
       expect(subscribes).toHaveLength(1);
     });
   });
+
+  // ── P0: session-scoped privacy routing ────────────────────────────────────
+  // These tests verify that session-private messages (timeline history/replay,
+  // notifications, tool state, command acks) are NEVER broadcast to browsers
+  // subscribed to a different session.
+
+  describe('session-scoped privacy routing (P0)', () => {
+    /** Set up bridge with daemon + two browsers each subscribed to a different session */
+    async function setupTwoBrowsers() {
+      const bridge = WsBridge.get(serverId);
+      const daemonWs = new MockWs();
+      bridge.handleDaemonConnection(daemonWs as never, makeDb('valid-hash'), {} as never);
+      daemonWs.emit('message', JSON.stringify({ type: 'auth', serverId, token: 't' }));
+      await flushAsync();
+
+      const browserA = new MockWs();
+      const browserB = new MockWs();
+      bridge.handleBrowserConnection(browserA as never, 'user-a', makeDb('valid-hash'));
+      bridge.handleBrowserConnection(browserB as never, 'user-b', makeDb('valid-hash'));
+
+      browserA.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'session-a' }));
+      browserB.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'session-b' }));
+      await flushAsync();
+
+      // Clear setup noise
+      browserA.sent.length = 0;
+      browserB.sent.length = 0;
+
+      return { bridge, daemonWs, browserA, browserB };
+    }
+
+    const sessionScopedCases: Array<[string, Record<string, unknown>, string]> = [
+      ['timeline.history', { type: 'timeline.history', sessionName: 'session-a', events: [{ eventId: 'e1' }], epoch: 1 }, 'session-a'],
+      ['timeline.replay', { type: 'timeline.replay', sessionName: 'session-a', events: [], truncated: false, epoch: 1 }, 'session-a'],
+      ['timeline.event', { type: 'timeline.event', event: { sessionId: 'session-a', eventId: 'e2', type: 'test' } }, 'session-a'],
+      ['command.ack', { type: 'command.ack', session: 'session-a', commandId: 'c1', status: 'ok' }, 'session-a'],
+      ['subsession.response', { type: 'subsession.response', sessionName: 'session-a', status: 'idle' }, 'session-a'],
+      ['session.idle', { type: 'session.idle', session: 'session-a', project: 'p', agentType: 'claude-code' }, 'session-a'],
+      ['session.notification', { type: 'session.notification', session: 'session-a', project: 'p', title: 't', message: 'm' }, 'session-a'],
+      ['session.tool', { type: 'session.tool', session: 'session-a', tool: 'bash' }, 'session-a'],
+    ];
+
+    for (const [label, daemonMsg, targetSession] of sessionScopedCases) {
+      it(`${label}: delivered only to ${targetSession} subscriber, not to other session`, async () => {
+        const { daemonWs, browserA, browserB } = await setupTwoBrowsers();
+
+        daemonWs.emit('message', JSON.stringify(daemonMsg));
+        await flushAsync();
+
+        // browserA (subscribed to session-a) must receive it
+        expect(browserA.sentStrings.length).toBeGreaterThan(0);
+        // browserB (subscribed to session-b) must NOT receive it — privacy violation
+        expect(browserB.sentStrings.length).toBe(0);
+      });
+    }
+
+    it('timeline.history for session-b is NOT delivered to session-a subscriber', async () => {
+      const { daemonWs, browserA, browserB } = await setupTwoBrowsers();
+
+      daemonWs.emit('message', JSON.stringify({
+        type: 'timeline.history', sessionName: 'session-b', events: [{ secret: 'data' }], epoch: 1,
+      }));
+      await flushAsync();
+
+      expect(browserA.sentStrings.length).toBe(0); // session-a browser must be silent
+      expect(browserB.sentStrings.length).toBeGreaterThan(0);
+    });
+
+    it('session_event (lifecycle) is broadcast to all browsers', async () => {
+      const { daemonWs, browserA, browserB } = await setupTwoBrowsers();
+
+      daemonWs.emit('message', JSON.stringify({ type: 'session_event', event: 'started', session: 'session-a' }));
+      await flushAsync();
+
+      // session lifecycle events (connected/disconnected) are intentionally broadcast
+      expect(browserA.sentStrings.length).toBeGreaterThan(0);
+      expect(browserB.sentStrings.length).toBeGreaterThan(0);
+    });
+  });
 });
