@@ -278,6 +278,8 @@ body {
 .subcard-running { font-size: 8px; color: #4ade80; }
 
 .subcard-preview { flex: 1; overflow: hidden; pointer-events: none; }
+.subcard-resize-handle { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: ew-resize; background: transparent; z-index: 10; transition: background 0.15s; }
+.subcard-resize-handle:hover { background: rgba(59,130,246,0.4); }
 
 @media (max-width: 640px) {
   .subcard { width: 260px; height: 190px; min-width: 260px; }
