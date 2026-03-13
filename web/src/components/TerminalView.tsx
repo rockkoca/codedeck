@@ -253,6 +253,10 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       writingCountRef.current++;
       term.write(data, () => {
         writingCountRef.current--;
+        // Snap to bottom after each PTY write. CC redraws its UI from cursor-home
+        // (\x1b[H) which makes xterm follow the cursor to the top; snapping here
+        // ensures the viewport stays at the bottom showing the latest output.
+        term.scrollToBottom();
       });
     });
   }, [ws, sessionName]);
