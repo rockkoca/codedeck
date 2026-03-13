@@ -120,7 +120,8 @@ export function useTimeline(
       const existingIds = new Set(prev.map((e) => e.eventId));
       const newEvents = incoming.filter((e) => !existingIds.has(e.eventId));
       if (newEvents.length === 0) return prev;
-      const merged = [...prev, ...newEvents].sort((a, b) => a.seq - b.seq);
+      // Sort by timestamp (not seq) — seq resets across epochs and would interleave
+      const merged = [...prev, ...newEvents].sort((a, b) => a.ts - b.ts);
       return merged.length > MAX_MEMORY_EVENTS
         ? merged.slice(merged.length - MAX_MEMORY_EVENTS)
         : merged;
