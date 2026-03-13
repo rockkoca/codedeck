@@ -196,7 +196,10 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
     window.addEventListener('focus', onWindowFocus);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver((entries) => {
+      // Skip when container is hidden (display:none → dimensions are 0)
+      const rect = entries[0]?.contentRect;
+      if (!rect || rect.width === 0 || rect.height === 0) return;
       fittingRef.current = true;
       fitAddon.fit();
       // Snap to bottom immediately after fit (reflow can reset viewportY to 0)
