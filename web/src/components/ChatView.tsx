@@ -15,6 +15,8 @@ interface Props {
   sessionId?: string | null;
   /** Receives a function that forces the chat list to scroll to the bottom. */
   onScrollBottomFn?: (fn: () => void) => void;
+  /** When true, render as a non-interactive preview (no scroll button, no status bar) */
+  preview?: boolean;
 }
 
 /** A merged view item — either a single event, merged assistant text, or collapsed tool summary. */
@@ -125,7 +127,7 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
   return items;
 }
 
-export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn }: Props) {
+export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const autoScrollRef = useRef(true);
@@ -238,13 +240,13 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
         )}
       </div>
       {/* Thinking status bar — fixed at bottom, shows real CC thinking from JSONL */}
-      {statusText && (
+      {!preview && statusText && (
         <div class="chat-thinking-bar">
           <span class="chat-thinking-dots">●●●</span>
           {' '}{truncate(statusText, 120)}
         </div>
       )}
-      {showScrollBtn && (
+      {!preview && showScrollBtn && (
         <button
           class="chat-scroll-btn"
           onClick={() => {

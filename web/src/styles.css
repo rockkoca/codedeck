@@ -244,17 +244,41 @@ body {
 .desktop-view-toggle { display: flex; justify-content: flex-end; padding: 2px 8px; background: #0f172a; }
 .desktop-view-toggle .view-toggle { font-size: 12px; padding: 2px 8px; }
 
-/* ── Sub-session bar ──────────────────────────────────────────────────────── */
-.subsession-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: #0d1117; border-top: 1px solid #1e293b; overflow-x: auto; flex-shrink: 0; min-height: 36px; }
-.subsession-card { display: flex; align-items: center; gap: 5px; padding: 4px 12px; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #94a3b8; cursor: pointer; font-size: 13px; white-space: nowrap; transition: background 0.15s, border-color 0.15s; max-width: 160px; }
-.subsession-card:hover { background: #253348; border-color: #475569; }
-.subsession-card.open { border-color: #3b82f6; color: #93c5fd; background: #1e3a5f; }
-.subsession-card.mobile { padding: 3px 8px; font-size: 12px; max-width: 60px; }
-.subsession-card-icon { font-size: 14px; flex-shrink: 0; }
-.subsession-card-label { overflow: hidden; text-overflow: ellipsis; }
-.subsession-card-badge { font-size: 10px; color: #f59e0b; flex-shrink: 0; }
-.subsession-add-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #1e293b; border: 1px dashed #475569; border-radius: 6px; color: #64748b; cursor: pointer; font-size: 18px; flex-shrink: 0; transition: background 0.15s, color 0.15s; }
-.subsession-add-btn:hover { background: #253348; color: #94a3b8; border-color: #64748b; }
+/* ── Sub-session preview cards ────────────────────────────────────────────── */
+.subcard-bar { background: #0d1117; border-top: 1px solid #1e293b; flex-shrink: 0; }
+.subcard-toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; }
+.subcard-toolbar-btn { background: none; border: 1px solid #334155; border-radius: 4px; color: #64748b; cursor: pointer; font-size: 12px; padding: 2px 6px; transition: all 0.12s; }
+.subcard-toolbar-btn:hover { border-color: #475569; color: #94a3b8; }
+.subcard-toolbar-label { font-size: 11px; color: #475569; flex: 1; }
+.subcard-toolbar-add { background: none; border: 1px dashed #475569; border-radius: 4px; color: #64748b; cursor: pointer; font-size: 16px; padding: 0 8px; margin-left: auto; transition: all 0.12s; }
+.subcard-toolbar-add:hover { border-color: #3b82f6; color: #93c5fd; }
+
+/* Card scroll container */
+.subcard-scroll { padding: 6px 8px; gap: 10px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+.subcard-scroll::-webkit-scrollbar { height: 4px; }
+.subcard-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+.subcard-single { display: flex; flex-wrap: nowrap; }
+.subcard-double { display: grid; grid-template-rows: repeat(2, auto); grid-auto-flow: column; grid-auto-columns: 350px; }
+
+/* Individual card */
+.subcard { width: 350px; height: 250px; min-width: 350px; background: #0f1117; border: 1px solid #334155; border-radius: 8px; overflow: hidden; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; display: flex; flex-direction: column; }
+.subcard:hover { border-color: #475569; box-shadow: 0 2px 12px rgba(0,0,0,0.4); }
+.subcard-open { border-color: #3b82f6; box-shadow: 0 0 8px rgba(59,130,246,0.3); }
+
+.subcard-header { display: flex; align-items: center; gap: 6px; padding: 5px 10px; background: #1a2233; border-bottom: 1px solid #1e293b; flex-shrink: 0; font-size: 12px; color: #94a3b8; }
+.subcard-icon { font-size: 13px; }
+.subcard-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.subcard-badge { font-size: 10px; color: #f59e0b; }
+.subcard-running { font-size: 8px; color: #4ade80; }
+
+.subcard-preview { flex: 1; overflow: hidden; position: relative; pointer-events: none; }
+.subcard-preview-inner { transform: scale(0.5); transform-origin: top left; position: absolute; top: 0; left: 0; }
+
+@media (max-width: 640px) {
+  .subcard { width: 260px; height: 190px; min-width: 260px; }
+  .subcard-preview-inner { transform: scale(0.37); }
+  .subcard-double { grid-auto-columns: 260px; }
+}
 
 /* ── Sub-session window ───────────────────────────────────────────────────── */
 .subsession-window { display: flex; flex-direction: column; background: #0f1117; border: 1px solid #334155; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); overflow: hidden; min-width: 300px; min-height: 200px; }

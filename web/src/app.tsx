@@ -217,6 +217,8 @@ export function App() {
   const chatScrollFnRef = useRef<(() => void) | null>(null);
   const openSubIdsRef = useRef(openSubIds);
   openSubIdsRef.current = openSubIds;
+  const subSessionsRef = useRef(subSessions);
+  subSessionsRef.current = subSessions;
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const defaultViewMode: ViewMode = isMobile ? 'chat' : 'terminal';
@@ -360,9 +362,9 @@ export function App() {
             ws.sendResize(s.name, 200, 50);
           }
         }
-        // Re-subscribe open sub-session terminals
-        for (const id of openSubIdsRef.current) {
-          ws.subscribeTerminal(`deck_sub_${id}`);
+        // Re-subscribe all sub-session terminals (for preview cards)
+        for (const sub of subSessionsRef.current) {
+          ws.subscribeTerminal(sub.sessionName);
         }
       }
     });
@@ -405,22 +407,22 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, sessionNamesKey]);
 
-  // Subscribe terminal for open sub-sessions
-  const openSubIdsKey = [...openSubIds].sort().join(',');
+  // Subscribe terminal for ALL sub-sessions (needed for preview cards + open windows)
+  const subSessionNamesKey = subSessions.map((s) => s.sessionName).sort().join(',');
   useEffect(() => {
     const ws = wsRef.current;
-    if (!ws?.connected) return;
-    const ids = [...openSubIds];
-    for (const id of ids) {
-      try { ws.subscribeTerminal(`deck_sub_${id}`); } catch { /* ignore */ }
+    if (!ws?.connected || subSessions.length === 0) return;
+    const names = subSessions.map((s) => s.sessionName);
+    for (const name of names) {
+      try { ws.subscribeTerminal(name); } catch { /* ignore */ }
     }
     return () => {
-      for (const id of ids) {
-        try { ws.unsubscribeTerminal(`deck_sub_${id}`); } catch { /* ignore */ }
+      for (const name of names) {
+        try { ws.unsubscribeTerminal(name); } catch { /* ignore */ }
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, openSubIdsKey]);
+  }, [connected, subSessionNamesKey]);
 
   // When switching to a session in terminal mode, trigger fit (display:none → flex needs refit)
   useEffect(() => {
@@ -726,6 +728,10 @@ export function App() {
                 openIds={openSubIds}
                 onOpen={toggleSubSession}
                 onNew={() => setShowSubDialog(true)}
+                ws={wsRef.current}
+                connected={connected}
+                onDiff={registerDiffApplyer}
+                onHistory={registerHistoryApplyer}
               />
             )}
 
