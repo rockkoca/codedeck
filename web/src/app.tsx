@@ -277,16 +277,18 @@ export function App() {
           ws.requestSessionList();
         }
         if (msg.event === 'disconnected') setConnected(false);
-        setSessions((prev) => {
-          const existing = prev.find((s) => s.name === msg.session);
-          if (!existing && msg.session) {
-            return [...prev, { name: msg.session, project: '', role: 'brain', agentType: 'unknown', state: msg.state as SessionInfo['state'] }];
-          }
-          return prev.map((s) => s.name === msg.session ? { ...s, state: msg.state as SessionInfo['state'] } : s);
-        });
+        if (msg.session && !msg.session.startsWith('deck_sub_')) {
+          setSessions((prev) => {
+            const existing = prev.find((s) => s.name === msg.session);
+            if (!existing && msg.session) {
+              return [...prev, { name: msg.session, project: '', role: 'brain', agentType: 'unknown', state: msg.state as SessionInfo['state'] }];
+            }
+            return prev.map((s) => s.name === msg.session ? { ...s, state: msg.state as SessionInfo['state'] } : s);
+          });
+        }
       }
       if (msg.type === 'session_list') {
-        setSessions((prev) => msg.sessions.map((s) => {
+        setSessions((prev) => msg.sessions.filter((s) => !s.name.startsWith('deck_sub_')).map((s) => {
           const existing = prev.find((p) => p.name === s.name);
           return {
             name: s.name,

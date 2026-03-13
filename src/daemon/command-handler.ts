@@ -4,7 +4,7 @@
  */
 import { startProject, stopProject, type ProjectConfig } from '../agent/session-manager.js';
 import { sendKeys, sendKeysDelayedEnter, sendRawInput, resizeSession } from '../agent/tmux.js';
-import { listSessions } from '../store/session-store.js';
+import { listSessions, getSession } from '../store/session-store.js';
 import { routeMessage, type InboundMessage, type RouterContext } from '../router/message-router.js';
 import { terminalStreamer, type StreamSubscriber } from './terminal-streamer.js';
 import type { ServerLink } from './server-link.js';
@@ -194,6 +194,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
     case 'subsession.read_response':
       void handleSubSessionReadResponse(cmd, serverLink);
       break;
+    case 'subsession.set_model':
+      void handleSubSessionSetModel(cmd);
+      break;
     case 'auth_ok':
     case 'heartbeat':
     case 'heartbeat_ack':
@@ -306,6 +309,29 @@ async function handleStop(cmd: Record<string, unknown>): Promise<void> {
   }
 }
 
+/**
+ * Send a command to a session, handling `!`-prefixed shell commands:
+ * - claude-code: send `!` first (with delayed-Enter), then send the rest of the command
+ * - codex: strip `!` and send the shell command directly (Codex has no `!` prefix)
+ * - others: send as-is
+ */
+async function sendShellAwareCommand(sessionName: string, text: string, agentType: string): Promise<void> {
+  if (text.startsWith('!')) {
+    const shellCmd = text.slice(1).trimStart();
+    if (agentType === 'codex') {
+      // Codex: just send the shell command without `!`
+      await sendKeysDelayedEnter(sessionName, shellCmd);
+    } else {
+      // claude-code (and others): send `!` first to enter shell mode, then the command
+      await sendKeysDelayedEnter(sessionName, '!');
+      await new Promise((r) => setTimeout(r, 300));
+      await sendKeysDelayedEnter(sessionName, shellCmd);
+    }
+  } else {
+    await sendKeysDelayedEnter(sessionName, text);
+  }
+}
+
 async function handleSend(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
   const sessionName = (cmd.sessionName ?? cmd.session) as string | undefined;
   const text = cmd.text as string | undefined;
@@ -337,7 +363,8 @@ async function handleSend(cmd: Record<string, unknown>, serverLink: ServerLink):
   // rapid character sequences (including trailing \r) as pastes. The small delay
   // has no visible downside for other agents, so apply it universally.
   try {
-    await sendKeysDelayedEnter(sessionName, text);
+    const agentType = getSession(sessionName)?.agentType ?? 'unknown';
+    await sendShellAwareCommand(sessionName, text, agentType);
     timelineEmitter.emit(sessionName, 'user.message', { text });
     // Emit accepted ack (accepted_legacy for fallback IDs so callers can distinguish)
     const status = isLegacy ? 'accepted_legacy' : 'accepted';
@@ -387,13 +414,15 @@ async function handleResize(cmd: Record<string, unknown>): Promise<void> {
 }
 
 function handleGetSessions(serverLink: ServerLink): void {
-  const sessions = listSessions().map((s) => ({
-    name: s.name,
-    project: s.projectName,
-    role: s.role,
-    agentType: s.agentType,
-    state: s.state,
-  }));
+  const sessions = listSessions()
+    .filter((s) => !s.name.startsWith('deck_sub_'))
+    .map((s) => ({
+      name: s.name,
+      project: s.projectName,
+      role: s.role,
+      agentType: s.agentType,
+      state: s.state,
+    }));
   try {
     serverLink.send({ type: 'session_list', sessions });
   } catch {
@@ -576,6 +605,30 @@ async function handleSubSessionDetectShells(serverLink: ServerLink): Promise<voi
   try {
     serverLink.send({ type: 'subsession.shells', shells });
   } catch { /* not connected */ }
+}
+
+async function handleSubSessionSetModel(cmd: Record<string, unknown>): Promise<void> {
+  const sessionName = cmd.sessionName as string | undefined;
+  const model = cmd.model as string | undefined;
+  const cwd = cmd.cwd as string | undefined;
+
+  if (!sessionName || !model) {
+    logger.warn('subsession.set_model: missing sessionName or model');
+    return;
+  }
+
+  // Extract sub-session id from name (deck_sub_{id})
+  const prefix = 'deck_sub_';
+  const id = sessionName.startsWith(prefix) ? sessionName.slice(prefix.length) : null;
+  if (!id) {
+    logger.warn({ sessionName }, 'subsession.set_model: invalid session name');
+    return;
+  }
+
+  logger.info({ sessionName, model }, 'Restarting Codex sub-session with new model');
+  await stopSubSession(sessionName).catch(() => {});
+  await startSubSession({ id, type: 'codex', cwd: cwd ?? null, codexModel: model })
+    .catch((e: unknown) => logger.error({ err: e, sessionName, model }, 'subsession.set_model restart failed'));
 }
 
 async function handleSubSessionReadResponse(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {

@@ -29,8 +29,11 @@ interface Props {
 
 type MenuAction = 'restart' | 'new' | 'stop';
 type ModelChoice = 'opus' | 'sonnet' | 'haiku';
+type CodexModelChoice = 'o4-mini' | 'o3' | 'gpt-4.1' | 'gpt-4o';
 
 const MODEL_STORAGE_KEY = 'codedeck-model';
+const CODEX_MODEL_STORAGE_KEY = 'codedeck-codex-model';
+const CODEX_MODELS: CodexModelChoice[] = ['o4-mini', 'o3', 'gpt-4.1', 'gpt-4o'];
 
 // Enter moved after ↓ arrow
 const SHORTCUTS: Array<{ label: string; title: string; data: string; wide?: boolean }> = [
@@ -53,12 +56,21 @@ function loadModel(): ModelChoice | null {
   return null;
 }
 
+function loadCodexModel(): CodexModelChoice | null {
+  try {
+    const v = localStorage.getItem(CODEX_MODEL_STORAGE_KEY);
+    if (CODEX_MODELS.includes(v as CodexModelChoice)) return v as CodexModelChoice;
+  } catch { /* ignore */ }
+  return null;
+}
+
 export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend }: Props) {
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [model, setModel] = useState<ModelChoice | null>(loadModel);
+  const [codexModel, setCodexModel] = useState<CodexModelChoice | null>(loadCodexModel);
   const [confirm, setConfirm] = useState<MenuAction | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const modelRef = useRef<HTMLDivElement>(null);
@@ -89,6 +101,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
   // Send/action buttons disabled when disconnected or no session
   const disabled = !connected || !hasSession;
   const isClaudeCode = activeSession?.agentType === 'claude-code';
+  const isCodex = activeSession?.agentType === 'codex';
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -242,6 +255,15 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     onAfterAction?.();
   };
 
+  const handleCodexModelSelect = (m: CodexModelChoice) => {
+    if (!ws || !activeSession) return;
+    setCodexModel(m);
+    try { localStorage.setItem(CODEX_MODEL_STORAGE_KEY, m); } catch { /* ignore */ }
+    ws.subSessionSetModel(activeSession.name, m, activeSession.projectDir);
+    setModelOpen(false);
+    onAfterAction?.();
+  };
+
   const placeholder = !hasSession ? 'No session' : !connected ? `Reconnecting… (send queued)` : `Send to ${sessionDisplayName ?? activeSession?.name ?? 'session'}…`;
 
   return (
@@ -283,6 +305,32 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
                     onClick={() => handleModelSelect(m)}
                   >
                     {model === m ? '● ' : '○ '}{m.charAt(0).toUpperCase() + m.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {isCodex && (
+          <div class="shortcuts-model" ref={modelRef}>
+            <button
+              class="shortcut-btn"
+              onClick={() => setModelOpen((o) => !o)}
+              disabled={disabled}
+              title={codexModel ? `Model: ${codexModel}` : 'Model: default — tap to select'}
+              style={{ color: codexModel ? '#34d399' : '#6b7280', fontSize: 10 }}
+            >
+              {codexModel ?? 'default'}
+            </button>
+            {modelOpen && (
+              <div class="menu-dropdown">
+                {CODEX_MODELS.map((m) => (
+                  <button
+                    key={m}
+                    class={`menu-item ${codexModel === m ? 'menu-item-active' : ''}`}
+                    onClick={() => handleCodexModelSelect(m)}
+                  >
+                    {codexModel === m ? '● ' : '○ '}{m}
                   </button>
                 ))}
               </div>

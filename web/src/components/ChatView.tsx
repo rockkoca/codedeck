@@ -285,7 +285,7 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
         <div class="chat-event chat-tool">
           <span class="chat-tool-icon">{'>'}</span>
           <span class="chat-tool-name">{String(event.payload.tool ?? 'tool')}</span>
-          {event.payload.input ? <span class="chat-tool-input">{' '}{truncate(String(event.payload.input), 60)}</span> : null}
+          {event.payload.input ? <span class="chat-tool-input">{' '}{String(event.payload.input)}</span> : null}
         </div>
       );
 
@@ -294,7 +294,7 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
       return (
         <div class="chat-event chat-tool">
           <span class="chat-tool-icon">{'<'}</span>
-          {event.payload.error ? `error: ${truncate(String(event.payload.error), 80)}` : 'done'}
+          {event.payload.error ? `error: ${String(event.payload.error)}` : 'done'}
         </div>
       );
 

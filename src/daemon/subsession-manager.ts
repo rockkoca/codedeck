@@ -18,6 +18,7 @@ export interface SubSessionRecord {
   shellBin?: string | null;
   cwd?: string | null;
   ccSessionId?: string | null;
+  codexModel?: string | null;
 }
 
 export function subSessionName(id: string): string {
@@ -40,6 +41,7 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
     cwd: sub.cwd ?? undefined,
     ...(sub.shellBin ? { shellBin: sub.shellBin } : {}),
     ...(sub.ccSessionId ? { ccSessionId: sub.ccSessionId } : {}),
+    ...(sub.codexModel ? { codexModel: sub.codexModel } : {}),
   } as Parameters<typeof driver.buildLaunchCommand>[1]);
 
   await newSession(sessionName, launchCmd, { cwd: sub.cwd ?? undefined });

@@ -10,6 +10,8 @@ export interface LaunchOptions {
   ccSessionId?: string;
   /** Codex session UUID for `codex resume <UUID>`. */
   codexSessionId?: string;
+  /** Codex model override — passed as `-m MODEL` flag on launch. */
+  codexModel?: string;
 }
 
 export interface AgentDriver {

@@ -19,14 +19,15 @@ export class CodexDriver implements AgentDriver {
 
   buildLaunchCommand(_sessionName: string, opts?: LaunchOptions): string {
     const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
+    const modelFlag = opts?.codexModel ? ` -m ${JSON.stringify(opts.codexModel)}` : '';
     if (opts?.codexSessionId) {
-      return `${cwd}codex -s danger-full-access resume ${opts.codexSessionId}`;
+      return `${cwd}codex${modelFlag} -s danger-full-access resume ${opts.codexSessionId}`;
     }
     if (opts?.fresh) {
-      return `${cwd}codex -s danger-full-access`;
+      return `${cwd}codex${modelFlag} -s danger-full-access`;
     }
     // Default: resume last session; fall back to fresh if no history
-    return `${cwd}codex -s danger-full-access resume --last || codex -s danger-full-access`;
+    return `${cwd}codex${modelFlag} -s danger-full-access resume --last || codex${modelFlag} -s danger-full-access`;
   }
 
   buildResumeCommand(_sessionName: string, opts?: LaunchOptions): string {

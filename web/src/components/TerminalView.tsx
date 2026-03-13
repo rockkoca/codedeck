@@ -243,10 +243,11 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   }, [connected, sessionName]);
 
   // Raw PTY bytes: feed directly into xterm.js.
-  // Register handler during render (not in useEffect) to avoid timing gaps
-  // where ws becomes available but the effect hasn't re-run yet.
-  if (ws) {
-    ws.onTerminalRaw(sessionName, (data: Uint8Array) => {
+  // Use useEffect so cleanup properly unsubscribes this specific handler instance,
+  // allowing multiple TerminalViews for the same session (e.g. preview card + window).
+  useEffect(() => {
+    if (!ws) return;
+    return ws.onTerminalRaw(sessionName, (data: Uint8Array) => {
       const term = termRef.current;
       if (!term) return;
       writingCountRef.current++;
@@ -254,12 +255,7 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
         writingCountRef.current--;
       });
     });
-  }
-  // Cleanup on unmount only
-  useEffect(() => {
-    return () => { wsRef.current?.onTerminalRaw(sessionName, null); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ws, sessionName]);
 
   // Handle terminal.stream_reset — reset xterm state so stale ANSI doesn't corrupt (Task 5.4)
   useEffect(() => {

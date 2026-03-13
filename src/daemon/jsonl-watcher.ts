@@ -355,9 +355,10 @@ export async function startWatching(sessionName: string, workDir: string): Promi
     }
   }
 
-  // Poll every 2s as a reliable fallback (fs.watch on macOS misses file appends)
+  // Poll every 2s as a reliable fallback (fs.watch on macOS misses file appends).
+  // Uses pollTick (not drainNewLines) so it can re-acquire a file if the claim was stolen.
   state.pollTimer = setInterval(() => {
-    void drainNewLines(sessionName, state);
+    void pollTick(sessionName, state);
   }, 2000);
 
   // Watch the project directory for new/modified JSONL files (best-effort, faster than poll)
@@ -515,9 +516,48 @@ async function checkNewer(candidate: string, current: string | null): Promise<bo
   }
 }
 
+/**
+ * Poll tick for startWatching — drains new lines and re-acquires a file if activeFile was released.
+ * Separate from drainNewLines so startWatchingFile's poll timer stays simple.
+ */
+async function pollTick(sessionName: string, state: WatcherState): Promise<void> {
+  // If active file was stolen by another session, try to find a claimable replacement
+  if (!state.activeFile) {
+    try {
+      const entries = await readdir(state.projectDir);
+      const jsonls = entries.filter((e) => e.endsWith('.jsonl'));
+      const withStats = await Promise.all(
+        jsonls.map(async (f) => {
+          const fp = join(state.projectDir, f);
+          if (!canClaim(sessionName, fp)) return null;
+          try { return { fp, mtime: (await stat(fp)).mtimeMs }; } catch { return null; }
+        }),
+      );
+      const best = withStats
+        .filter((x): x is { fp: string; mtime: number } => x !== null)
+        .sort((a, b) => b.mtime - a.mtime)[0];
+      if (best) {
+        claimFile(sessionName, best.fp);
+        state.activeFile = best.fp;
+        try {
+          state.fileOffset = (await stat(best.fp)).size;
+          await emitRecentHistory(sessionName, best.fp);
+        } catch { state.fileOffset = 0; }
+      }
+    } catch { /* ignore */ }
+  }
+  await drainNewLines(sessionName, state);
+}
+
 /** Read any new lines from the active JSONL file since the last offset. */
 async function drainNewLines(sessionName: string, state: WatcherState): Promise<void> {
   if (!state.activeFile) return;
+
+  // If another session has claimed our active file, release it so we can re-acquire our own
+  if (!canClaim(sessionName, state.activeFile)) {
+    state.activeFile = null;
+    return;
+  }
 
   let fh: Awaited<ReturnType<typeof open>> | null = null;
   try {

@@ -204,7 +204,7 @@ export function SubSessionWindow({
         activeSession={sessionInfo}
         inputRef={inputRef}
         quickData={quickData}
-        hideShortcuts={viewMode === 'chat'}
+        hideShortcuts={false}
         onSend={scrollToBottom}
       />
     </div>

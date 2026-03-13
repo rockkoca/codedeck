@@ -60,8 +60,8 @@ export class WsClient {
   private _pingSentAt: number | null = null;
   private _onLatency: ((ms: number) => void) | null = null;
 
-  /** Per-session callbacks for raw PTY binary frames. */
-  private _terminalRawHandlers = new Map<string, (data: Uint8Array) => void>();
+  /** Per-session callbacks for raw PTY binary frames. Supports multiple subscribers per session. */
+  private _terminalRawHandlers = new Map<string, Set<(data: Uint8Array) => void>>();
 
   /** Per-session stream reset recovery state. */
   private resetState = new Map<string, {
@@ -91,13 +91,21 @@ export class WsClient {
     this._onLatency = fn;
   }
 
-  /** Register a per-session callback for raw PTY binary frames. Pass null to unregister. */
-  onTerminalRaw(sessionName: string, fn: ((data: Uint8Array) => void) | null): void {
-    if (fn) {
-      this._terminalRawHandlers.set(sessionName, fn);
-    } else {
-      this._terminalRawHandlers.delete(sessionName);
+  /** Register a per-session callback for raw PTY binary frames. Returns an unsubscribe function. */
+  onTerminalRaw(sessionName: string, fn: (data: Uint8Array) => void): () => void {
+    let handlers = this._terminalRawHandlers.get(sessionName);
+    if (!handlers) {
+      handlers = new Set();
+      this._terminalRawHandlers.set(sessionName, handlers);
     }
+    handlers.add(fn);
+    return () => {
+      const set = this._terminalRawHandlers.get(sessionName);
+      if (set) {
+        set.delete(fn);
+        if (set.size === 0) this._terminalRawHandlers.delete(sessionName);
+      }
+    };
   }
 
   connect(): void {
@@ -188,6 +196,10 @@ export class WsClient {
 
   subSessionReadResponse(sessionName: string): void {
     this.send({ type: 'subsession.read_response', sessionName });
+  }
+
+  subSessionSetModel(sessionName: string, model: string, cwd?: string): void {
+    this.send({ type: 'subsession.set_model', sessionName, model, cwd });
   }
 
   /** Request timeline event replay from the daemon for reconnection gap-fill. */
@@ -315,7 +327,7 @@ export class WsClient {
     if (data.length < 3 + nameLen) return;
     const sessionName = new TextDecoder().decode(data.slice(3, 3 + nameLen));
     const ptyData = data.slice(3 + nameLen);
-    this._terminalRawHandlers.get(sessionName)?.(ptyData);
+    this._terminalRawHandlers.get(sessionName)?.forEach((h) => h(ptyData));
   }
 
   /**
