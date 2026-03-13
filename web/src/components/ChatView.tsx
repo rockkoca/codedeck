@@ -200,17 +200,20 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onScrollBottomFn]);
 
-  // Auto-scroll on new events — only read autoScrollRef, not setState, to avoid re-trigger loops
+  // Auto-scroll on new events — use requestAnimationFrame so DOM has updated
   useEffect(() => {
     if (autoScrollRef.current) {
-      scrollToBottom();
+      requestAnimationFrame(() => {
+        scrollToBottom();
+      });
     }
   }, [viewItems.length, events.length]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    // Use generous threshold — 150px from bottom still counts as "at bottom"
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
     autoScrollRef.current = atBottom;
     setShowScrollBtn(!atBottom);
   };
