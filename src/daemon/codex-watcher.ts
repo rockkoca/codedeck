@@ -34,11 +34,14 @@ function codexSessionDir(d: Date): string {
   return join(homedir(), '.codex', 'sessions', String(yyyy), mm, dd);
 }
 
-/** Return today's and yesterday's session dirs (for midnight edge case). */
+/** Return the last 30 days of session dirs (newest first). */
 function recentSessionDirs(): string[] {
-  const now = new Date();
-  const yesterday = new Date(now.getTime() - 86_400_000);
-  return [codexSessionDir(now), codexSessionDir(yesterday)];
+  const dirs: string[] = [];
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(Date.now() - i * 86_400_000);
+    dirs.push(codexSessionDir(d));
+  }
+  return dirs;
 }
 
 // ── JSONL matching ─────────────────────────────────────────────────────────────
@@ -52,18 +55,21 @@ export async function readCwd(filePath: string): Promise<string | null> {
   let fh: Awaited<ReturnType<typeof open>> | null = null;
   try {
     fh = await open(filePath, 'r');
+    // The session_meta first line can be very large (includes full conversation context).
+    // Read only the first 4KB — enough to find the "cwd" field which appears early.
+    // We extract cwd via regex instead of full JSON.parse to avoid truncation issues.
     const buf = Buffer.allocUnsafe(4096);
     const { bytesRead } = await fh.read(buf, 0, 4096, 0);
     if (bytesRead === 0) return null;
 
-    const firstLine = buf.subarray(0, bytesRead).toString('utf8').split('\n')[0];
-    if (!firstLine) return null;
+    const snippet = buf.subarray(0, bytesRead).toString('utf8');
 
-    const raw = JSON.parse(firstLine) as Record<string, unknown>;
-    if (raw['type'] !== 'session_meta') return null;
+    // Verify this is a session_meta line
+    if (!snippet.includes('"session_meta"')) return null;
 
-    const payload = raw['payload'] as Record<string, unknown> | undefined;
-    return (payload?.['cwd'] as string) ?? null;
+    // Extract "cwd":"..." value — cwd paths don't contain quotes or backslashes
+    const m = /"cwd"\s*:\s*"([^"]+)"/.exec(snippet);
+    return m ? m[1] : null;
   } catch {
     return null;
   } finally {
@@ -213,6 +219,75 @@ interface WatcherState {
 
 const watchers = new Map<string, WatcherState>();
 
+// ── UUID extraction helpers ────────────────────────────────────────────────────
+
+const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/;
+
+/**
+ * Scan the last 30 days of session dirs for a rollout file whose session_meta.cwd matches
+ * workDir and whose mtime is > since. Returns the UUID from the filename, or null if not found.
+ * Polls every 1s for up to 60s.
+ */
+export async function extractNewRolloutUuid(workDir: string, since: number): Promise<string | null> {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    for (const dir of recentSessionDirs()) {
+      let entries: string[];
+      try {
+        entries = await readdir(dir);
+      } catch {
+        continue;
+      }
+
+      const rollouts = entries.filter((e) => e.startsWith('rollout-') && e.endsWith('.jsonl'));
+      for (const filename of rollouts) {
+        const uuidMatch = UUID_RE.exec(filename);
+        if (!uuidMatch) continue;
+
+        const fpath = join(dir, filename);
+        try {
+          const s = await stat(fpath);
+          if (s.mtimeMs <= since) continue;
+        } catch {
+          continue;
+        }
+
+        const cwd = await readCwd(fpath);
+        if (cwd && normalizePath(cwd) === normalizePath(workDir)) {
+          return uuidMatch[1];
+        }
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  return null;
+}
+
+/**
+ * Find the full path of a rollout file by UUID, scanning the last 30 days.
+ * Returns null if not found.
+ */
+export async function findRolloutPathByUuid(uuid: string): Promise<string | null> {
+  for (const dir of recentSessionDirs()) {
+    let entries: string[];
+    try {
+      entries = await readdir(dir);
+    } catch {
+      continue;
+    }
+
+    for (const filename of entries) {
+      if (!filename.startsWith('rollout-') || !filename.endsWith('.jsonl')) continue;
+      const uuidMatch = UUID_RE.exec(filename);
+      if (uuidMatch && uuidMatch[1] === uuid) {
+        return join(dir, filename);
+      }
+    }
+  }
+  return null;
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 export async function startWatching(sessionName: string, workDir: string): Promise<void> {
@@ -251,14 +326,59 @@ export async function startWatching(sessionName: string, workDir: string): Promi
     void drainNewLines(sessionName, state);
   }, 2000);
 
-  // Watch all recent dirs for new/modified rollout files
+  // Watch all recent dirs for new/modified rollout files.
+  // Only start a watcher for dirs that exist (or today's dir which Codex may create soon).
+  const todayDir = codexSessionDir(new Date());
   for (const dir of recentSessionDirs()) {
+    const isToday = dir === todayDir;
+    if (!isToday) {
+      // Skip non-existent historical dirs to avoid WARN spam
+      try { await stat(dir); } catch { continue; }
+    }
     void watchDir(sessionName, state, dir);
   }
 }
 
 export function isWatching(sessionName: string): boolean {
   return watchers.has(sessionName);
+}
+
+/**
+ * Watch a specific rollout file directly (used when UUID is already known).
+ * The file is expected to already exist.
+ */
+export async function startWatchingSpecificFile(sessionName: string, filePath: string): Promise<void> {
+  if (watchers.has(sessionName)) {
+    stopWatching(sessionName);
+  }
+
+  let fileSize = 0;
+  try {
+    const s = await stat(filePath);
+    fileSize = s.size;
+  } catch {
+    // file may not exist yet — start from 0
+  }
+
+  const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+  const state: WatcherState = {
+    workDir: dir,
+    activeFile: filePath,
+    fileOffset: fileSize,
+    abort: new AbortController(),
+    stopped: false,
+  };
+  watchers.set(sessionName, state);
+
+  await emitRecentHistory(sessionName, filePath);
+
+  // Poll every 2s as fallback
+  state.pollTimer = setInterval(() => {
+    void drainNewLines(sessionName, state);
+  }, 2000);
+
+  // Watch the parent dir for changes to this specific file
+  void watchDir(sessionName, state, dir);
 }
 
 export function stopWatching(sessionName: string): void {

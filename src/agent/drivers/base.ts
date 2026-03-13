@@ -8,6 +8,8 @@ export interface LaunchOptions {
   fresh?: boolean;
   /** CC session UUID for --session-id / --resume (CC sub-sessions only) */
   ccSessionId?: string;
+  /** Codex session UUID for `codex resume <UUID>`. */
+  codexSessionId?: string;
 }
 
 export interface AgentDriver {

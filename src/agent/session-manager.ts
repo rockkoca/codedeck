@@ -18,7 +18,7 @@ import {
 import logger from '../util/logger.js';
 import { timelineEmitter } from '../daemon/timeline-emitter.js';
 import { startWatching, startWatchingFile, stopWatching, isWatching, claudeProjectDir } from '../daemon/jsonl-watcher.js';
-import { startWatching as startCodexWatching, stopWatching as stopCodexWatching, isWatching as isCodexWatching } from '../daemon/codex-watcher.js';
+import { startWatching as startCodexWatching, startWatchingSpecificFile as startCodexWatchingFile, stopWatching as stopCodexWatching, isWatching as isCodexWatching, extractNewRolloutUuid, findRolloutPathByUuid } from '../daemon/codex-watcher.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
@@ -133,9 +133,27 @@ export async function restoreFromStore(): Promise<void> {
     } else if (s.agentType === 'claude-code' && s.projectDir && !isWatching(s.name)) {
       startCCWatcher(s.name, s.projectDir, s.ccSessionId);
     } else if (s.agentType === 'codex' && s.projectDir && !isCodexWatching(s.name)) {
-      startCodexWatching(s.name, s.projectDir).catch((e) =>
-        logger.warn({ err: e, session: s.name }, 'codex-watcher start failed (restore)'),
-      );
+      if (s.codexSessionId) {
+        findRolloutPathByUuid(s.codexSessionId).then((rolloutPath) => {
+          if (rolloutPath) {
+            startCodexWatchingFile(s.name, rolloutPath).catch((e) =>
+              logger.warn({ err: e, session: s.name }, 'codex-watcher startWatchingSpecificFile failed (restore)'),
+            );
+          } else {
+            startCodexWatching(s.name, s.projectDir).catch((e) =>
+              logger.warn({ err: e, session: s.name }, 'codex-watcher start failed (restore uuid fallback)'),
+            );
+          }
+        }).catch(() => {
+          startCodexWatching(s.name, s.projectDir).catch((e) =>
+            logger.warn({ err: e, session: s.name }, 'codex-watcher start failed (restore)'),
+          );
+        });
+      } else {
+        startCodexWatching(s.name, s.projectDir).catch((e) =>
+          logger.warn({ err: e, session: s.name }, 'codex-watcher start failed (restore)'),
+        );
+      }
     }
   }
 
@@ -176,7 +194,7 @@ export async function restoreFromStore(): Promise<void> {
       startCCWatcher(name, projectDir, record.ccSessionId);
     } else if (record.agentType === 'codex' && projectDir) {
       startCodexWatching(name, projectDir).catch((e) =>
-        logger.warn({ err: e, session: name }, 'codex-watcher start failed (restore)'),
+        logger.warn({ err: e, session: name }, 'codex-watcher start failed (discover)'),
       );
     }
     logger.info({ session: name, projectDir }, 'Discovered unregistered tmux session, registered');
@@ -216,6 +234,7 @@ export async function restartSession(record: SessionRecord): Promise<boolean> {
     projectDir: record.projectDir,
     skipStore: true,
     ccSessionId: record.ccSessionId,
+    codexSessionId: record.codexSessionId,
   });
 
   return true;
@@ -233,6 +252,8 @@ interface LaunchOpts {
   fresh?: boolean;
   /** CC session UUID for --session-id / --resume. Generated if absent for CC sessions. */
   ccSessionId?: string;
+  /** Codex session UUID for `codex resume <UUID>`. */
+  codexSessionId?: string;
 }
 
 export async function launchSession(opts: LaunchOpts): Promise<void> {
@@ -267,10 +288,16 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
     // If exists and no stored UUID: ccSessionId stays undefined → fall back to dir scan
   }
 
+  // For Codex sessions: resolve codexSessionId from opts or store
+  let codexSessionId = opts.codexSessionId;
+  if (agentType === 'codex' && !codexSessionId) {
+    codexSessionId = getSession(name)?.codexSessionId;
+  }
+
   if (!exists) {
-    const launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh, ccSessionId });
+    const launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh, ccSessionId, codexSessionId });
     await newSession(name, launchCmd, { cwd: projectDir, env: extraEnv });
-    logger.info({ session: name, agentType, ccSessionId }, 'Launched session');
+    logger.info({ session: name, agentType, ccSessionId, codexSessionId }, 'Launched session');
   }
 
   // Always record paneId — it changes on each session creation/restart
@@ -297,6 +324,7 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
       updatedAt: Date.now(),
       paneId,
       ...(ccSessionId ? { ccSessionId } : {}),
+      ...(codexSessionId ? { codexSessionId } : {}),
     };
     upsertSession(record);
     emitSessionPersist(record, name);
@@ -308,9 +336,59 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
   if (agentType === 'claude-code') {
     startCCWatcher(name, projectDir, ccSessionId);
   } else if (agentType === 'codex') {
-    startCodexWatching(name, projectDir).catch((e) =>
-      logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
-    );
+    if (codexSessionId) {
+      // UUID already known — watch the specific file
+      findRolloutPathByUuid(codexSessionId).then((rolloutPath) => {
+        if (rolloutPath) {
+          startCodexWatchingFile(name, rolloutPath).catch((e) =>
+            logger.warn({ err: e, session: name }, 'codex-watcher startWatchingSpecificFile failed'),
+          );
+        } else {
+          // UUID known but file not found yet — fall back to dir scan
+          startCodexWatching(name, projectDir).catch((e) =>
+            logger.warn({ err: e, session: name }, 'codex-watcher start failed (uuid fallback)'),
+          );
+        }
+      }).catch(() => {
+        startCodexWatching(name, projectDir).catch((e) =>
+          logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
+        );
+      });
+    } else if (!exists) {
+      // Fresh launch — start dir-scan watcher now, then async-capture UUID once rollout appears
+      startCodexWatching(name, projectDir).catch((e) =>
+        logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
+      );
+
+      const launchTime = Date.now();
+      void (async () => {
+        try {
+          const uuid = await extractNewRolloutUuid(projectDir, launchTime);
+          if (!uuid) return;
+          const rec = getSession(name);
+          if (!rec) return;
+          const updated: SessionRecord = { ...rec, codexSessionId: uuid };
+          upsertSession(updated);
+          emitSessionPersist(updated, name);
+          logger.info({ session: name, codexSessionId: uuid }, 'Codex session UUID captured');
+          // Switch to specific-file watcher
+          const rolloutPath = await findRolloutPathByUuid(uuid);
+          if (rolloutPath) {
+            stopCodexWatching(name);
+            startCodexWatchingFile(name, rolloutPath).catch((e) =>
+              logger.warn({ err: e, session: name }, 'codex-watcher switch to specific file failed'),
+            );
+          }
+        } catch (e) {
+          logger.warn({ err: e, session: name }, 'Codex UUID extraction failed');
+        }
+      })();
+    } else {
+      // Session already exists, no UUID — use dir scan
+      startCodexWatching(name, projectDir).catch((e) =>
+        logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
+      );
+    }
   }
 
   // Auto-dismiss startup prompts (trust folder, settings errors, update dialogs)

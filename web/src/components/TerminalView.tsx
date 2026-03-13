@@ -248,8 +248,7 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   // Register handler during render (not in useEffect) to avoid timing gaps
   // where ws becomes available but the effect hasn't re-run yet.
   if (ws) {
-    ws.onTerminalRaw((sName: string, data: Uint8Array) => {
-      if (sName !== sessionName) return;
+    ws.onTerminalRaw(sessionName, (data: Uint8Array) => {
       const term = termRef.current;
       if (!term) return;
       writingCountRef.current++;
@@ -260,7 +259,8 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
   }
   // Cleanup on unmount only
   useEffect(() => {
-    return () => { wsRef.current?.onTerminalRaw(null); };
+    return () => { wsRef.current?.onTerminalRaw(sessionName, null); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle terminal.stream_reset — reset xterm state so stale ANSI doesn't corrupt (Task 5.4)

@@ -215,7 +215,7 @@ function validateFifoPath(p: string): boolean {
 }
 
 /** Valid session name pattern for pipe-pane. */
-const SESSION_PATTERN = /^deck_([a-z0-9_]+_(brain|w\d+)|sub_[a-z0-9]+)$/;
+const SESSION_PATTERN = /^deck_([a-z0-9A-Z0-9_]+_(brain|w\d+)|sub_[a-z0-9]+)$/;
 
 /** Cached pipe-pane capability (tmux >= 2.6 supports -O). */
 let pipePaneCapability: boolean | null = null;

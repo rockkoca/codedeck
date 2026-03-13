@@ -23,6 +23,8 @@ export interface SessionRecord {
   paneId?: string;
   /** CC session UUID used with --session-id / --resume for deterministic JSONL path. */
   ccSessionId?: string;
+  /** Codex session UUID extracted from rollout filename, used for `codex resume <UUID>`. */
+  codexSessionId?: string;
 }
 
 export interface SessionStore {

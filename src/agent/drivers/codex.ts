@@ -19,6 +19,9 @@ export class CodexDriver implements AgentDriver {
 
   buildLaunchCommand(_sessionName: string, opts?: LaunchOptions): string {
     const cwd = opts?.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
+    if (opts?.codexSessionId) {
+      return `${cwd}codex -s danger-full-access resume ${opts.codexSessionId}`;
+    }
     if (opts?.fresh) {
       return `${cwd}codex -s danger-full-access`;
     }
