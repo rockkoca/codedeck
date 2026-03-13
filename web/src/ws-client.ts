@@ -203,7 +203,7 @@ export class WsClient {
   }
 
   /** Request full timeline history for a session (used on first load). */
-  sendTimelineHistoryRequest(sessionName: string, limit = 200): string {
+  sendTimelineHistoryRequest(sessionName: string, limit = 500): string {
     const requestId = crypto.randomUUID();
     this.send({ type: 'timeline.history_request', sessionName, requestId, limit });
     return requestId;

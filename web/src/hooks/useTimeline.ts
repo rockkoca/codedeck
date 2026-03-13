@@ -12,8 +12,8 @@ const MAX_MEMORY_EVENTS = 500;
 const ECHO_WINDOW_MS = 2000;
 // Dedup window for user.message from JSONL vs web-UI-sent: JSONL watcher polls every 2s,
 // so the same message can arrive twice (once from command-handler, once from JSONL).
-// 30s is generous enough to catch the delay while not hiding legitimate repeats in practice.
-const USER_MSG_DEDUP_WINDOW_MS = 30_000;
+// 5s is enough to catch the JSONL delay without hiding legitimate repeated messages.
+const USER_MSG_DEDUP_WINDOW_MS = 5_000;
 
 /** Normalize text for echo comparison: strip prompt prefixes, collapse whitespace. */
 function normalizeForEcho(text: string): string {
@@ -77,21 +77,25 @@ export function useTimeline(
         seqRef.current = last.seq;
         const stored = await db.getEvents(sessionId, last.epoch, { limit: MAX_MEMORY_EVENTS });
         setEvents(stored);
+        // Cache hit — show immediately, then gap-fill new events since last seq
+        setLoading(false);
+        historyLoadedRef.current = sessionId; // mark as loaded so WS effect doesn't re-request
+        if (ws?.connected) {
+          replayRequestIdRef.current = ws.sendTimelineReplayRequest(sessionId, last.seq, last.epoch);
+        }
       } else {
         epochRef.current = 0;
         seqRef.current = 0;
         setEvents([]);
+        // No cache — request full history from daemon
+        if (ws?.connected) {
+          historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
+        } else {
+          setLoading(false);
+        }
       }
     };
     load().catch(() => {});
-
-    // Request full history from daemon (will arrive via WS)
-    if (ws?.connected) {
-      historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
-    } else {
-      // No WS — just show what we have from IndexedDB
-      setLoading(false);
-    }
   }, [sessionId, ws]);
 
   // Append a single event, dedup by eventId
@@ -235,9 +239,15 @@ export function useTimeline(
       }
     };
 
-    // Request history on first connect if not already loaded
-    if (ws.connected && historyLoadedRef.current !== sessionId) {
-      historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
+    // On connect: if history is already loaded from cache, only gap-fill new events.
+    // If not yet loaded, request full history.
+    if (ws.connected) {
+      if (historyLoadedRef.current === sessionId && seqRef.current > 0) {
+        // Already loaded from cache — just replay any events we missed
+        replayRequestIdRef.current = ws.sendTimelineReplayRequest(sessionId, seqRef.current, epochRef.current);
+      } else if (historyLoadedRef.current !== sessionId) {
+        historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
+      }
     }
 
     const unsub = ws.onMessage(handler);

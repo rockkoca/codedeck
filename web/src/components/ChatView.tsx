@@ -57,12 +57,13 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
       }
     }
 
-    // Deduplicate consecutive session.state events with the same state — keep last
+    // Collapse ALL consecutive session.state events to just the last one.
+    // During idle↔running oscillation many alternating states accumulate —
+    // we only care about the final settled state, not the history of thrashing.
     if (ev.type === 'session.state') {
       const next = visible[i + 1];
-      if (next && next.type === 'session.state' && String(next.payload.state) === String(ev.payload.state)) {
-        // Skip this one, keep the next (which will be checked again on next iteration)
-        continue;
+      if (next && next.type === 'session.state') {
+        continue; // skip — keep only the last in any consecutive run
       }
     }
 

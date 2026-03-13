@@ -509,18 +509,33 @@ function handleTimelineHistory(cmd: Record<string, unknown>, serverLink: ServerL
     return;
   }
 
-  // Read from file store — current epoch first, fall back to any
-  let events = timelineStore.read(sessionName, { epoch: timelineEmitter.epoch, limit });
+  // Read more than requested so dedup doesn't shrink the set too aggressively
+  const readLimit = Math.min(limit * 4, 2000);
+  let events = timelineStore.read(sessionName, { epoch: timelineEmitter.epoch, limit: readLimit });
   if (events.length === 0) {
-    events = timelineStore.read(sessionName, { limit });
+    events = timelineStore.read(sessionName, { limit: readLimit });
   }
+
+  // Deduplicate consecutive session.state events — keep only the last in each run.
+  // This prevents idle↔running oscillation storms from crowding out user.message events.
+  const deduped: typeof events = [];
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.type === 'session.state') {
+      const next = events[i + 1];
+      if (next && next.type === 'session.state') continue; // skip, keep last
+    }
+    deduped.push(ev);
+  }
+  // Trim to requested limit after dedup
+  const trimmed = deduped.length > limit ? deduped.slice(deduped.length - limit) : deduped;
 
   try {
     serverLink.send({
       type: 'timeline.history',
       sessionName,
       requestId,
-      events,
+      events: trimmed,
       epoch: timelineEmitter.epoch,
     });
   } catch { /* not connected */ }
