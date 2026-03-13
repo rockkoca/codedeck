@@ -88,6 +88,19 @@ authRoutes.post('/register', async (c) => {
   return c.body(responseBody, 201, { 'Content-Type': 'application/json' });
 });
 
+// Platform identity linking is handled exclusively through verified OAuth flows
+// (e.g., github-auth.ts). No public endpoint is exposed to prevent identity pre-claiming.
+
+// GET /api/auth/user/me — get authenticated user (cookie, Bearer API key or JWT)
+// NOTE: must be registered before /user/:id to avoid Hono matching id='me'
+authRoutes.get('/user/me', async (c) => {
+  const userId = await resolveUserId(c);
+  if (!userId) return c.json({ error: 'unauthorized' }, 401);
+  const user = await getUserById(c.env.DB, userId);
+  if (!user) return c.json({ error: 'not_found' }, 404);
+  return c.json(user);
+});
+
 // GET /api/auth/user/:id — requires auth, only accessible for own user ID
 authRoutes.get('/user/:id', async (c) => {
   const authedUserId = await resolveUserId(c);
@@ -97,18 +110,6 @@ authRoutes.get('/user/:id', async (c) => {
   if (authedUserId !== requestedId) return c.json({ error: 'forbidden' }, 403);
 
   const user = await getUserById(c.env.DB, requestedId);
-  if (!user) return c.json({ error: 'not_found' }, 404);
-  return c.json(user);
-});
-
-// Platform identity linking is handled exclusively through verified OAuth flows
-// (e.g., github-auth.ts). No public endpoint is exposed to prevent identity pre-claiming.
-
-// GET /api/auth/user/me — get authenticated user (cookie, Bearer API key or JWT)
-authRoutes.get('/user/me', async (c) => {
-  const userId = await resolveUserId(c);
-  if (!userId) return c.json({ error: 'unauthorized' }, 401);
-  const user = await getUserById(c.env.DB, userId);
   if (!user) return c.json({ error: 'not_found' }, 404);
   return c.json(user);
 });
