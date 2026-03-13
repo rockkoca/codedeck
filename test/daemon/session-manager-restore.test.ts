@@ -24,10 +24,9 @@ const {
 }));
 
 vi.mock('../../src/store/session-store.js', () => ({
-  storeSessions: storeMock,
+  listSessions: storeMock,   // session-manager imports `listSessions as storeSessions`
   upsertSession: vi.fn(),
   getSession: vi.fn(() => null),
-  listSessions: vi.fn(() => []),
 }));
 
 vi.mock('../../src/agent/tmux.js', () => ({
