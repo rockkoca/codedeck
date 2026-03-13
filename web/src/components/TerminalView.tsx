@@ -148,21 +148,8 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
         return;
       }
       const atBottom = viewportY >= baseY || baseY === 0;
-      if (atBottom) {
-        // Re-enter auto-follow only when no write is in progress.
-        // During writes, xterm fires onScroll(atBottom=true) as cursor follows bottom —
-        // that is NOT a real user action and must not override the user's scroll-up intent.
-        if (writingCountRef.current === 0) {
-          autoFollowRef.current = true;
-        }
-      } else {
-        // User scrolled up — record intent, UNLESS a fit/resize is in progress.
-        // fitAddon.fit() causes xterm buffer reflow which fires onScroll with
-        // viewportY=0; that must not be treated as a real user scroll-up.
-        if (!fittingRef.current) {
-          autoFollowRef.current = false;
-        }
-      }
+      // Always keep auto-follow on — terminal always snaps to bottom on new content.
+      autoFollowRef.current = true;
       setScrolledUp(!atBottom);
       setScrollProgress(baseY > 0 ? viewportY / baseY : 1);
       setShowScrollbar(true);
@@ -324,13 +311,9 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       term.write(buf);
     }
 
-    // Auto-scroll to bottom only when in auto-follow mode AND not a fullFrame
-    // (fullFrame already handles its own scroll restore inside the write callback).
-    const touchIdle = !isTouchingRef.current && (Date.now() - lastTouchEndRef.current > 1000);
-    if (!diff.fullFrame && touchIdle && autoFollowRef.current) {
-      setTimeout(() => {
-        if (autoFollowRef.current) term.scrollToBottom();
-      }, 0);
+    // Always scroll to bottom on new content (fullFrame handles its own scroll internally).
+    if (!diff.fullFrame) {
+      setTimeout(() => term.scrollToBottom(), 0);
     }
   }, []);
 
