@@ -15,6 +15,7 @@ const AGENT_TYPES = [
   { id: 'claude-code', label: 'Claude Code', icon: '⚡' },
   { id: 'codex', label: 'Codex', icon: '📦' },
   { id: 'opencode', label: 'OpenCode', icon: '🔆' },
+  { id: 'gemini', label: 'Gemini CLI', icon: '♊' },
   { id: 'shell', label: 'Shell', icon: '🐚' },
 ];
 

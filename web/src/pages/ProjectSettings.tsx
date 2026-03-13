@@ -29,7 +29,7 @@ export function ProjectSettings({ apiKey, serverId, projectName, onSaved, onCanc
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const agentTypes = ['claude-code', 'codex', 'opencode'];
+  const agentTypes = ['claude-code', 'codex', 'opencode', 'gemini'];
 
   useEffect(() => {
     fetch(`/api/server/${serverId}/projects/${projectName}`, {

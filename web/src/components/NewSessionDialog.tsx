@@ -7,7 +7,7 @@ interface Props {
   onSessionStarted: (sessionName: string) => void;
 }
 
-type AgentType = 'claude-code' | 'codex' | 'opencode';
+type AgentType = 'claude-code' | 'codex' | 'opencode' | 'gemini';
 
 export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
   const [project, setProject] = useState('');
@@ -121,6 +121,7 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
             <option value="claude-code">Claude Code</option>
             <option value="codex">Codex CLI</option>
             <option value="opencode">OpenCode</option>
+            <option value="gemini">Gemini CLI</option>
           </select>
         </div>
 
