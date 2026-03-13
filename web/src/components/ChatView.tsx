@@ -275,6 +275,7 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
       if (state === 'running') return null;
       const stateLabel: Record<string, string> = {
         idle: 'Agent idle — waiting for input',
+        started: 'Session started',
         starting: 'Session starting...',
         stopped: 'Session stopped',
       };
