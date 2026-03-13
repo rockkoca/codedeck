@@ -127,6 +127,11 @@ export async function restoreFromStore(): Promise<void> {
   // 1. Restart store sessions missing from tmux; start jsonl-watcher for live ones
   for (const s of all) {
     if (s.state === 'stopped') continue;
+    // Sub-sessions (deck_sub_*) are managed by rebuildSubSessions triggered by the browser.
+    // Their JSONL watcher uses a specific file path via startWatchingFile.
+    // Handling them here would fall back to directory scan (startWatching), stealing the main
+    // session's JSONL file since sub-sessions have no ccSessionId in the session-store.
+    if (s.name.startsWith('deck_sub_')) continue;
     if (!live.includes(s.name)) {
       logger.info({ session: s.name }, 'Missing on restore, restarting');
       await restartSession(s);

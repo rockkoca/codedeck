@@ -46,7 +46,8 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
 
   await newSession(sessionName, launchCmd, { cwd: sub.cwd ?? undefined });
   // Register in session-store so command-handler can look up agentType (e.g. for Codex delayed-Enter)
-  upsertSession({ name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running', projectDir: sub.cwd ?? '', restarts: 0, restartTimestamps: [], createdAt: Date.now(), updatedAt: Date.now() });
+  // ccSessionId is stored so that restoreFromStore can use startWatchingFile (not directory scan) if needed.
+  upsertSession({ name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running', projectDir: sub.cwd ?? '', ccSessionId: sub.ccSessionId ?? undefined, restarts: 0, restartTimestamps: [], createdAt: Date.now(), updatedAt: Date.now() });
   logger.info({ sessionName, type: sub.type }, 'Sub-session started');
 
   // Start JSONL watcher for CC sub-sessions pointing at specific file
@@ -116,7 +117,7 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
     }
     // Ensure agentType is in session-store for all running sub-sessions (needed by command-handler)
     if (exists) {
-      upsertSession({ name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running', projectDir: sub.cwd ?? '', restarts: 0, restartTimestamps: [], createdAt: Date.now(), updatedAt: Date.now() });
+      upsertSession({ name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running', projectDir: sub.cwd ?? '', ccSessionId: sub.ccSessionId ?? undefined, restarts: 0, restartTimestamps: [], createdAt: Date.now(), updatedAt: Date.now() });
     }
   }
 }
