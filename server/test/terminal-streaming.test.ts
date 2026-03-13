@@ -14,14 +14,21 @@ import { WsBridge } from '../src/ws/bridge.js';
 class MockWs extends EventEmitter {
   sent: string[] = [];
   closed = false;
+  readyState = 1; // WebSocket.OPEN — required by safeSend
 
-  send(data: string) {
-    if (this.closed) throw new Error('socket closed');
-    this.sent.push(data);
+  send(data: string | Buffer, _opts?: unknown, callback?: (err?: Error) => void) {
+    if (this.closed) {
+      const err = new Error('socket closed');
+      if (callback) { callback(err); return; }
+      throw err;
+    }
+    this.sent.push(typeof data === 'string' ? data : data.toString('utf8'));
+    callback?.();
   }
 
   close(code?: number, reason?: string) {
     this.closed = true;
+    this.readyState = 3; // WebSocket.CLOSED
     this.emit('close', code, reason);
   }
 }
@@ -80,17 +87,20 @@ describe('Terminal streaming integration', () => {
   it('browser receives terminal.diff when daemon sends terminal_update', async () => {
     const { daemonWs, browserWs } = await setupStreamingBridge();
 
+    // Browser must be subscribed to the session (default-deny routing)
+    browserWs.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'deck_myapp_brain' }));
+    await flush();
+    browserWs.sent.length = 0; // clear daemon.reconnected / subscribe ack noise
+
     daemonWs.emit('message', JSON.stringify({
       type: 'terminal_update',
-      session: 'deck_myapp_brain',
-      diff: { rows: ['line1', 'line2'], cursor: { x: 0, y: 1 } },
+      diff: { sessionName: 'deck_myapp_brain', rows: ['line1', 'line2'], cursor: { x: 0, y: 1 } },
     }));
     await flush();
 
     expect(browserWs.sent).toHaveLength(1);
-    const msg = JSON.parse(browserWs.sent[0]) as { type: string; session: string; diff: unknown };
+    const msg = JSON.parse(browserWs.sent[0]) as { type: string; diff: unknown };
     expect(msg.type).toBe('terminal.diff');
-    expect(msg.session).toBe('deck_myapp_brain');
     expect(msg.diff).toBeTruthy();
   });
 
@@ -110,7 +120,7 @@ describe('Terminal streaming integration', () => {
     expect(msg.event).toBe('started');
   });
 
-  it('multiple browser connections all receive the broadcast', async () => {
+  it('multiple browser connections all receive session_event broadcast', async () => {
     const { daemonWs, bridge } = await setupStreamingBridge();
 
     // Add two more browsers
@@ -121,10 +131,10 @@ describe('Terminal streaming integration', () => {
 
     expect(bridge.browserCount).toBe(3);
 
-    daemonWs.emit('message', JSON.stringify({ type: 'terminal_update', diff: 'x' }));
+    // session_event is a whitelisted broadcast type — all browsers must receive it
+    daemonWs.emit('message', JSON.stringify({ type: 'session_event', event: 'started', session: 'sess' }));
     await flush();
 
-    // All three should receive the message (first one was already added in setup)
     expect(browser2.sent).toHaveLength(1);
     expect(browser3.sent).toHaveLength(1);
   });
