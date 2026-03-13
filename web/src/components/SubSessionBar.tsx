@@ -164,7 +164,7 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
       {!collapsed && subSessions.length > 0 && (
         <div
           class={`subcard-scroll ${layout === 'double' ? 'subcard-double' : 'subcard-single'}`}
-          style={layout === 'double' ? { gridAutoColumns: `${cardSize.w}px` } : undefined}
+          style={layout === 'double' ? { gridAutoColumns: 'max-content' } : undefined}
         >
           {subSessions.map((sub) => (
             <SubSessionCard
