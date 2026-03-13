@@ -48,7 +48,7 @@ function save(key: string, value: unknown) {
 
 export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connected, onDiff, onHistory }: Props) {
   const [layout, setLayout] = useState<Layout>(() => load('rcc_subcard_layout', 'single'));
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(isMobile);
   const [showSizePanel, setShowSizePanel] = useState(false);
   const [cardSize, setCardSize] = useState<CardSize>(() => load('rcc_subcard_size', DEFAULT_SIZE));
   const [draftW, setDraftW] = useState(String(cardSize.w));
@@ -88,7 +88,7 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
         <button class="subcard-toolbar-btn" onClick={() => setCollapsed(!collapsed)} title={collapsed ? 'Show' : 'Hide'}>
           {collapsed ? '▲' : '▼'}
         </button>
-        {!collapsed && !isMobile && (
+        {!collapsed && (
           <>
             <button class="subcard-toolbar-btn" onClick={toggleLayout} title={layout === 'single' ? 'Double row' : 'Single row'}>
               {layout === 'single' ? '⊞' : '☰'}
@@ -103,14 +103,11 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
             <span class="subcard-toolbar-label">Sub-sessions ({subSessions.length})</span>
           </>
         )}
-        {!collapsed && isMobile && (
-          <span class="subcard-toolbar-label">Sub-sessions ({subSessions.length})</span>
-        )}
         <button class="subcard-toolbar-add" onClick={onNew} title="New sub-session">+</button>
       </div>
 
-      {/* Size settings panel — desktop only */}
-      {!collapsed && !isMobile && showSizePanel && (
+      {/* Size settings panel */}
+      {!collapsed && showSizePanel && (
         <div class="subcard-size-panel">
           <span class="subcard-size-label">Card size</span>
           <label class="subcard-size-field">
@@ -140,8 +137,8 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
         </div>
       )}
 
-      {/* Mobile: compact buttons */}
-      {!collapsed && isMobile && subSessions.length > 0 && (
+      {/* Collapsed: compact buttons (all platforms) */}
+      {collapsed && subSessions.length > 0 && (
         <div class="subsession-bar" style={{ borderTop: 'none' }}>
           {subSessions.map((sub) => {
             const label = sub.label ?? (sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type);
@@ -163,8 +160,8 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
         </div>
       )}
 
-      {/* Desktop: preview cards */}
-      {!collapsed && !isMobile && subSessions.length > 0 && (
+      {/* Expanded: preview cards (all platforms) */}
+      {!collapsed && subSessions.length > 0 && (
         <div
           class={`subcard-scroll ${layout === 'double' ? 'subcard-double' : 'subcard-single'}`}
           style={layout === 'double' ? { gridAutoColumns: `${cardSize.w}px` } : undefined}
