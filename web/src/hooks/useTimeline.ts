@@ -169,21 +169,11 @@ export function useTimeline(
           });
         }
 
-        // Epoch change detection
-        if (event.epoch !== epochRef.current && epochRef.current > 0) {
-          const oldEpoch = epochRef.current;
-          epochRef.current = event.epoch;
-          seqRef.current = event.seq;
-          setEvents([event]);
-          const db = dbRef.current;
-          if (db && oldEpoch > 0) {
-            db.clearSessionEpoch(sessionId, oldEpoch).catch(() => {});
-          }
-        } else {
-          epochRef.current = event.epoch;
-          seqRef.current = Math.max(seqRef.current, event.seq);
-          appendEvent(event);
-        }
+        // Update epoch tracker — don't clear events on epoch change;
+        // history response will merge the authoritative set, and ts-sort handles cross-epoch order.
+        epochRef.current = event.epoch;
+        seqRef.current = Math.max(seqRef.current, event.seq);
+        appendEvent(event);
 
         dbRef.current?.putEvent(event).catch(() => {});
       }
@@ -195,30 +185,13 @@ export function useTimeline(
         historyRequestIdRef.current = null;
         historyLoadedRef.current = sessionId;
 
-        const oldEpoch = epochRef.current;
         epochRef.current = msg.epoch;
 
         if (msg.events.length > 0) {
           const maxSeq = msg.events.reduce((max, e) => Math.max(max, e.seq), 0);
           seqRef.current = Math.max(seqRef.current, maxSeq);
-
-          // If epoch changed, replace events entirely — don't mix epochs (breaks merge order)
-          if (oldEpoch !== 0 && oldEpoch !== msg.epoch) {
-            setEvents(msg.events);
-            if (dbRef.current) {
-              dbRef.current.clearSessionEpoch(sessionId, oldEpoch).catch(() => {});
-              dbRef.current.putEvents(msg.events).catch(() => {});
-            }
-          } else {
-            mergeEvents(msg.events);
-            dbRef.current?.putEvents(msg.events).catch(() => {});
-          }
-        } else if (oldEpoch !== 0 && oldEpoch !== msg.epoch) {
-          // Epoch changed but no events — clear stale cache
-          setEvents([]);
-          if (dbRef.current) {
-            dbRef.current.clearSessionEpoch(sessionId, oldEpoch).catch(() => {});
-          }
+          mergeEvents(msg.events);
+          dbRef.current?.putEvents(msg.events).catch(() => {});
         }
         setLoading(false);
         setRefreshing(false);
@@ -231,15 +204,8 @@ export function useTimeline(
         replayRequestIdRef.current = null;
         const { events: replayEvents, truncated, epoch } = msg;
 
-        if (epoch !== epochRef.current && epochRef.current > 0) {
-          const oldEpoch = epochRef.current;
-          epochRef.current = epoch;
-          seqRef.current = 0;
-          setEvents([]);
-          if (dbRef.current && oldEpoch > 0) {
-            dbRef.current.clearSessionEpoch(sessionId, oldEpoch).catch(() => {});
-          }
-        }
+        // Update epoch — don't clear events, ts-sort handles cross-epoch order
+        epochRef.current = epoch;
 
         if (truncated && ws) {
           ws.sendSnapshotRequest(sessionId);
@@ -254,12 +220,18 @@ export function useTimeline(
         setRefreshing(false);
       }
 
-      // ── Reconnect: request replay to fill gaps ──
-      if (msg.type === 'daemon.reconnected' || (msg.type === 'session.event' && (msg as { event: string }).event === 'connected')) {
+      // ── Reconnect: daemon restarted → epoch changed, replay is useless. Request full history. ──
+      if (msg.type === 'daemon.reconnected') {
+        if (ws && sessionId) {
+          setRefreshing(true);
+          historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
+        }
+      }
+      // ── Browser WS reconnected: fill gaps since last seen seq ──
+      if (msg.type === 'session.event' && (msg as { event: string }).event === 'connected') {
         if (ws && sessionId && epochRef.current > 0) {
           replayRequestIdRef.current = ws.sendTimelineReplayRequest(sessionId, seqRef.current, epochRef.current);
         } else if (ws && sessionId) {
-          // No epoch yet — request full history
           historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
         }
       }

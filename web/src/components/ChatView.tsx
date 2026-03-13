@@ -73,11 +73,11 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
       }
     }
 
-    // Collapse ALL consecutive session.state events to just the last one.
+    // Deduplicate consecutive session.state events with the same state — keep last
     if (ev.type === 'session.state') {
       const next = visible[i + 1];
-      if (next && next.type === 'session.state') {
-        continue; // skip — keep only the last in any consecutive run
+      if (next && next.type === 'session.state' && String(next.payload.state) === String(ev.payload.state)) {
+        continue; // skip — keep the next (checked again on next iteration)
       }
     }
 
@@ -271,10 +271,9 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
 
     case 'session.state': {
       const state = String(event.payload.state ?? '');
-      // Don't show 'running' — tool.call events already indicate activity
-      if (state === 'running') return null;
       const stateLabel: Record<string, string> = {
         idle: 'Agent idle — waiting for input',
+        running: 'Agent working...',
         started: 'Session started',
         starting: 'Session starting...',
         stopped: 'Session stopped',

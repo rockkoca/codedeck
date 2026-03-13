@@ -470,8 +470,11 @@ function handleTimelineReplay(cmd: Record<string, unknown>, serverLink: ServerLi
   }
 
   if (requestEpoch !== timelineEmitter.epoch) {
-    // Epoch mismatch — serve current epoch events from file store
-    const events = timelineStore.read(sessionName, { epoch: timelineEmitter.epoch });
+    // Epoch mismatch — serve current epoch events from file store, fallback to all epochs
+    let events = timelineStore.read(sessionName, { epoch: timelineEmitter.epoch });
+    if (events.length === 0) {
+      events = timelineStore.read(sessionName, {});
+    }
     try {
       serverLink.send({
         type: 'timeline.replay',
