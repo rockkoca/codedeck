@@ -411,13 +411,6 @@ function handleSubscribe(cmd: Record<string, unknown>, serverLink: ServerLink): 
   const session = cmd.session as string | undefined;
   if (!session) return;
 
-  // Clean up any existing subscription for this session first
-  const existing = activeSubscriptions.get(session);
-  if (existing) {
-    existing.unsubscribe();
-    activeSubscriptions.delete(session);
-  }
-
   const subscriber: StreamSubscriber = {
     sessionName: session,
     send: (diff) => {
@@ -434,8 +427,15 @@ function handleSubscribe(cmd: Record<string, unknown>, serverLink: ServerLink): 
     },
   };
 
+  // Subscribe new subscriber BEFORE removing old one so the pipe never drops to 0
+  // subscribers and unnecessarily stops+restarts (which causes idle→running oscillation
+  // and empty-line snapshot spam).
   const unsubscribe = terminalStreamer.subscribe(subscriber);
+  const existing = activeSubscriptions.get(session);
   activeSubscriptions.set(session, { subscriber, unsubscribe });
+  if (existing) {
+    existing.unsubscribe();
+  }
   logger.debug({ session }, 'Terminal subscribed via web');
 }
 
