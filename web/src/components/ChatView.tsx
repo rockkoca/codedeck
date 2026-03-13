@@ -133,17 +133,17 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
 
   const viewItems = useMemo(() => buildViewItems(events), [events]);
 
-  // Extract active thinking status: show last thinking text if no assistant.text came after it
+  // Extract active thinking status: show last thinking text until any other event arrives after it
   const thinkingText = useMemo(() => {
     let lastThinking: string | null = null;
-    let thinkingTs = 0;
-    for (const e of events) {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
       if (e.type === 'assistant.thinking' && e.payload.text) {
         lastThinking = String(e.payload.text);
-        thinkingTs = e.ts;
-      } else if (e.type === 'assistant.text' && e.ts > thinkingTs) {
-        lastThinking = null; // response arrived, thinking done
+        break;
       }
+      // Any non-thinking event after the last thinking means thinking is done
+      if (e.type !== 'assistant.thinking') break;
     }
     return lastThinking;
   }, [events]);
