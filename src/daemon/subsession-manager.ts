@@ -7,6 +7,7 @@ import { newSession, killSession, sessionExists } from '../agent/tmux.js';
 import { getDriver } from '../agent/session-manager.js';
 import type { AgentType } from '../agent/detect.js';
 import { timelineStore } from './timeline-store.js';
+import { upsertSession } from '../store/session-store.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import logger from '../util/logger.js';
@@ -42,6 +43,8 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
   } as Parameters<typeof driver.buildLaunchCommand>[1]);
 
   await newSession(sessionName, launchCmd, { cwd: sub.cwd ?? undefined });
+  // Register in session-store so command-handler can look up agentType (e.g. for Codex delayed-Enter)
+  upsertSession({ name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running', projectDir: sub.cwd ?? '', restarts: 0, restartTimestamps: [], createdAt: Date.now(), updatedAt: Date.now() });
   logger.info({ sessionName, type: sub.type }, 'Sub-session started');
 
   // Start JSONL watcher for CC sub-sessions pointing at specific file
@@ -108,6 +111,10 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
         logger.warn({ err: e, sessionName }, 'Codex watcher restore failed'),
       );
       logger.info({ sessionName }, 'Restored codex JSONL watcher for running sub-session');
+    }
+    // Ensure agentType is in session-store for all running sub-sessions (needed by command-handler)
+    if (exists) {
+      upsertSession({ name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running', projectDir: sub.cwd ?? '', restarts: 0, restartTimestamps: [], createdAt: Date.now(), updatedAt: Date.now() });
     }
   }
 }
