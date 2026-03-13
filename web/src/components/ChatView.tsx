@@ -135,6 +135,33 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     setShowScrollBtn(false);
   }, [sessionId]);
 
+  // On mobile: when keyboard opens, viewport shrinks and scrollTop can reset to 0.
+  // Save scrollTop on focusin, restore it when visualViewport height decreases (keyboard appeared).
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let savedScrollTop = 0;
+    let prevHeight = vv.height;
+    const onFocusIn = () => {
+      savedScrollTop = scrollRef.current?.scrollTop ?? 0;
+    };
+    const onResize = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      if (vv.height < prevHeight) {
+        // Keyboard appeared — restore scroll position
+        el.scrollTop = savedScrollTop;
+      }
+      prevHeight = vv.height;
+    };
+    vv.addEventListener('resize', onResize);
+    document.addEventListener('focusin', onFocusIn);
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      document.removeEventListener('focusin', onFocusIn);
+    };
+  }, []);
+
   // Expose scroll-to-bottom so parent can force-snap after sending a message
   useEffect(() => {
     onScrollBottomFn?.(scrollToBottom);
