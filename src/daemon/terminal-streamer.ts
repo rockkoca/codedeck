@@ -348,6 +348,15 @@ export class TerminalStreamer {
     }
   }
 
+  /** Called after a session is newly created to start the pipe for any waiting subscribers. */
+  retryPipeIfSubscribers(sessionName: string): void {
+    const subs = this.subscribers.get(sessionName);
+    if (!subs || subs.size === 0) return;
+    if (this.pipes.has(sessionName)) return;
+    if (this.retryTimers.has(sessionName)) return;
+    void this.startPipe(sessionName, 0);
+  }
+
   private scheduleRebind(sessionName: string, attempt: number): void {
     const delay = REBIND_DELAYS_MS[Math.min(attempt, REBIND_DELAYS_MS.length - 1)];
     const timer = setTimeout(async () => {

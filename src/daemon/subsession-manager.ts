@@ -50,6 +50,10 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
   upsertSession({ name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running', projectDir: sub.cwd ?? '', ccSessionId: sub.ccSessionId ?? undefined, restarts: 0, restartTimestamps: [], createdAt: Date.now(), updatedAt: Date.now() });
   logger.info({ sessionName, type: sub.type }, 'Sub-session started');
 
+  // Kick off pipe-pane for any browsers that subscribed before the tmux session existed
+  const { terminalStreamer } = await import('./terminal-streamer.js');
+  terminalStreamer.retryPipeIfSubscribers(sessionName);
+
   // Start JSONL watcher for CC sub-sessions pointing at specific file
   if (agentType === 'claude-code' && sub.ccSessionId && sub.cwd) {
     const { startWatchingFile, claudeProjectDir } = await import('./jsonl-watcher.js');
@@ -57,6 +61,14 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
     const jsonlPath = path.join(projectDir, `${sub.ccSessionId}.jsonl`);
     startWatchingFile(sessionName, jsonlPath).catch((e: unknown) =>
       logger.warn({ err: e, sessionName }, 'jsonl-watcher startWatchingFile failed'),
+    );
+  }
+
+  // Start gemini watcher for gemini sub-sessions
+  if (agentType === 'gemini') {
+    const { startWatchingLatest } = await import('./gemini-watcher.js');
+    startWatchingLatest(sessionName).catch((e: unknown) =>
+      logger.warn({ err: e, sessionName }, 'gemini-watcher startWatchingLatest failed'),
     );
   }
 
@@ -84,6 +96,8 @@ export async function stopSubSession(sessionName: string): Promise<void> {
   stopWatching(sessionName);
   const { stopWatching: stopCodexWatching } = await import('./codex-watcher.js');
   stopCodexWatching(sessionName);
+  const { stopWatching: stopGeminiWatching } = await import('./gemini-watcher.js');
+  stopGeminiWatching(sessionName);
   logger.info({ sessionName }, 'Sub-session stopped');
 }
 
@@ -92,6 +106,7 @@ export async function stopSubSession(sessionName: string): Promise<void> {
 export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promise<void> {
   const { startWatchingFile, claudeProjectDir, isWatching } = await import('./jsonl-watcher.js');
   const { startWatching: startCodexWatching, isWatching: isCodexWatching } = await import('./codex-watcher.js');
+  const { startWatchingLatest: startGeminiWatchingLatest, isWatching: isGeminiWatching } = await import('./gemini-watcher.js');
 
   for (const sub of subSessions) {
     const sessionName = subSessionName(sub.id);
@@ -114,6 +129,12 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
         logger.warn({ err: e, sessionName }, 'Codex watcher restore failed'),
       );
       logger.info({ sessionName }, 'Restored codex JSONL watcher for running sub-session');
+    } else if (sub.type === 'gemini' && !isGeminiWatching(sessionName)) {
+      // Already running — restore the gemini watcher (lost on daemon restart)
+      startGeminiWatchingLatest(sessionName).catch((e: unknown) =>
+        logger.warn({ err: e, sessionName }, 'Gemini watcher restore failed'),
+      );
+      logger.info({ sessionName }, 'Restored gemini watcher for running sub-session');
     }
     // Ensure agentType is in session-store for all running sub-sessions (needed by command-handler)
     if (exists) {

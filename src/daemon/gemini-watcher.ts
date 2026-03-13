@@ -56,6 +56,46 @@ async function findSessionFile(sessionUuid: string): Promise<string | null> {
   return null;
 }
 
+/**
+ * Find the most recently modified Gemini session file across all project slugs.
+ * Used when no UUID is known (e.g. sub-sessions launched with `--resume latest`).
+ */
+async function findLatestSessionFile(): Promise<string | null> {
+  let slugs: string[];
+  try {
+    slugs = await readdir(GEMINI_TMP_DIR);
+  } catch {
+    return null;
+  }
+
+  let bestPath: string | null = null;
+  let bestMtime = 0;
+
+  for (const slug of slugs) {
+    const chatsDir = join(GEMINI_TMP_DIR, slug, 'chats');
+    let entries: string[];
+    try {
+      entries = await readdir(chatsDir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.startsWith('session-') || !entry.endsWith('.json')) continue;
+      const fullPath = join(chatsDir, entry);
+      try {
+        const s = await stat(fullPath);
+        if (s.mtimeMs > bestMtime) {
+          bestMtime = s.mtimeMs;
+          bestPath = fullPath;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return bestPath;
+}
+
 // ── Message parsing ────────────────────────────────────────────────────────────
 
 interface GeminiThought {
@@ -195,7 +235,9 @@ async function readConversation(filePath: string): Promise<GeminiConversation | 
 async function pollTick(sessionName: string, state: WatcherState): Promise<void> {
   // Try to find the file if we don't have it yet
   if (!state.activeFile) {
-    const found = await findSessionFile(state.sessionUuid);
+    const found = state.sessionUuid
+      ? await findSessionFile(state.sessionUuid)
+      : await findLatestSessionFile();
     if (found) {
       state.activeFile = found;
       logger.debug({ sessionName, file: found }, 'gemini-watcher: found session file');
@@ -278,6 +320,14 @@ export async function startWatching(sessionName: string, sessionUuid: string): P
   void watchGeminiDir(sessionName, state);
 }
 
+/**
+ * Start watching for the most recently modified Gemini session file.
+ * Used for sub-sessions launched without a pre-known UUID (e.g. `--resume latest`).
+ */
+export async function startWatchingLatest(sessionName: string): Promise<void> {
+  return startWatching(sessionName, '');
+}
+
 export function isWatching(sessionName: string): boolean {
   return watchers.has(sessionName);
 }
@@ -298,7 +348,9 @@ async function watchGeminiDir(sessionName: string, state: WatcherState): Promise
   // When activeFile is known, watch its parent dir directly
   const waitForFile = async (): Promise<string | null> => {
     for (let i = 0; i < 60 && !state.stopped; i++) {
-      const found = await findSessionFile(state.sessionUuid);
+      const found = state.sessionUuid
+        ? await findSessionFile(state.sessionUuid)
+        : await findLatestSessionFile();
       if (found) return found;
       await new Promise((r) => setTimeout(r, 1000));
     }
