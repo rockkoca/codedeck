@@ -19,6 +19,15 @@ interface Props {
   onHistory: (sessionName: string, apply: (c: string) => void) => void;
 }
 
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+const TYPE_ICON: Record<string, string> = {
+  'claude-code': '⚡',
+  'codex': '📦',
+  'opencode': '🔆',
+  'shell': '🐚',
+};
+
 type Layout = 'single' | 'double';
 
 interface CardSize { w: number; h: number }
@@ -79,7 +88,7 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
         <button class="subcard-toolbar-btn" onClick={() => setCollapsed(!collapsed)} title={collapsed ? 'Show' : 'Hide'}>
           {collapsed ? '▲' : '▼'}
         </button>
-        {!collapsed && (
+        {!collapsed && !isMobile && (
           <>
             <button class="subcard-toolbar-btn" onClick={toggleLayout} title={layout === 'single' ? 'Double row' : 'Single row'}>
               {layout === 'single' ? '⊞' : '☰'}
@@ -94,11 +103,14 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
             <span class="subcard-toolbar-label">Sub-sessions ({subSessions.length})</span>
           </>
         )}
+        {!collapsed && isMobile && (
+          <span class="subcard-toolbar-label">Sub-sessions ({subSessions.length})</span>
+        )}
         <button class="subcard-toolbar-add" onClick={onNew} title="New sub-session">+</button>
       </div>
 
-      {/* Size settings panel */}
-      {!collapsed && showSizePanel && (
+      {/* Size settings panel — desktop only */}
+      {!collapsed && !isMobile && showSizePanel && (
         <div class="subcard-size-panel">
           <span class="subcard-size-label">Card size</span>
           <label class="subcard-size-field">
@@ -128,8 +140,31 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
         </div>
       )}
 
-      {/* Cards */}
-      {!collapsed && subSessions.length > 0 && (
+      {/* Mobile: compact buttons */}
+      {!collapsed && isMobile && subSessions.length > 0 && (
+        <div class="subsession-bar" style={{ borderTop: 'none' }}>
+          {subSessions.map((sub) => {
+            const label = sub.label ?? (sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type);
+            const icon = TYPE_ICON[sub.type] ?? '⚡';
+            const isOpen = openIds.has(sub.id);
+            return (
+              <button
+                key={sub.id}
+                class={`subsession-card${isOpen ? ' open' : ''} mobile`}
+                onClick={() => onOpen(sub.id)}
+                title={label}
+              >
+                <span class="subsession-card-icon">{icon}</span>
+                <span class="subsession-card-label">{label.slice(0, 4)}</span>
+                {sub.state === 'starting' && <span class="subsession-card-badge">…</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Desktop: preview cards */}
+      {!collapsed && !isMobile && subSessions.length > 0 && (
         <div
           class={`subcard-scroll ${layout === 'double' ? 'subcard-double' : 'subcard-single'}`}
           style={layout === 'double' ? { gridAutoColumns: `${cardSize.w}px` } : undefined}
