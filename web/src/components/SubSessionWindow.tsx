@@ -83,6 +83,14 @@ export function SubSessionWindow({
     saveLocal(sub.id, geom, viewMode);
   }, [sub.id, geom, viewMode]);
 
+  // Re-subscribe terminal on mount so the server sends a fresh snapshot.
+  // SubSessionWindow unmounts on minimize, so without this the remounted
+  // TerminalView would start empty (no snapshot, only incremental data).
+  useEffect(() => {
+    if (!ws || !connected) return;
+    try { ws.subscribeTerminal(sub.sessionName); } catch { /* ignore */ }
+  }, [ws, connected, sub.sessionName]);
+
   const scrollToBottom = useCallback(() => {
     setTimeout(() => {
       if (viewModeRef.current === 'chat') chatScrollRef.current?.();
