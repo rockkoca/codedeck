@@ -229,7 +229,7 @@ body {
 .chat-system { text-align: center; color: #475569; font-size: 11px; padding: 4px 0; }
 .chat-loading { text-align: center; color: #475569; padding: 24px; }
 .chat-refreshing { text-align: center; color: #475569; font-size: 11px; padding: 4px 0; flex-shrink: 0; }
-.chat-thinking { color: #94a3b8; font-size: 12px; padding: 8px 16px; }
+.chat-thinking-bar { color: #94a3b8; font-size: 12px; padding: 6px 16px; background: #1e293b; border-top: 1px solid #334155; flex-shrink: 0; }
 .chat-thinking-dots { animation: thinking-pulse 1.2s ease-in-out infinite; letter-spacing: 2px; }
 @keyframes thinking-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
 .chat-bubble-content { white-space: pre-wrap; word-break: break-word; }
