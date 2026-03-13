@@ -101,10 +101,16 @@ describe('parseLine — user_message', () => {
 });
 
 describe('parseLine — agent_message', () => {
-  beforeEach(() => vi.mocked(timelineEmitter.emit).mockClear());
+  beforeEach(() => {
+    vi.mocked(timelineEmitter.emit).mockClear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => vi.useRealTimers());
 
-  it('emits assistant.text for final_answer phase', () => {
+  it('emits assistant.text for final_answer phase after debounce', () => {
     parseLine('session-b', agentMessageLine('Here is my answer', 'final_answer'));
+    expect(timelineEmitter.emit).not.toHaveBeenCalled(); // still buffered
+    vi.runAllTimers();
     expect(timelineEmitter.emit).toHaveBeenCalledOnce();
     expect(timelineEmitter.emit).toHaveBeenCalledWith(
       'session-b',
@@ -114,13 +120,29 @@ describe('parseLine — agent_message', () => {
     );
   });
 
+  it('only emits the last snapshot when multiple final_answer events arrive rapidly', () => {
+    parseLine('session-b', agentMessageLine('Work', 'final_answer'));
+    parseLine('session-b', agentMessageLine('Working', 'final_answer'));
+    parseLine('session-b', agentMessageLine('Working on it', 'final_answer'));
+    vi.runAllTimers();
+    expect(timelineEmitter.emit).toHaveBeenCalledOnce();
+    expect(timelineEmitter.emit).toHaveBeenCalledWith(
+      'session-b',
+      'assistant.text',
+      { text: 'Working on it', streaming: false },
+      expect.any(Object),
+    );
+  });
+
   it('does NOT emit for commentary phase', () => {
     parseLine('session-b', agentMessageLine('Working on it...', 'commentary'));
+    vi.runAllTimers();
     expect(timelineEmitter.emit).not.toHaveBeenCalled();
   });
 
   it('does NOT emit for empty final_answer text', () => {
     parseLine('session-b', agentMessageLine('  ', 'final_answer'));
+    vi.runAllTimers();
     expect(timelineEmitter.emit).not.toHaveBeenCalled();
   });
 });
@@ -294,7 +316,10 @@ describe('startWatching — file-based integration', () => {
       agentMessageLine('commentary step', 'commentary'),
       tokenCountLine(),
     ];
+    vi.useFakeTimers();
     for (const line of lines) parseLine('session-int', line);
+    vi.runAllTimers();
+    vi.useRealTimers();
 
     expect(timelineEmitter.emit).toHaveBeenCalledTimes(2);
     expect(vi.mocked(timelineEmitter.emit).mock.calls[0][1]).toBe('user.message');
