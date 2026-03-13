@@ -127,7 +127,12 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     const text = getText();
     if (!text || !ws || !activeSession) return;
     quickData.recordHistory(text, activeSession.name);
-    ws.sendSessionCommand('send', { sessionName: activeSession.name, text });
+    try {
+      ws.sendSessionCommand('send', { sessionName: activeSession.name, text });
+    } catch {
+      // WS not connected — keep text in input so user can retry
+      return;
+    }
     onSend?.(activeSession.name, text);
     if (divRef.current) divRef.current.textContent = '';
     setHasText(false);

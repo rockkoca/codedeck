@@ -120,7 +120,11 @@ export class WsClient {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket not connected');
     }
-    this.ws.send(JSON.stringify(msg));
+    const json = JSON.stringify(msg);
+    if (json.length > 60_000) {
+      throw new Error('Message too large');
+    }
+    this.ws.send(json);
   }
 
   onMessage(handler: MessageHandler): () => void {
