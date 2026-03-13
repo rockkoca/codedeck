@@ -646,6 +646,9 @@ export function App() {
                 <span class={`badge ${connected ? 'badge-online' : 'badge-offline'}`} style={{ fontSize: 10 }}>
                   {connected ? '● Online' : '○ Offline'}
                 </span>
+                <span style={{ fontSize: 9, color: '#475569' }}>
+                  {(() => { try { const d = new Date(__BUILD_TIME__); return `${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; } catch { return ''; } })()}
+                </span>
               </div>
             </div>
 
