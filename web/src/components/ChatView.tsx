@@ -40,13 +40,27 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
 
   // Pre-pass: merge tool.call+tool.result pairs and dedup session.state
   const consolidated: TimelineEvent[] = [];
+  // Track tool.result eventIds that have been consumed by a preceding tool.call merge
+  const consumedIds = new Set<string>();
+
   for (let i = 0; i < visible.length; i++) {
     const ev = visible[i];
 
-    // Merge tool.call followed by tool.result into a single synthetic event
+    // Skip already-consumed tool.result events
+    if (consumedIds.has(ev.eventId)) continue;
+
+    // Merge tool.call with its matching tool.result.
+    // Scan forward up to 10 events to find the tool.result — user.message /
+    // command.ack etc. can land between them during a long-running tool.
     if (ev.type === 'tool.call') {
-      const next = visible[i + 1];
-      if (next && next.type === 'tool.result') {
+      let resultIdx = -1;
+      for (let j = i + 1; j <= Math.min(i + 10, visible.length - 1); j++) {
+        if (visible[j].type === 'tool.result') { resultIdx = j; break; }
+        if (visible[j].type === 'tool.call') break; // another call started, stop
+      }
+      if (resultIdx !== -1) {
+        const next = visible[resultIdx];
+        consumedIds.add(next.eventId); // mark tool.result as consumed
         const toolName = String(ev.payload.tool ?? 'tool');
         const input = ev.payload.input ? ` ${truncate(String(ev.payload.input), 60)}` : '';
         const status = next.payload.error ? `✗ ${truncate(String(next.payload.error), 60)}` : '✓';
@@ -55,14 +69,11 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
           type: 'tool.call',
           payload: { ...ev.payload, tool: toolName, input: `${input} ${status}`.trim(), _merged: true },
         });
-        i++; // skip the tool.result
         continue;
       }
     }
 
     // Collapse ALL consecutive session.state events to just the last one.
-    // During idle↔running oscillation many alternating states accumulate —
-    // we only care about the final settled state, not the history of thrashing.
     if (ev.type === 'session.state') {
       const next = visible[i + 1];
       if (next && next.type === 'session.state') {
