@@ -389,6 +389,25 @@ export class WsBridge {
       }
     }
 
+    // Route timeline history/replay to the specific session's subscribers only.
+    // These responses contain all CC conversation content — must never be broadcast.
+    if (msg.type === 'timeline.history' || msg.type === 'timeline.replay') {
+      const sessionName = msg.sessionName as string | undefined;
+      if (sessionName) {
+        this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+        return;
+      }
+    }
+
+    // Route session-scoped notifications to session subscribers only
+    if (msg.type === 'session.idle' || msg.type === 'session.notification' || msg.type === 'session.tool') {
+      const sessionName = msg.session as string | undefined;
+      if (sessionName) {
+        this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+        return;
+      }
+    }
+
     this.broadcastToBrowsers(JSON.stringify(msg));
   }
 
