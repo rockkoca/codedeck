@@ -235,6 +235,17 @@ async function handleStart(cmd: Record<string, unknown>, serverLink: ServerLink)
     return;
   }
 
+  // Enforce one brain session per directory
+  const conflict = listSessions().find(
+    (s) => s.role === 'brain' && s.projectDir === dir && s.state !== 'stopped',
+  );
+  if (conflict) {
+    const message = `Directory '${dir}' already has an active session (${conflict.projectName})`;
+    logger.warn({ dir, existing: conflict.projectName }, 'session.start: duplicate dir blocked');
+    try { serverLink.send({ type: 'session.error', project, message }); } catch { /* ignore */ }
+    return;
+  }
+
   try {
     const config: ProjectConfig = {
       name: project,

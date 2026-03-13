@@ -7,8 +7,6 @@ import { ChatView } from './components/ChatView.js';
 import { SessionControls } from './components/SessionControls.js';
 import { useQuickData } from './components/QuickInputPanel.js';
 import { NewSessionDialog } from './components/NewSessionDialog.js';
-import { SubSessionBar } from './components/SubSessionBar.js';
-import { SubSessionWindow } from './components/SubSessionWindow.js';
 import { StartSubSessionDialog } from './components/StartSubSessionDialog.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
@@ -163,30 +161,7 @@ export function App() {
   const [detectedModels, setDetectedModels] = useState<Map<string, 'opus' | 'sonnet' | 'haiku'>>(new Map());
   const quickData = useQuickData();
 
-  // IDs of currently-open (non-minimized) sub-session windows
-  const [openSubIds, setOpenSubIds] = useState<Set<string>>(new Set());
-  // z-index per sub-session window
-  const [subZIndexes, setSubZIndexes] = useState<Map<string, number>>(new Map());
   const [showSubDialog, setShowSubDialog] = useState(false);
-
-  const bringSubToFront = useCallback((id: string) => {
-    setSubZIndexes((prev) => {
-      const max = prev.size > 0 ? Math.max(...prev.values()) : 1000;
-      const next = new Map(prev);
-      next.set(id, max + 1);
-      return next;
-    });
-  }, []);
-
-  const toggleSubSession = useCallback((id: string) => {
-    setOpenSubIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-    bringSubToFront(id);
-  }, [bringSubToFront]);
 
   const activeSessionRef = useRef(activeSession);
   activeSessionRef.current = activeSession;
@@ -215,8 +190,8 @@ export function App() {
   const termFitFnsRef = useRef<Map<string, () => void>>(new Map());
   const termScrollFnsRef = useRef<Map<string, () => void>>(new Map());
   const chatScrollFnRef = useRef<(() => void) | null>(null);
-  const openSubIdsRef = useRef(openSubIds);
-  openSubIdsRef.current = openSubIds;
+  const subSessionsRef = useRef(subSessions);
+  subSessionsRef.current = subSessions;
 
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const defaultViewMode: ViewMode = isMobile ? 'chat' : 'terminal';
@@ -360,9 +335,9 @@ export function App() {
             ws.sendResize(s.name, 200, 50);
           }
         }
-        // Re-subscribe open sub-session terminals
-        for (const id of openSubIdsRef.current) {
-          ws.subscribeTerminal(`deck_sub_${id}`);
+        // Re-subscribe sub-session terminals
+        for (const s of subSessionsRef.current) {
+          ws.subscribeTerminal(s.sessionName);
         }
       }
     });
@@ -385,12 +360,12 @@ export function App() {
   // from terminal diff parsing. In chat mode, restore tmux to a large
   // viewport so the agent isn't cramped by mobile screen dimensions.
   // Use serialized session names as dep to avoid re-subscribing on state updates.
-  const sessionNamesKey = sessions.map((s) => s.name).sort().join(',');
+  const allTerminalNames = [...sessions.map((s) => s.name), ...subSessions.map((s) => s.sessionName)];
+  const sessionNamesKey = allTerminalNames.sort().join(',');
   useEffect(() => {
     const ws = wsRef.current;
-    if (!ws?.connected || sessions.length === 0) return;
-    const names = sessions.map((s) => s.name);
-    for (const name of names) {
+    if (!ws?.connected || allTerminalNames.length === 0) return;
+    for (const name of allTerminalNames) {
       ws.subscribeTerminal(name);
       const mode = viewModesRef.current[name] ?? defaultViewMode;
       if (mode === 'chat') {
@@ -398,29 +373,12 @@ export function App() {
       }
     }
     return () => {
-      for (const name of names) {
+      for (const name of allTerminalNames) {
         try { ws.unsubscribeTerminal(name); } catch { /* ignore */ }
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, sessionNamesKey]);
-
-  // Subscribe terminal for open sub-sessions
-  const openSubIdsKey = [...openSubIds].sort().join(',');
-  useEffect(() => {
-    const ws = wsRef.current;
-    if (!ws?.connected) return;
-    const ids = [...openSubIds];
-    for (const id of ids) {
-      try { ws.subscribeTerminal(`deck_sub_${id}`); } catch { /* ignore */ }
-    }
-    return () => {
-      for (const id of ids) {
-        try { ws.unsubscribeTerminal(`deck_sub_${id}`); } catch { /* ignore */ }
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, openSubIdsKey]);
 
   // When switching to a session in terminal mode, trigger fit (display:none → flex needs refit)
   useEffect(() => {
@@ -563,7 +521,18 @@ export function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
-  const activeSessionInfo = sessions.find((s) => s.name === activeSession) ?? null;
+  const activeSubSession = activeSession?.startsWith('deck_sub_')
+    ? subSessions.find((s) => s.sessionName === activeSession) ?? null
+    : null;
+  const activeSessionInfo: SessionInfo | null = sessions.find((s) => s.name === activeSession)
+    ?? (activeSubSession ? {
+        name: activeSubSession.sessionName,
+        project: activeSubSession.label ?? activeSubSession.type,
+        role: 'brain' as const,
+        agentType: activeSubSession.type,
+        state: activeSubSession.state === 'running' ? 'running' as const : 'stopped' as const,
+        projectDir: activeSubSession.cwd ?? undefined,
+      } : null);
 
   return (
     <div class="layout">
@@ -660,6 +629,9 @@ export function App() {
               onRenameHandled={() => setRenameRequest(null)}
               onRenameSession={handleRenameSession}
               sessionsLoaded={sessionsLoaded}
+              subSessions={subSessions}
+              onNewSubSession={() => setShowSubDialog(true)}
+              onCloseSubSession={closeSubSession}
             />
 
             {/* Desktop view mode toggle — mobile uses the one in mobile-server-bar */}
@@ -695,6 +667,26 @@ export function App() {
               );
             })}
 
+            {/* Sub-session terminal views: kept alive, show/hide via CSS */}
+            {subSessions.map((sub) => {
+              const isActive = sub.sessionName === activeSession;
+              const sViewMode = viewModes[sub.sessionName] ?? defaultViewMode;
+              return (
+                <div key={sub.id} style={{ display: isActive && sViewMode === 'terminal' ? 'flex' : 'none', flex: 1, overflow: 'hidden' }}>
+                  <TerminalView
+                    sessionName={sub.sessionName}
+                    ws={wsRef.current}
+                    connected={connected}
+                    onDiff={(apply) => registerDiffApplyer(sub.sessionName, apply)}
+                    onHistory={(apply) => registerHistoryApplyer(sub.sessionName, apply)}
+                    onFocusFn={(fn) => { termFocusFnsRef.current.set(sub.sessionName, fn); }}
+                    onFitFn={(fn) => { termFitFnsRef.current.set(sub.sessionName, fn); }}
+                    onScrollBottomFn={(fn) => { termScrollFnsRef.current.set(sub.sessionName, fn); }}
+                  />
+                </div>
+              );
+            })}
+
             {/* Chat view for active session in chat mode */}
             {activeSession && viewMode === 'chat' && (
               <ChatView events={timelineEvents} loading={timelineLoading} sessionState={activeSessionInfo?.state} onScrollBottomFn={(fn) => { chatScrollFnRef.current = fn; }} />
@@ -716,17 +708,7 @@ export function App() {
               </div>
             )}
 
-            {/* Sub-session bar */}
-            {selectedServerId && (
-              <SubSessionBar
-                subSessions={subSessions}
-                openIds={openSubIds}
-                onOpen={toggleSubSession}
-                onNew={() => setShowSubDialog(true)}
-              />
-            )}
-
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={scrollActiveToBottom} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={viewMode === 'chat'} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={scrollActiveToBottom} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={viewMode === 'chat'} isSubSession={activeSession?.startsWith('deck_sub_') ?? false} />
           </>
         )}
       </main>
@@ -739,22 +721,6 @@ export function App() {
         />
       )}
 
-      {/* Sub-session windows (floating) */}
-      {subSessions.filter((s) => openSubIds.has(s.id)).map((sub) => (
-        <SubSessionWindow
-          key={sub.id}
-          sub={sub}
-          ws={wsRef.current}
-          connected={connected}
-          onDiff={registerDiffApplyer}
-          onHistory={registerHistoryApplyer}
-          onMinimize={() => setOpenSubIds((prev) => { const s = new Set(prev); s.delete(sub.id); return s; })}
-          onClose={() => closeSubSession(sub.id)}
-          zIndex={subZIndexes.get(sub.id) ?? 1000}
-          onFocus={() => bringSubToFront(sub.id)}
-        />
-      ))}
-
       {showSubDialog && (
         <StartSubSessionDialog
           ws={wsRef.current}
@@ -763,8 +729,7 @@ export function App() {
             setShowSubDialog(false);
             const sub = await createSubSession(type, shellBin, cwd, label);
             if (sub) {
-              setOpenSubIds((prev) => new Set([...prev, sub.id]));
-              bringSubToFront(sub.id);
+              setActiveSession(sub.sessionName);
             }
           }}
           onClose={() => setShowSubDialog(false)}

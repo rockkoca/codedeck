@@ -21,7 +21,7 @@ export async function tmuxExec(args: string): Promise<string> {
  * Returns lines as a string array.
  */
 export async function capturePane(session: string, lines = 50): Promise<string[]> {
-  const raw = await tmuxExec(`capture-pane -p -t ${session} -S -${lines}`);
+  const raw = await tmuxExec(`capture-pane -p -t ${shellQuote(session)} -S -${lines}`);
   return raw.split('\n');
 }
 
@@ -30,7 +30,7 @@ export async function capturePane(session: string, lines = 50): Promise<string[]
  * Used for terminal streaming — gives exactly the rows the user sees.
  */
 export async function capturePaneVisible(session: string): Promise<string> {
-  return tmuxExec(`capture-pane -e -p -t ${session}`);
+  return tmuxExec(`capture-pane -e -p -t ${shellQuote(session)}`);
 }
 
 /**
@@ -38,13 +38,13 @@ export async function capturePaneVisible(session: string): Promise<string> {
  * -S -N starts N lines before visible top; -E -1 ends at the line before visible row 0.
  */
 export async function capturePaneHistory(session: string, lines = 1000): Promise<string> {
-  return tmuxExec(`capture-pane -e -p -t ${session} -S -${lines} -E -1`);
+  return tmuxExec(`capture-pane -e -p -t ${shellQuote(session)} -S -${lines} -E -1`);
 }
 
 /** Send a string of keys to a tmux pane (newline = Enter). */
 export async function sendKeys(session: string, keys: string): Promise<void> {
   const escaped = keys.replace(/'/g, "'\\''");
-  await tmuxExec(`send-keys -t ${session} '${escaped}' Enter`);
+  await tmuxExec(`send-keys -t ${shellQuote(session)} '${escaped}' Enter`);
 }
 
 /**
@@ -56,14 +56,14 @@ export async function sendKeys(session: string, keys: string): Promise<void> {
  */
 export async function sendKeysDelayedEnter(session: string, keys: string): Promise<void> {
   const escaped = keys.replace(/'/g, "'\\''");
-  await tmuxExec(`send-keys -t ${session} '${escaped}'`);
+  await tmuxExec(`send-keys -t ${shellQuote(session)} '${escaped}'`);
   await new Promise<void>((r) => setTimeout(r, 80));
-  await tmuxExec(`send-keys -t ${session} Enter`);
+  await tmuxExec(`send-keys -t ${shellQuote(session)} Enter`);
 }
 
 /** Send raw keys without appending Enter (e.g. for Ctrl-C). */
 export async function sendKey(session: string, key: string): Promise<void> {
-  await tmuxExec(`send-keys -t ${session} ${key}`);
+  await tmuxExec(`send-keys -t ${shellQuote(session)} ${key}`);
 }
 
 export interface NewSessionOptions {
@@ -83,13 +83,13 @@ export async function newSession(name: string, command?: string, opts?: NewSessi
   // shell operators (&&, ||, etc.) — tmux receives the full string and runs it
   // via $SHELL -c internally.
   const cmdArg = command ? `-- '${command.replace(/'/g, "'\\''")}'` : '';
-  await tmuxExec(`new-session -d -s ${name} ${cwdArg} ${envArgs} ${cmdArg}`.trim());
+  await tmuxExec(`new-session -d -s ${shellQuote(name)} ${cwdArg} ${envArgs} ${cmdArg}`.trim());
 }
 
 /** Kill a tmux session by name. Does not throw if it doesn't exist. */
 export async function killSession(name: string): Promise<void> {
   try {
-    await tmuxExec(`kill-session -t ${name}`);
+    await tmuxExec(`kill-session -t ${shellQuote(name)}`);
   } catch {
     // session may not exist
   }
@@ -214,8 +214,8 @@ function validateFifoPath(p: string): boolean {
   return /^[A-Za-z0-9/_.\-]+$/.test(p);
 }
 
-/** Valid session name pattern for pipe-pane. */
-const SESSION_PATTERN = /^deck_([a-z0-9_]+_(brain|w\d+)|sub_[a-z0-9]+)$/;
+/** Valid session name pattern for pipe-pane. Allows Unicode project names (e.g. Chinese). */
+const SESSION_PATTERN = /^deck_([\p{L}\p{N}_]+_(brain|w\d+)|sub_[a-z0-9]+)$/u;
 
 /** Cached pipe-pane capability (tmux >= 2.6 supports -O). */
 let pipePaneCapability: boolean | null = null;

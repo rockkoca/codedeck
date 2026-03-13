@@ -316,6 +316,9 @@ export async function startWatchingFile(sessionName: string, filePath: string): 
 
   if (!appeared || state.stopped) return;
 
+  // Emit recent history so chat view populates immediately (same as startWatching)
+  await emitRecentHistory(sessionName, filePath);
+
   // Poll every 2s for new content
   state.pollTimer = setInterval(() => {
     void drainNewLines(sessionName, state);
