@@ -53,7 +53,7 @@ export function SubSessionWindow({
 }: Props) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-  const { events } = useTimeline(sub.sessionName, ws);
+  const { events, refreshing } = useTimeline(sub.sessionName, ws);
   const initial = loadLocal(sub.id, isMobile);
   const [geom, setGeom] = useState<WindowGeometry>(initial.geom);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.viewMode);
@@ -205,6 +205,8 @@ export function SubSessionWindow({
           <ChatView
             events={events}
             loading={false}
+            refreshing={refreshing}
+            sessionId={sub.sessionName}
             onScrollBottomFn={(fn) => { chatScrollRef.current = fn; }}
           />
         )}

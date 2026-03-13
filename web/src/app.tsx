@@ -259,7 +259,7 @@ export function App() {
   }, [activeSession, defaultViewMode]);
 
   // Timeline events for chat view
-  const { events: timelineEvents, loading: timelineLoading } = useTimeline(activeSession, wsRef.current);
+  const { events: timelineEvents, loading: timelineLoading, refreshing: timelineRefreshing } = useTimeline(activeSession, wsRef.current);
 
   // Set up WebSocket only when a server is selected
   useEffect(() => {
@@ -697,7 +697,7 @@ export function App() {
 
             {/* Chat view for active session in chat mode */}
             {activeSession && viewMode === 'chat' && (
-              <ChatView events={timelineEvents} loading={timelineLoading} sessionState={activeSessionInfo?.state} onScrollBottomFn={(fn) => { chatScrollFnRef.current = fn; }} />
+              <ChatView events={timelineEvents} loading={timelineLoading} refreshing={timelineRefreshing} sessionId={activeSession} sessionState={activeSessionInfo?.state} onScrollBottomFn={(fn) => { chatScrollFnRef.current = fn; }} />
             )}
 
             {!activeSession && !sessionsLoaded && (

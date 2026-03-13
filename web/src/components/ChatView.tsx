@@ -9,7 +9,10 @@ import type { TimelineEvent } from '../ws-client.js';
 interface Props {
   events: TimelineEvent[];
   loading: boolean;
+  /** True while gap-filling new events after a cache hit */
+  refreshing?: boolean;
   sessionState?: string;
+  sessionId?: string | null;
   /** Receives a function that forces the chat list to scroll to the bottom. */
   onScrollBottomFn?: (fn: () => void) => void;
 }
@@ -110,7 +113,7 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
   return items;
 }
 
-export function ChatView({ events, loading, sessionState, onScrollBottomFn }: Props) {
+export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const autoScrollRef = useRef(true);
@@ -124,6 +127,12 @@ export function ChatView({ events, loading, sessionState, onScrollBottomFn }: Pr
     autoScrollRef.current = true;
     el.scrollTop = el.scrollHeight;
   };
+
+  // On session change, reset scroll position to bottom
+  useEffect(() => {
+    autoScrollRef.current = true;
+    setShowScrollBtn(false);
+  }, [sessionId]);
 
   // Expose scroll-to-bottom so parent can force-snap after sending a message
   useEffect(() => {
@@ -147,11 +156,12 @@ export function ChatView({ events, loading, sessionState, onScrollBottomFn }: Pr
   };
 
   if (loading) {
-    return <div class="chat-view"><div class="chat-loading">Loading timeline...</div></div>;
+    return <div class="chat-view"><div class="chat-loading">加载聊天记录中...</div></div>;
   }
 
   return (
     <div class="chat-view-wrap">
+      {refreshing && <div class="chat-refreshing">↻ 同步最新消息...</div>}
       <div class="chat-view" ref={scrollRef} onScroll={handleScroll}>
         {viewItems.length === 0 && (
           <div class="chat-loading">

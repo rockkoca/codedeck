@@ -26,6 +26,8 @@ function normalizeForEcho(text: string): string {
 export interface UseTimelineResult {
   events: TimelineEvent[];
   loading: boolean;
+  /** True while gap-filling after a cache hit — content is visible but may be stale */
+  refreshing: boolean;
 }
 
 export function useTimeline(
@@ -34,6 +36,7 @@ export function useTimeline(
 ): UseTimelineResult {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const dbRef = useRef<TimelineDB | null>(null);
   const epochRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
@@ -63,8 +66,9 @@ export function useTimeline(
       return;
     }
 
-    // Mark as loading until we get history from daemon
+    // Show loading until we have content to display
     setLoading(true);
+    setRefreshing(false);
     historyLoadedRef.current = null;
 
     // Load from IndexedDB as immediate cache while waiting for daemon
@@ -77,10 +81,11 @@ export function useTimeline(
         seqRef.current = last.seq;
         const stored = await db.getEvents(sessionId, last.epoch, { limit: MAX_MEMORY_EVENTS });
         setEvents(stored);
-        // Cache hit — show immediately, then gap-fill new events since last seq
+        // Cache hit — show content, show refreshing indicator while gap-filling
         setLoading(false);
         historyLoadedRef.current = sessionId; // mark as loaded so WS effect doesn't re-request
         if (ws?.connected) {
+          setRefreshing(true);
           replayRequestIdRef.current = ws.sendTimelineReplayRequest(sessionId, last.seq, last.epoch);
         }
       } else {
@@ -226,6 +231,7 @@ export function useTimeline(
           mergeEvents(replayEvents);
           dbRef.current?.putEvents(replayEvents).catch(() => {});
         }
+        setRefreshing(false);
       }
 
       // ── Reconnect: request replay to fill gaps ──
@@ -254,5 +260,5 @@ export function useTimeline(
     return unsub;
   }, [ws, sessionId, appendEvent, mergeEvents]);
 
-  return { events, loading };
+  return { events, loading, refreshing };
 }
