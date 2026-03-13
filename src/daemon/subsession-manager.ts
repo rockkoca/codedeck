@@ -54,6 +54,14 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
     );
   }
 
+  // Start codex JSONL watcher for codex sub-sessions
+  if (agentType === 'codex' && sub.cwd) {
+    const { startWatching: startCodexWatching } = await import('./codex-watcher.js');
+    startCodexWatching(sessionName, sub.cwd).catch((e: unknown) =>
+      logger.warn({ err: e, sessionName }, 'codex-watcher startWatching failed'),
+    );
+  }
+
   if (driver.postLaunch) {
     const { capturePane, sendKey } = await import('../agent/tmux.js');
     driver.postLaunch(
@@ -68,13 +76,16 @@ export async function stopSubSession(sessionName: string): Promise<void> {
   await killSession(sessionName).catch(() => {});
   const { stopWatching } = await import('./jsonl-watcher.js');
   stopWatching(sessionName);
+  const { stopWatching: stopCodexWatching } = await import('./codex-watcher.js');
+  stopCodexWatching(sessionName);
   logger.info({ sessionName }, 'Sub-session stopped');
 }
 
 /** Rebuild all active sub-sessions that are not currently running.
- *  For already-running CC sub-sessions, ensure the JSONL watcher is active. */
+ *  For already-running CC/Codex sub-sessions, ensure the JSONL watcher is active. */
 export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promise<void> {
   const { startWatchingFile, claudeProjectDir, isWatching } = await import('./jsonl-watcher.js');
+  const { startWatching: startCodexWatching, isWatching: isCodexWatching } = await import('./codex-watcher.js');
 
   for (const sub of subSessions) {
     const sessionName = subSessionName(sub.id);
@@ -91,6 +102,12 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
         logger.warn({ err: e, sessionName }, 'Sub-session watcher restore failed'),
       );
       logger.info({ sessionName, jsonlPath }, 'Restored JSONL watcher for running sub-session');
+    } else if (sub.type === 'codex' && sub.cwd && !isCodexWatching(sessionName)) {
+      // Already running — restore the codex JSONL watcher (lost on daemon restart)
+      startCodexWatching(sessionName, sub.cwd).catch((e: unknown) =>
+        logger.warn({ err: e, sessionName }, 'Codex watcher restore failed'),
+      );
+      logger.info({ sessionName }, 'Restored codex JSONL watcher for running sub-session');
     }
   }
 }
