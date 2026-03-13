@@ -138,11 +138,16 @@ describe('WsBridge', () => {
       return { bridge, daemonWs, browserWs };
     }
 
-    it('translates terminal_update → terminal.diff', async () => {
+    it('translates terminal_update → terminal.diff (with sessionName)', async () => {
       const { daemonWs, browserWs } = await setupAuthenticatedBridge();
-      daemonWs.emit('message', JSON.stringify({ type: 'terminal_update', diff: { a: 1 } }));
+      // Browser must be subscribed to the session for the routed message to arrive
+      browserWs.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'sess-tu' }));
       await flushAsync();
-      expect(JSON.parse(browserWs.sent[0]).type).toBe('terminal.diff');
+      browserWs.sent.length = 0;
+
+      daemonWs.emit('message', JSON.stringify({ type: 'terminal_update', diff: { sessionName: 'sess-tu', a: 1 } }));
+      await flushAsync();
+      expect(JSON.parse(browserWs.sentStrings[0]).type).toBe('terminal.diff');
     });
 
     it('translates session_event → session.event', async () => {
@@ -152,17 +157,22 @@ describe('WsBridge', () => {
       expect(JSON.parse(browserWs.sent[0]).type).toBe('session.event');
     });
 
-    it('passes through session.idle unchanged', async () => {
+    it('passes through session.idle to subscribed browser', async () => {
       const { daemonWs, browserWs } = await setupAuthenticatedBridge();
-      daemonWs.emit('message', JSON.stringify({ type: 'session.idle' }));
+      browserWs.emit('message', JSON.stringify({ type: 'terminal.subscribe', session: 'sess-idle' }));
       await flushAsync();
-      expect(JSON.parse(browserWs.sent[0]).type).toBe('session.idle');
+      browserWs.sent.length = 0;
+
+      daemonWs.emit('message', JSON.stringify({ type: 'session.idle', session: 'sess-idle' }));
+      await flushAsync();
+      expect(JSON.parse(browserWs.sentStrings[0]).type).toBe('session.idle');
     });
 
     it('removes erroring browser socket on send failure', async () => {
       const { bridge, daemonWs, browserWs } = await setupAuthenticatedBridge();
       browserWs.closed = true; // next send throws
-      daemonWs.emit('message', JSON.stringify({ type: 'session.idle' }));
+      // Use a broadcast type (session_event) so the closed socket is detected via broadcastToBrowsers
+      daemonWs.emit('message', JSON.stringify({ type: 'session_event', event: 'started', session: 'x' }));
       await flushAsync();
       expect(bridge.browserCount).toBe(0);
     });
@@ -474,6 +484,126 @@ describe('WsBridge', () => {
       // session lifecycle events (connected/disconnected) are intentionally broadcast
       expect(browserA.sentStrings.length).toBeGreaterThan(0);
       expect(browserB.sentStrings.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ── P0: default-deny — missing session identifier → discard, NOT broadcast ─
+  // These tests verify the "fail-closed" routing policy:
+  // any session-scoped message that omits its session identifier must be
+  // silently discarded, never broadcast to unrelated browsers.
+
+  describe('default-deny: missing session ID → discard, not broadcast (P0)', () => {
+    async function setupBrowserNoSub() {
+      const bridge = WsBridge.get(serverId);
+      const daemonWs = new MockWs();
+      bridge.handleDaemonConnection(daemonWs as never, makeDb('valid-hash'), {} as never);
+      daemonWs.emit('message', JSON.stringify({ type: 'auth', serverId, token: 't' }));
+      await flushAsync();
+
+      const browserWs = new MockWs();
+      bridge.handleBrowserConnection(browserWs as never, 'test-user', makeDb('valid-hash'));
+      // Intentionally NOT subscribed to any session
+      return { daemonWs, browserWs };
+    }
+
+    it('terminal_update without sessionName in diff → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'terminal_update', diff: { rows: [] } }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('command.ack without session → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'command.ack', commandId: 'c1', status: 'ok' }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('subsession.response without sessionName → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'subsession.response', status: 'idle' }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('timeline.history without sessionName → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'timeline.history', events: [{ secret: 'data' }] }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('timeline.replay without sessionName → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'timeline.replay', events: [], truncated: false }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('timeline.event without sessionId in event → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'timeline.event', event: { type: 'assistant.text' } }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('session.idle without session → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'session.idle' }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('session.notification without session → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'session.notification', title: 'done' }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('session.tool without session → discarded, not broadcast', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'session.tool', tool: 'bash' }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('unknown message type → discarded, not broadcast (default-deny)', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      daemonWs.emit('message', JSON.stringify({ type: 'future.unknown.type', data: 'secret' }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
+    });
+
+    it('session_list → broadcast to all browsers (whitelist)', async () => {
+      const bridge = WsBridge.get(serverId);
+      const daemonWs = new MockWs();
+      bridge.handleDaemonConnection(daemonWs as never, makeDb('valid-hash'), {} as never);
+      daemonWs.emit('message', JSON.stringify({ type: 'auth', serverId, token: 't' }));
+      await flushAsync();
+
+      const b1 = new MockWs();
+      const b2 = new MockWs();
+      bridge.handleBrowserConnection(b1 as never, 'user-1', makeDb('valid-hash'));
+      bridge.handleBrowserConnection(b2 as never, 'user-2', makeDb('valid-hash'));
+
+      daemonWs.emit('message', JSON.stringify({ type: 'session_list', sessions: [] }));
+      await flushAsync();
+
+      expect(b1.sentStrings.length).toBeGreaterThan(0);
+      expect(b2.sentStrings.length).toBeGreaterThan(0);
+      expect(JSON.parse(b1.sentStrings[0]).type).toBe('session_list');
+    });
+
+    it('terminal_update for wrong session → not delivered to unsubscribed browser', async () => {
+      const { daemonWs, browserWs } = await setupBrowserNoSub();
+      // browser is not subscribed to any session
+      daemonWs.emit('message', JSON.stringify({
+        type: 'terminal_update', diff: { sessionName: 'other-session', rows: [] },
+      }));
+      await flushAsync();
+      expect(browserWs.sentStrings).toHaveLength(0);
     });
   });
 });

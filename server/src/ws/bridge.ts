@@ -343,72 +343,99 @@ export class WsBridge {
 
   // ── Relay helpers ──────────────────────────────────────────────────────────
 
+  /**
+   * Relay a daemon→browser message using a strict default-deny routing policy.
+   *
+   * Rules:
+   *  - Session-scoped types MUST carry a session identifier. If missing → discard + warn.
+   *  - Only explicitly whitelisted types may be broadcast to all browsers.
+   *  - Any unrecognised type is discarded (never broadcast).
+   *
+   * Broadcast whitelist: session_list, session_event, daemon.reconnected
+   * Session-scoped:      terminal_update, timeline.*, command.ack,
+   *                      subsession.response, session.idle/notification/tool
+   */
   private relayToBrowsers(msg: Record<string, unknown>): void {
-    if (msg.type === 'terminal_update') {
-      // Route only to browsers subscribed to this session
+    const type = msg.type as string;
+
+    // ── Terminal diff: session-scoped ─────────────────────────────────────────
+    if (type === 'terminal_update') {
       const sessionName = (msg.diff as Record<string, unknown> | undefined)?.sessionName as string | undefined;
-      const outJson = JSON.stringify({ ...msg, type: 'terminal.diff' });
-      if (sessionName) {
-        this.sendToSessionSubscribers(sessionName, outJson);
-      } else {
-        this.broadcastToBrowsers(outJson);
+      if (!sessionName) {
+        logger.warn({ serverId: this.serverId }, 'terminal_update missing sessionName — discarded');
+        return;
       }
+      this.sendToSessionSubscribers(sessionName, JSON.stringify({ ...msg, type: 'terminal.diff' }));
       return;
     }
 
-    if (msg.type === 'session_event') {
+    // ── Lifecycle events: broadcast whitelist ─────────────────────────────────
+    if (type === 'session_event') {
       this.broadcastToBrowsers(JSON.stringify({ ...msg, type: 'session.event' }));
       return;
     }
 
-    // Route timeline events only to browsers subscribed to the relevant session.
-    // Broadcasting would leak events across sessions and across users.
-    if (msg.type === 'timeline.event') {
-      const sessionId = (msg.event as Record<string, unknown> | undefined)?.sessionId as string | undefined;
-      if (sessionId) {
-        this.sendToSessionSubscribers(sessionId, JSON.stringify(msg));
-      }
+    if (type === 'session_list') {
+      this.broadcastToBrowsers(JSON.stringify(msg));
       return;
     }
 
-    // Route command.ack only to the session's subscribers
-    if (msg.type === 'command.ack') {
-      const sessionName = msg.session as string | undefined;
-      if (sessionName) {
-        this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+    // ── Timeline events: session-scoped ───────────────────────────────────────
+    if (type === 'timeline.event') {
+      const sessionId = (msg.event as Record<string, unknown> | undefined)?.sessionId as string | undefined;
+      if (!sessionId) {
+        logger.warn({ serverId: this.serverId }, 'timeline.event missing sessionId — discarded');
         return;
       }
+      this.sendToSessionSubscribers(sessionId, JSON.stringify(msg));
+      return;
     }
 
-    // Route subsession.response only to the session's subscribers
-    if (msg.type === 'subsession.response') {
+    // Timeline history/replay contain all CC conversation content — MUST NOT broadcast.
+    if (type === 'timeline.history' || type === 'timeline.replay') {
       const sessionName = msg.sessionName as string | undefined;
-      if (sessionName) {
-        this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      if (!sessionName) {
+        logger.warn({ serverId: this.serverId, type }, 'timeline message missing sessionName — discarded');
         return;
       }
+      this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      return;
     }
 
-    // Route timeline history/replay to the specific session's subscribers only.
-    // These responses contain all CC conversation content — must never be broadcast.
-    if (msg.type === 'timeline.history' || msg.type === 'timeline.replay') {
-      const sessionName = msg.sessionName as string | undefined;
-      if (sessionName) {
-        this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
-        return;
-      }
-    }
-
-    // Route session-scoped notifications to session subscribers only
-    if (msg.type === 'session.idle' || msg.type === 'session.notification' || msg.type === 'session.tool') {
+    // ── Command & subsession: session-scoped ──────────────────────────────────
+    if (type === 'command.ack') {
       const sessionName = msg.session as string | undefined;
-      if (sessionName) {
-        this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      if (!sessionName) {
+        logger.warn({ serverId: this.serverId }, 'command.ack missing session — discarded');
         return;
       }
+      this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      return;
     }
 
-    this.broadcastToBrowsers(JSON.stringify(msg));
+    if (type === 'subsession.response') {
+      const sessionName = msg.sessionName as string | undefined;
+      if (!sessionName) {
+        logger.warn({ serverId: this.serverId }, 'subsession.response missing sessionName — discarded');
+        return;
+      }
+      this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      return;
+    }
+
+    // ── Session notifications: session-scoped ─────────────────────────────────
+    if (type === 'session.idle' || type === 'session.notification' || type === 'session.tool') {
+      const sessionName = msg.session as string | undefined;
+      if (!sessionName) {
+        logger.warn({ serverId: this.serverId, type }, 'session notification missing session — discarded');
+        return;
+      }
+      this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      return;
+    }
+
+    // ── Default-deny: unknown type → discard ──────────────────────────────────
+    logger.warn({ serverId: this.serverId, type }, 'relayToBrowsers: unknown message type — discarded (default-deny)');
   }
 
   private routeBinaryFrame(data: Buffer): void {
