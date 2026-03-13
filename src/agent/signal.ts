@@ -22,6 +22,38 @@ import { activeHookPort } from '../daemon/hook-server.js';
 const CODEDECK_DIR = path.join(os.homedir(), '.codedeck');
 const CC_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 
+// ── Signal file API ────────────────────────────────────────────────────────────
+
+/** Directory where idle signal files are written by hooks and consumed by the daemon. */
+export const SIGNAL_DIR = path.join(CODEDECK_DIR, 'signals');
+
+interface IdleSignal {
+  session: string;
+  timestamp: number;
+  agentType?: string;
+}
+
+/** Write an idle signal file for a session (atomic rename). */
+export async function writeIdleSignal(signal: IdleSignal): Promise<void> {
+  await fs.mkdir(SIGNAL_DIR, { recursive: true });
+  const tmp = path.join(SIGNAL_DIR, `${signal.session}.tmp`);
+  const dest = path.join(SIGNAL_DIR, `${signal.session}.signal`);
+  await fs.writeFile(tmp, JSON.stringify(signal));
+  await fs.rename(tmp, dest);
+}
+
+/** Read and consume an idle signal for a session. Returns null if none exists. */
+export async function checkIdleSignal(session: string): Promise<IdleSignal | null> {
+  const filePath = path.join(SIGNAL_DIR, `${session}.signal`);
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    await fs.unlink(filePath).catch(() => {});
+    return JSON.parse(raw) as IdleSignal;
+  } catch {
+    return null;
+  }
+}
+
 // Common preamble for all hook scripts: get deck_ session name or exit
 const SESSION_PREAMBLE = `\
 SESSION_NAME=$(tmux display-message -p '#S' 2>/dev/null || echo "")
