@@ -111,6 +111,20 @@ function normalizePath(p: string): string {
 
 // ── JSONL parsing ──────────────────────────────────────────────────────────────
 
+// Debounce buffers for streaming final_answer events.
+// Codex emits a new final_answer snapshot on every token; we only want the last one.
+const finalAnswerBuffers = new Map<string, { text: string; timer: ReturnType<typeof setTimeout> }>();
+const FINAL_ANSWER_DEBOUNCE_MS = 600;
+
+function flushFinalAnswer(sessionName: string): void {
+  const buf = finalAnswerBuffers.get(sessionName);
+  if (!buf) return;
+  finalAnswerBuffers.delete(sessionName);
+  timelineEmitter.emit(sessionName, 'assistant.text',
+    { text: buf.text, streaming: false },
+    { source: 'daemon', confidence: 'high' });
+}
+
 /** Exported for testing. */
 export function parseLine(sessionName: string, line: string): void {
   if (!line.trim()) return;
@@ -130,6 +144,8 @@ export function parseLine(sessionName: string, line: string): void {
   const evtType = payload['type'] as string | undefined;
 
   if (evtType === 'user_message') {
+    // Flush any pending assistant text before a new user message
+    flushFinalAnswer(sessionName);
     const text = payload['message'] as string | undefined;
     if (text?.trim()) {
       timelineEmitter.emit(sessionName, 'user.message', { text },
@@ -140,11 +156,12 @@ export function parseLine(sessionName: string, line: string): void {
 
   if (evtType === 'agent_message' && payload['phase'] === 'final_answer') {
     const text = payload['message'] as string | undefined;
-    if (text?.trim()) {
-      timelineEmitter.emit(sessionName, 'assistant.text',
-        { text, streaming: false },
-        { source: 'daemon', confidence: 'high' });
-    }
+    if (!text?.trim()) return;
+    // Debounce: buffer the latest snapshot and reset the timer
+    const existing = finalAnswerBuffers.get(sessionName);
+    if (existing) clearTimeout(existing.timer);
+    const timer = setTimeout(() => flushFinalAnswer(sessionName), FINAL_ANSWER_DEBOUNCE_MS);
+    finalAnswerBuffers.set(sessionName, { text, timer });
   }
 }
 
@@ -168,35 +185,46 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
     const lines = chunk.split('\n');
     const startIdx = size > readSize ? 1 : 0; // skip possible partial first line
 
-    let count = 0;
-    for (let i = startIdx; i < lines.length && count < HISTORY_LINES; i++) {
+    // Pre-pass: deduplicate streaming final_answer snapshots.
+    // Codex emits a snapshot per token; for history, consecutive final_answer events
+    // for the same assistant turn are collapsed — only the last (longest) one is kept.
+    interface HistoryEvent { type: 'user' | 'assistant'; text: string }
+    const historyEvents: HistoryEvent[] = [];
+    for (let i = startIdx; i < lines.length; i++) {
       const line = lines[i];
       if (!line.trim()) continue;
-
       let raw: Record<string, unknown>;
       try { raw = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
-
       if (raw['type'] !== 'event_msg') continue;
       const payload = raw['payload'] as Record<string, unknown> | undefined;
       if (!payload) continue;
-
       const evtType = payload['type'] as string | undefined;
-
       if (evtType === 'user_message') {
         const text = payload['message'] as string | undefined;
-        if (text?.trim()) {
-          timelineEmitter.emit(sessionName, 'user.message', { text },
-            { source: 'daemon', confidence: 'high' });
-          count++;
-        }
+        if (text?.trim()) historyEvents.push({ type: 'user', text });
       } else if (evtType === 'agent_message' && payload['phase'] === 'final_answer') {
         const text = payload['message'] as string | undefined;
-        if (text?.trim()) {
-          timelineEmitter.emit(sessionName, 'assistant.text',
-            { text, streaming: false },
-            { source: 'daemon', confidence: 'high' });
-          count++;
+        if (!text?.trim()) continue;
+        // Replace the previous assistant entry if it's a streaming continuation
+        const last = historyEvents[historyEvents.length - 1];
+        if (last?.type === 'assistant') {
+          last.text = text; // update in place — keep the latest snapshot
+        } else {
+          historyEvents.push({ type: 'assistant', text });
         }
+      }
+    }
+
+    // Emit deduplicated history (most recent HISTORY_LINES events)
+    const slice = historyEvents.slice(-HISTORY_LINES);
+    for (const ev of slice) {
+      if (ev.type === 'user') {
+        timelineEmitter.emit(sessionName, 'user.message', { text: ev.text },
+          { source: 'daemon', confidence: 'high' });
+      } else {
+        timelineEmitter.emit(sessionName, 'assistant.text',
+          { text: ev.text, streaming: false },
+          { source: 'daemon', confidence: 'high' });
       }
     }
   } catch {
@@ -388,6 +416,10 @@ export function stopWatching(sessionName: string): void {
   state.abort.abort();
   if (state.pollTimer) clearInterval(state.pollTimer);
   watchers.delete(sessionName);
+  // Flush any buffered final_answer on stop
+  flushFinalAnswer(sessionName);
+  const buf = finalAnswerBuffers.get(sessionName);
+  if (buf) { clearTimeout(buf.timer); finalAnswerBuffers.delete(sessionName); }
 }
 
 // ── Internal watcher logic ─────────────────────────────────────────────────────
