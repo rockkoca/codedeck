@@ -81,12 +81,12 @@ export function useTimeline(
         seqRef.current = last.seq;
         const stored = await db.getEvents(sessionId, last.epoch, { limit: MAX_MEMORY_EVENTS });
         setEvents(stored);
-        // Cache hit — show content, show refreshing indicator while gap-filling
+        // Cache hit — show immediately, but always request full history from daemon
+        // so tool.call / other events not in cache get filled in.
         setLoading(false);
-        historyLoadedRef.current = sessionId; // mark as loaded so WS effect doesn't re-request
         if (ws?.connected) {
           setRefreshing(true);
-          replayRequestIdRef.current = ws.sendTimelineReplayRequest(sessionId, last.seq, last.epoch);
+          historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
         }
       } else {
         epochRef.current = 0;
@@ -202,6 +202,7 @@ export function useTimeline(
           dbRef.current?.putEvents(msg.events).catch(() => {});
         }
         setLoading(false);
+        setRefreshing(false);
       }
 
       // ── Replay response (gap-fill after reconnect) ──
@@ -245,15 +246,9 @@ export function useTimeline(
       }
     };
 
-    // On connect: if history is already loaded from cache, only gap-fill new events.
-    // If not yet loaded, request full history.
-    if (ws.connected) {
-      if (historyLoadedRef.current === sessionId && seqRef.current > 0) {
-        // Already loaded from cache — just replay any events we missed
-        replayRequestIdRef.current = ws.sendTimelineReplayRequest(sessionId, seqRef.current, epochRef.current);
-      } else if (historyLoadedRef.current !== sessionId) {
-        historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
-      }
+    // Always request full history on connect (cache is just for instant display).
+    if (ws.connected && historyLoadedRef.current !== sessionId) {
+      historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
     }
 
     const unsub = ws.onMessage(handler);
