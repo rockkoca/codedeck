@@ -66,12 +66,14 @@ interface ContentBlock {
   thinking?: string;
   name?: string;
   input?: Record<string, unknown>;
+  content?: unknown;
+  is_error?: boolean;
 }
 
 /**
  * Parse one JSONL line and emit timeline events.
- * - assistant: emit assistant.text (tool.call/result come from hooks, no duplication needed)
- * - user: emit user.message so tmux-direct input appears in chat timeline
+ * - assistant: emit assistant.text, assistant.thinking, tool.call
+ * - user: emit user.message, tool.result
  */
 function parseLine(sessionName: string, line: string): void {
   if (!line.trim()) return;
@@ -99,6 +101,12 @@ function parseLine(sessionName: string, line: string): void {
         timelineEmitter.emit(sessionName, 'assistant.thinking', {
           text: block.thinking,
         }, { source: 'daemon', confidence: 'high' });
+      } else if (block.type === 'tool_use' && block.name) {
+        const input = extractToolInput(block.name, block.input);
+        timelineEmitter.emit(sessionName, 'tool.call', {
+          tool: block.name,
+          ...(input ? { input } : {}),
+        }, { source: 'daemon', confidence: 'high' });
       }
     }
     return;
@@ -106,13 +114,30 @@ function parseLine(sessionName: string, line: string): void {
 
   if (raw['type'] === 'user') {
     for (const block of content as ContentBlock[]) {
-      // Only plain text blocks — skip tool_result / image blocks
       if (block.type === 'text' && block.text?.trim()) {
         timelineEmitter.emit(sessionName, 'user.message', {
           text: block.text,
         }, { source: 'daemon', confidence: 'high' });
+      } else if (block.type === 'tool_result') {
+        const error = block.is_error ? String(block.content ?? 'error') : undefined;
+        timelineEmitter.emit(sessionName, 'tool.result', {
+          ...(error ? { error } : {}),
+        }, { source: 'daemon', confidence: 'high' });
       }
     }
+  }
+}
+
+/** Extract a short summary of tool input for display. */
+function extractToolInput(tool: string, input?: Record<string, unknown>): string {
+  if (!input) return '';
+  switch (tool) {
+    case 'Bash': return String(input['command'] ?? '').split('\n').find((l) => l.trim()) ?? '';
+    case 'Read': case 'Write': case 'Edit': return String(input['file_path'] ?? '');
+    case 'Glob': return String(input['pattern'] ?? '');
+    case 'Grep': return `${input['pattern'] ?? ''}${input['path'] ? ` in ${input['path']}` : ''}`;
+    case 'Agent': return String(input['description'] ?? '');
+    default: return '';
   }
 }
 
@@ -157,8 +182,7 @@ function canClaim(sessionName: string, filePath: string): boolean {
 const HISTORY_LINES = 500; // max lines to scan for recent assistant.text history
 
 /**
- * Read the tail of a JSONL file and emit only assistant.text events.
- * Hooks already provide tool.call/tool.result — we only backfill the text.
+ * Read the tail of a JSONL file and emit history events (text, thinking, tool.call, tool.result).
  */
 async function emitRecentHistory(sessionName: string, filePath: string): Promise<void> {
   let fh: Awaited<ReturnType<typeof open>> | null = null;
@@ -201,6 +225,12 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
               text: block.thinking,
             }, { source: 'daemon', confidence: 'high' });
             count++;
+          } else if (block.type === 'tool_use' && block.name) {
+            const input = extractToolInput(block.name, block.input);
+            timelineEmitter.emit(sessionName, 'tool.call', {
+              tool: block.name, ...(input ? { input } : {}),
+            }, { source: 'daemon', confidence: 'high' });
+            count++;
           }
         }
       } else if (raw['type'] === 'user') {
@@ -208,6 +238,12 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
           if (block.type === 'text' && block.text?.trim()) {
             timelineEmitter.emit(sessionName, 'user.message', {
               text: block.text,
+            }, { source: 'daemon', confidence: 'high' });
+            count++;
+          } else if (block.type === 'tool_result') {
+            const error = block.is_error ? String(block.content ?? 'error') : undefined;
+            timelineEmitter.emit(sessionName, 'tool.result', {
+              ...(error ? { error } : {}),
             }, { source: 'daemon', confidence: 'high' });
             count++;
           }
