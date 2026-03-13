@@ -123,8 +123,13 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       wsRef.current?.sendInput(sessionName, data);
     });
 
-    // Sync terminal dimensions to tmux on every resize
+    // Sync terminal dimensions to tmux on every resize — but only when visible.
+    // When hidden (chat mode), the parent sends a large fallback size (200x50)
+    // to keep tmux uncramped. Sending xterm's tiny hidden-container dimensions
+    // would override that and shrink the tmux session.
     term.onResize(({ cols, rows }) => {
+      const el = containerRef.current;
+      if (!el || el.clientWidth === 0 || el.clientHeight === 0) return; // hidden
       wsRef.current?.sendResize(sessionName, cols, rows);
     });
 
@@ -238,8 +243,11 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
 
   // When WS reconnects (connected → true), re-send terminal dimensions so tmux
   // always matches xterm — prevents garbled/corrupted display (花屏).
+  // Skip when hidden (chat mode) — parent handles that with 200x50.
   useEffect(() => {
     if (!connected) return;
+    const el = containerRef.current;
+    if (!el || el.clientWidth === 0 || el.clientHeight === 0) return; // hidden (chat mode)
     const term = termRef.current;
     const ws = wsRef.current;
     if (term && ws) {
