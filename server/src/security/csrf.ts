@@ -23,11 +23,11 @@ export function csrfMiddleware() {
     const method = c.req.method.toUpperCase();
 
     // Safe methods pass through
-    if (SAFE_METHODS.has(method)) return next();
+    if (SAFE_METHODS.has(method)) { await next(); return; }
 
     // Bearer auth (API key, daemon, CLI) skips CSRF — not a browser session
     const authHeader = c.req.header('Authorization');
-    if (authHeader?.startsWith('Bearer ')) return next();
+    if (authHeader?.startsWith('Bearer ')) { await next(); return; }
 
     const sessionCookie = getCookie(c, 'rcc_session');
     const rawOrigin = c.req.header('Origin') ?? c.req.header('Referer');
@@ -57,7 +57,7 @@ export function csrfMiddleware() {
       }
     }
 
-    return next();
+    await next();
   };
 }
 
