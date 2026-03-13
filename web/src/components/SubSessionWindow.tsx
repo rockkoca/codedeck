@@ -1,13 +1,15 @@
 /**
  * SubSessionWindow — floating, draggable/resizable window for a sub-session.
- * Renders TerminalView or ChatView and an independent input bar.
+ * Uses the full SessionControls for input (same as the main session).
  */
 import { useState, useRef, useCallback, useEffect } from 'preact/hooks';
 import { TerminalView } from './TerminalView.js';
 import { ChatView } from './ChatView.js';
+import { SessionControls } from './SessionControls.js';
 import { useTimeline } from '../hooks/useTimeline.js';
+import { useQuickData } from './QuickInputPanel.js';
 import type { WsClient } from '../ws-client.js';
-import type { TerminalDiff } from '../types.js';
+import type { TerminalDiff, SessionInfo } from '../types.js';
 import type { SubSession } from '../hooks/useSubSessions.js';
 
 interface WindowGeometry { x: number; y: number; w: number; h: number }
@@ -28,7 +30,7 @@ type ViewMode = 'terminal' | 'chat';
 
 const LOCAL_KEY = (id: string) => `rcc_subsession_${id}`;
 const DEFAULT_W = 620;
-const DEFAULT_H = 420;
+const DEFAULT_H = 480;
 const MIN_W = 300;
 const MIN_H = 200;
 
@@ -54,12 +56,12 @@ export function SubSessionWindow({
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   const { events, refreshing } = useTimeline(sub.sessionName, ws);
+  const quickData = useQuickData();
   const initial = loadLocal(sub.id, isMobile);
   const [geom, setGeom] = useState<WindowGeometry>(initial.geom);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.viewMode);
-  const [input, setInput] = useState('');
   const [confirmClose, setConfirmClose] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
   const geomRef = useRef(geom);
   geomRef.current = geom;
   const viewModeRef = useRef(viewMode);
@@ -67,11 +69,26 @@ export function SubSessionWindow({
   const termScrollRef = useRef<(() => void) | null>(null);
   const chatScrollRef = useRef<(() => void) | null>(null);
 
-  // Persist on change
+  // SessionInfo shape for SessionControls
+  const sessionInfo: SessionInfo = {
+    name: sub.sessionName,
+    project: sub.label ?? sub.type,
+    role: 'w1',
+    agentType: sub.type,
+    state: sub.state === 'running' ? 'running' : sub.state === 'stopped' ? 'stopped' : 'idle',
+    projectDir: sub.cwd ?? undefined,
+  };
+
   useEffect(() => {
     saveLocal(sub.id, geom, viewMode);
   }, [sub.id, geom, viewMode]);
 
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => {
+      if (viewModeRef.current === 'chat') chatScrollRef.current?.();
+      else termScrollRef.current?.();
+    }, 50);
+  }, []);
 
   // ── Dragging ──────────────────────────────────────────────────────────────
   const dragStart = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
@@ -80,7 +97,6 @@ export function SubSessionWindow({
     if ((e.target as HTMLElement).closest('button')) return;
     dragStart.current = { mx: e.clientX, my: e.clientY, ox: geomRef.current.x, oy: geomRef.current.y };
     onFocus();
-
     const onMove = (me: MouseEvent) => {
       if (!dragStart.current) return;
       const dx = me.clientX - dragStart.current.mx;
@@ -106,7 +122,6 @@ export function SubSessionWindow({
     onFocus();
     const startG = { ...geomRef.current };
     const sx = e.clientX, sy = e.clientY;
-
     const onMove = (me: MouseEvent) => {
       const dx = me.clientX - sx;
       const dy = me.clientY - sy;
@@ -127,38 +142,17 @@ export function SubSessionWindow({
     document.addEventListener('mouseup', onUp);
   }, [onFocus]);
 
-  // ── Send ──────────────────────────────────────────────────────────────────
-  const handleSend = useCallback(() => {
-    const text = input.trim();
-    if (!text || !ws?.connected) return;
-    ws.sendSessionMessage(sub.sessionName, text);
-    setInput('');
-    setTimeout(() => {
-      if (viewModeRef.current === 'chat') chatScrollRef.current?.();
-      else termScrollRef.current?.();
-    }, 50);
-  }, [input, ws, sub.sessionName]);
-
   const typeLabel = sub.label ?? (sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type);
 
-  // Mobile: full-screen overlay
   const style: Record<string, string | number> = isMobile
     ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex }
     : { position: 'fixed', left: geom.x, top: geom.y, width: geom.w, height: geom.h, zIndex };
 
   return (
-    <div
-      class="subsession-window"
-      style={style}
-      onMouseDown={onFocus}
-    >
+    <div class="subsession-window" style={style} onMouseDown={onFocus}>
       {/* 8-direction resize handles (desktop only) */}
       {!isMobile && (['n','s','e','w','ne','nw','se','sw'] as ResizeDir[]).map((dir) => (
-        <div
-          key={dir}
-          class={`resize-handle resize-${dir}`}
-          onMouseDown={onResizeMouseDown(dir)}
-        />
+        <div key={dir} class={`resize-handle resize-${dir}`} onMouseDown={onResizeMouseDown(dir)} />
       ))}
 
       {/* Header */}
@@ -166,16 +160,8 @@ export function SubSessionWindow({
         <span class="subsession-drag-icon">⠿</span>
         <span class="subsession-title">{typeLabel}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-          <button
-            class={`subsession-mode-btn${viewMode === 'chat' ? ' active' : ''}`}
-            onClick={() => setViewMode('chat')}
-            title="Chat view"
-          >💬</button>
-          <button
-            class={`subsession-mode-btn${viewMode === 'terminal' ? ' active' : ''}`}
-            onClick={() => setViewMode('terminal')}
-            title="Terminal view"
-          >⌨</button>
+          <button class={`subsession-mode-btn${viewMode === 'chat' ? ' active' : ''}`} onClick={() => setViewMode('chat')} title="Chat view">💬</button>
+          <button class={`subsession-mode-btn${viewMode === 'terminal' ? ' active' : ''}`} onClick={() => setViewMode('terminal')} title="Terminal view">⌨</button>
           <button class="subsession-minimize-btn" onClick={onMinimize} title="Minimize">─</button>
           {confirmClose ? (
             <>
@@ -212,26 +198,15 @@ export function SubSessionWindow({
         )}
       </div>
 
-      {/* Input bar */}
-      <div class="subsession-input-bar">
-        <input
-          ref={inputRef}
-          class="subsession-input"
-          placeholder="Ask or type..."
-          value={input}
-          onInput={(e) => setInput((e.target as HTMLInputElement).value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-          }}
-        />
-        <button
-          class="btn btn-primary subsession-send-btn"
-          onClick={handleSend}
-          disabled={!input.trim() || !ws?.connected}
-        >
-          Send
-        </button>
-      </div>
+      {/* Full SessionControls — identical to main session */}
+      <SessionControls
+        ws={ws}
+        activeSession={sessionInfo}
+        inputRef={inputRef}
+        quickData={quickData}
+        hideShortcuts={viewMode === 'chat'}
+        onSend={scrollToBottom}
+      />
     </div>
   );
 }
