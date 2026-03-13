@@ -195,7 +195,7 @@ describe('WsBridge', () => {
 
     it('drops oversized payload', async () => {
       const { daemonWs, browserWs } = await setupBridge();
-      browserWs.emit('message', JSON.stringify({ type: 'session.send', text: 'x'.repeat(5000) }));
+      browserWs.emit('message', JSON.stringify({ type: 'session.send', text: 'x'.repeat(70000) }));
       expect(daemonWs.sent).toHaveLength(0);
     });
 
