@@ -25,8 +25,6 @@ interface Props {
   hideShortcuts?: boolean;
   /** Called after a message is sent — for local UX only (e.g. optimistic display). Does not emit timeline events. */
   onSend?: (sessionName: string, text: string) => void;
-  /** When true, hides the ⋯ session actions menu (not applicable to sub-sessions). */
-  isSubSession?: boolean;
 }
 
 type MenuAction = 'restart' | 'new' | 'stop';
@@ -55,7 +53,7 @@ function loadModel(): ModelChoice | null {
   return null;
 }
 
-export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, isSubSession }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend }: Props) {
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -348,49 +346,47 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
           Send
         </button>
 
-        {/* Menu button — hidden for sub-sessions */}
-        {!isSubSession && (
-          <div class="menu-wrap" ref={menuRef}>
-            <button
-              class="btn btn-secondary"
-              onClick={() => { setMenuOpen((o) => !o); setConfirm(null); }}
-              disabled={disabled}
-              title="Session actions"
-              style={{ padding: '6px 10px' }}
-            >
-              ⋯
-            </button>
-            {menuOpen && (
-              <div class="menu-dropdown">
-                <button
-                  class={`menu-item ${confirm === 'restart' ? 'menu-item-warn' : ''}`}
-                  onClick={() => handleMenuAction('restart')}
-                >
-                  {confirm === 'restart' ? '确认重启?' : '↺ Restart'}
-                </button>
-                <button
-                  class={`menu-item ${confirm === 'new' ? 'menu-item-warn' : ''}`}
-                  onClick={() => handleMenuAction('new')}
-                >
-                  {confirm === 'new' ? '确认新建?' : '+ New'}
-                </button>
-                <button
-                  class="menu-item"
-                  onClick={() => { onRenameSession?.(); setMenuOpen(false); }}
-                >
-                  ✎ Rename
-                </button>
-                <div class="menu-divider" />
-                <button
-                  class={`menu-item ${confirm === 'stop' ? 'menu-item-danger' : ''}`}
-                  onClick={() => handleMenuAction('stop')}
-                >
-                  {confirm === 'stop' ? '确认关闭?' : '✕ Stop'}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Menu button */}
+        <div class="menu-wrap" ref={menuRef}>
+          <button
+            class="btn btn-secondary"
+            onClick={() => { setMenuOpen((o) => !o); setConfirm(null); }}
+            disabled={disabled}
+            title="Session actions"
+            style={{ padding: '6px 10px' }}
+          >
+            ⋯
+          </button>
+          {menuOpen && (
+            <div class="menu-dropdown">
+              <button
+                class={`menu-item ${confirm === 'restart' ? 'menu-item-warn' : ''}`}
+                onClick={() => handleMenuAction('restart')}
+              >
+                {confirm === 'restart' ? '确认重启?' : '↺ Restart'}
+              </button>
+              <button
+                class={`menu-item ${confirm === 'new' ? 'menu-item-warn' : ''}`}
+                onClick={() => handleMenuAction('new')}
+              >
+                {confirm === 'new' ? '确认新建?' : '+ New'}
+              </button>
+              <button
+                class="menu-item"
+                onClick={() => { onRenameSession?.(); setMenuOpen(false); }}
+              >
+                ✎ Rename
+              </button>
+              <div class="menu-divider" />
+              <button
+                class={`menu-item ${confirm === 'stop' ? 'menu-item-danger' : ''}`}
+                onClick={() => handleMenuAction('stop')}
+              >
+                {confirm === 'stop' ? '确认关闭?' : '✕ Stop'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'preact/hooks';
 import type { SessionInfo } from '../types.js';
-import type { SubSession } from '../hooks/useSubSessions.js';
 
 interface Props {
   sessions: SessionInfo[];
@@ -23,9 +22,6 @@ interface Props {
   onRenameSession?: (sessionName: string, newProjectName: string) => void;
   /** True once sessions have been loaded (from API or WS) */
   sessionsLoaded?: boolean;
-  subSessions?: SubSession[];
-  onNewSubSession?: () => void;
-  onCloseSubSession?: (id: string) => void;
 }
 
 interface CtxMenu { x: number; y: number; session: SessionInfo }
@@ -36,7 +32,7 @@ const AGENT_BADGE: Record<string, { label: string; color: string }> = {
   'opencode':    { label: 'oc', color: '#059669' },
 };
 
-export function SessionTabs({ sessions, activeSession, connected, latencyMs, idleAlerts, onAlertDismiss, activeTools, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession, sessionsLoaded, subSessions, onNewSubSession, onCloseSubSession }: Props) {
+export function SessionTabs({ sessions, activeSession, connected, latencyMs, idleAlerts, onAlertDismiss, activeTools, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession, sessionsLoaded }: Props) {
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
@@ -153,40 +149,6 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
       })}
 
       <button class="tab-add-btn" onClick={onNewSession} title="New session">＋</button>
-
-      {(subSessions ?? []).map((sub) => {
-        const isActive = sub.sessionName === activeSession;
-        const stateClass = sub.state === 'running' ? 'busy' : sub.state === 'stopped' ? 'idle' : '';
-        const classes = ['tab', 'sub-tab', isActive ? 'active' : '', stateClass].filter(Boolean).join(' ');
-        return (
-          <div key={sub.id} class="tab-wrap">
-            <button
-              class={classes}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => onSelect(sub.sessionName)}
-              title={`${sub.type} sub-session — ${sub.state}`}
-            >
-              {agentBadge(sub.type)}
-              {sub.label ?? sub.type}
-              <button
-                class="tab-close-btn"
-                onClick={(e) => { e.stopPropagation(); onCloseSubSession?.(sub.id); }}
-                title="Close sub-session"
-              >
-                ×
-              </button>
-            </button>
-          </div>
-        );
-      })}
-
-      {(() => {
-        const activeIsSubSession = activeSession?.startsWith('deck_sub_') ?? false;
-        return !activeIsSubSession ? (
-          <button class="tab-add-btn" onClick={onNewSubSession} title="New sub-session">⊕</button>
-        ) : null;
-      })()}
 
       {ctx && (
         <div ref={menuRef} class="tab-context-menu" style={{ left: menuX, top: menuY }}>
