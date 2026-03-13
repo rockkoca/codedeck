@@ -31,9 +31,11 @@ interface Props {
   onOpen: () => void;
   onDiff: (sessionName: string, apply: (d: TerminalDiff) => void) => void;
   onHistory: (sessionName: string, apply: (c: string) => void) => void;
+  cardW?: number;
+  cardH?: number;
 }
 
-export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onHistory }: Props) {
+export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onHistory, cardW = 350, cardH = 250 }: Props) {
   const isShell = sub.type === 'shell';
   const { events, refreshing } = isShell ? { events: [], refreshing: false } : useTimeline(sub.sessionName, ws);
   const termScrollRef = useRef<(() => void) | null>(null);
@@ -44,6 +46,7 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
   return (
     <div
       class={`subcard${isOpen ? ' subcard-open' : ''}`}
+      style={{ width: cardW, height: cardH, minWidth: cardW }}
       onClick={onOpen}
     >
       {/* Header */}

@@ -21,22 +21,53 @@ interface Props {
 
 type Layout = 'single' | 'double';
 
-function loadLayout(): Layout {
+interface CardSize { w: number; h: number }
+
+const DEFAULT_SIZE: CardSize = { w: 350, h: 250 };
+
+function load<T>(key: string, fallback: T): T {
   try {
-    const v = localStorage.getItem('rcc_subcard_layout');
-    if (v === 'double') return 'double';
+    const v = localStorage.getItem(key);
+    if (v) return JSON.parse(v) as T;
   } catch { /* ignore */ }
-  return 'single';
+  return fallback;
+}
+
+function save(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
 }
 
 export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connected, onDiff, onHistory }: Props) {
-  const [layout, setLayout] = useState<Layout>(loadLayout);
+  const [layout, setLayout] = useState<Layout>(() => load('rcc_subcard_layout', 'single'));
   const [collapsed, setCollapsed] = useState(false);
+  const [showSizePanel, setShowSizePanel] = useState(false);
+  const [cardSize, setCardSize] = useState<CardSize>(() => load('rcc_subcard_size', DEFAULT_SIZE));
+  const [draftW, setDraftW] = useState(String(cardSize.w));
+  const [draftH, setDraftH] = useState(String(cardSize.h));
 
   const toggleLayout = () => {
     const next: Layout = layout === 'single' ? 'double' : 'single';
     setLayout(next);
-    try { localStorage.setItem('rcc_subcard_layout', next); } catch { /* ignore */ }
+    save('rcc_subcard_layout', next);
+  };
+
+  const applySize = () => {
+    const w = Math.max(200, Math.min(800, parseInt(draftW) || DEFAULT_SIZE.w));
+    const h = Math.max(150, Math.min(600, parseInt(draftH) || DEFAULT_SIZE.h));
+    const next = { w, h };
+    setCardSize(next);
+    save('rcc_subcard_size', next);
+    setDraftW(String(w));
+    setDraftH(String(h));
+    setShowSizePanel(false);
+  };
+
+  const resetSize = () => {
+    setCardSize(DEFAULT_SIZE);
+    save('rcc_subcard_size', DEFAULT_SIZE);
+    setDraftW(String(DEFAULT_SIZE.w));
+    setDraftH(String(DEFAULT_SIZE.h));
+    setShowSizePanel(false);
   };
 
   if (subSessions.length === 0 && collapsed) return null;
@@ -53,15 +84,56 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
             <button class="subcard-toolbar-btn" onClick={toggleLayout} title={layout === 'single' ? 'Double row' : 'Single row'}>
               {layout === 'single' ? '⊞' : '☰'}
             </button>
+            <button
+              class={`subcard-toolbar-btn${showSizePanel ? ' subcard-toolbar-btn-active' : ''}`}
+              onClick={() => { setShowSizePanel(!showSizePanel); setDraftW(String(cardSize.w)); setDraftH(String(cardSize.h)); }}
+              title="Card size"
+            >
+              ⚙
+            </button>
             <span class="subcard-toolbar-label">Sub-sessions ({subSessions.length})</span>
           </>
         )}
         <button class="subcard-toolbar-add" onClick={onNew} title="New sub-session">+</button>
       </div>
 
+      {/* Size settings panel */}
+      {!collapsed && showSizePanel && (
+        <div class="subcard-size-panel">
+          <span class="subcard-size-label">Card size</span>
+          <label class="subcard-size-field">
+            W
+            <input
+              type="number"
+              class="subcard-size-input"
+              value={draftW}
+              min={200} max={800}
+              onInput={(e) => setDraftW((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => e.key === 'Enter' && applySize()}
+            />
+          </label>
+          <label class="subcard-size-field">
+            H
+            <input
+              type="number"
+              class="subcard-size-input"
+              value={draftH}
+              min={150} max={600}
+              onInput={(e) => setDraftH((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => e.key === 'Enter' && applySize()}
+            />
+          </label>
+          <button class="subcard-toolbar-btn" onClick={applySize}>Apply</button>
+          <button class="subcard-toolbar-btn" onClick={resetSize}>Reset</button>
+        </div>
+      )}
+
       {/* Cards */}
       {!collapsed && subSessions.length > 0 && (
-        <div class={`subcard-scroll ${layout === 'double' ? 'subcard-double' : 'subcard-single'}`}>
+        <div
+          class={`subcard-scroll ${layout === 'double' ? 'subcard-double' : 'subcard-single'}`}
+          style={layout === 'double' ? { gridAutoColumns: `${cardSize.w}px` } : undefined}
+        >
           {subSessions.map((sub) => (
             <SubSessionCard
               key={sub.id}
@@ -72,6 +144,8 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
               onOpen={() => onOpen(sub.id)}
               onDiff={onDiff}
               onHistory={onHistory}
+              cardW={cardSize.w}
+              cardH={cardSize.h}
             />
           ))}
         </div>
