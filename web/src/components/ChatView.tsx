@@ -210,8 +210,8 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
       return (
         <div class="chat-event chat-tool">
           <span class="chat-tool-icon">{'>'}</span>
-          {String(event.payload.tool ?? 'tool')}
-          {event.payload.input ? ` ${truncate(String(event.payload.input), 60)}` : ''}
+          <span class="chat-tool-name">{String(event.payload.tool ?? 'tool')}</span>
+          {event.payload.input ? <span class="chat-tool-input">{' '}{truncate(String(event.payload.input), 60)}</span> : null}
         </div>
       );
 
