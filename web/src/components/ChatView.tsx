@@ -217,6 +217,23 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
             <ChatEvent key={item.key} event={item.event!} />
           ),
         )}
+        {/* Show thinking indicator when agent hasn't responded after user's last message */}
+        {(() => {
+          let lastUserIdx = -1;
+          let hasResponse = false;
+          for (let i = viewItems.length - 1; i >= 0; i--) {
+            const vi = viewItems[i];
+            if (vi.type === 'assistant-block' || (vi.type === 'event' && (vi.event?.type === 'tool.call' || vi.event?.type === 'assistant.text'))) {
+              hasResponse = true; break;
+            }
+            if (vi.type === 'event' && vi.event?.type === 'user.message') {
+              lastUserIdx = i; break;
+            }
+          }
+          return lastUserIdx >= 0 && !hasResponse
+            ? <div class="chat-event chat-thinking"><span class="chat-thinking-dots">●●●</span> 思考中...</div>
+            : null;
+        })()}
       </div>
       {showScrollBtn && (
         <button
