@@ -139,10 +139,12 @@ export class WsClient {
   }
 
   subscribeTerminal(sessionName: string): void {
+    if (!this._connected) return;
     this.send({ type: 'terminal.subscribe', session: sessionName });
   }
 
   unsubscribeTerminal(sessionName: string): void {
+    if (!this._connected) return;
     this.send({ type: 'terminal.unsubscribe', session: sessionName });
   }
 
@@ -166,6 +168,7 @@ export class WsClient {
 
   /** Notify the daemon that the terminal viewport has been resized. */
   sendResize(sessionName: string, cols: number, rows: number): void {
+    if (!this._connected) return;
     this.send({ type: 'session.resize', sessionName, cols, rows });
   }
 
