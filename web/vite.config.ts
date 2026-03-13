@@ -3,7 +3,7 @@ import preact from '@preact/preset-vite';
 
 export default defineConfig({
   define: {
-    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __BUILD_TIME__: JSON.stringify(process.env.BUILD_TIME ?? new Date().toISOString()),
   },
   plugins: [preact()],
   server: {

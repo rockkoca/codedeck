@@ -245,6 +245,7 @@ jobs:
           file: server/Dockerfile
           platforms: linux/amd64
           tags: ${{ steps.tags.outputs.tags }}
+          build-args: BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           push: true

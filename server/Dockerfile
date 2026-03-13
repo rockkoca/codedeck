@@ -15,7 +15,9 @@ RUN cd web && npm ci --ignore-scripts
 COPY server/ ./server/
 COPY web/ ./web/
 
-# Build web
+# Build web (BUILD_TIME arg ensures cache is busted on each CI run)
+ARG BUILD_TIME
+ENV BUILD_TIME=${BUILD_TIME}
 RUN cd web && npm run build
 
 # Build server TypeScript
