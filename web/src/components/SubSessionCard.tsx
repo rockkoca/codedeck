@@ -15,6 +15,7 @@ const TYPE_ICON: Record<string, string> = {
   'claude-code': '⚡',
   'codex': '📦',
   'opencode': '🔆',
+  'gemini': '♊',
   'shell': '🐚',
 };
 

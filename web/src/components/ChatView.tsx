@@ -19,15 +19,15 @@ interface Props {
   preview?: boolean;
 }
 
-/** A merged view item — either a single event, merged assistant text, or collapsed tool summary. */
+/** A merged view item — either a single event, merged assistant text, or collapsed tool group. */
 interface ViewItem {
   key: string;
-  type: 'event' | 'assistant-block' | 'tool-summary';
+  type: 'event' | 'assistant-block' | 'tool-group';
   event?: TimelineEvent;
   /** Merged text for assistant-block */
   text?: string;
-  /** Tool summary label for tool-summary */
-  toolLabel?: string;
+  /** All events in a collapsed tool group (first, middle..., last) */
+  toolEvents?: TimelineEvent[];
   ts?: number;
   lastTs?: number;
 }
@@ -86,12 +86,13 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
     consolidated.push(ev);
   }
 
-  // Main pass: merge assistant.text blocks
+  // Main pass: merge assistant.text blocks + group consecutive tool.call runs
   const items: ViewItem[] = [];
   let pendingText: string[] = [];
   let pendingFirstTs = 0;
   let pendingLastTs = 0;
   let pendingKey = '';
+  let pendingTools: TimelineEvent[] = [];
 
   const flushPending = () => {
     if (pendingText.length > 0) {
@@ -106,8 +107,24 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
     }
   };
 
+  const flushTools = () => {
+    if (pendingTools.length === 0) return;
+    if (pendingTools.length === 1) {
+      items.push({ key: pendingTools[0].eventId, type: 'event', event: pendingTools[0] });
+    } else {
+      // 2+ consecutive tool events → collapsible group
+      items.push({
+        key: `tg_${pendingTools[0].eventId}`,
+        type: 'tool-group',
+        toolEvents: [...pendingTools],
+      });
+    }
+    pendingTools = [];
+  };
+
   for (const event of consolidated) {
     if (event.type === 'assistant.text') {
+      flushTools();
       // Trim and collapse 3+ consecutive blank lines to 1 (CC output often has many trailing newlines)
       const text = String(event.payload.text ?? '').trim().replace(/\n{3,}/g, '\n\n');
       if (!text) continue;
@@ -117,12 +134,17 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
       }
       pendingLastTs = event.ts;
       pendingText.push(text);
+    } else if (event.type === 'tool.call' || event.type === 'tool.result') {
+      flushPending();
+      pendingTools.push(event);
     } else {
       flushPending();
+      flushTools();
       items.push({ key: event.eventId, type: 'event', event });
     }
   }
   flushPending();
+  flushTools();
 
   return items;
 }
@@ -241,6 +263,8 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
               <RichText text={item.text!} />
               <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
             </div>
+          ) : item.type === 'tool-group' ? (
+            <ToolCallGroup key={item.key} events={item.toolEvents!} />
           ) : (
             <ChatEvent key={item.key} event={item.event!} />
           ),
@@ -264,6 +288,37 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
           }}
         >
           ↓
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Collapsible group of consecutive tool events. Shows first and last, folds middle. */
+function ToolCallGroup({ events }: { events: TimelineEvent[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const first = events[0];
+  const last = events.length > 1 ? events[events.length - 1] : null;
+  const middle = events.slice(1, last ? -1 : undefined);
+
+  return (
+    <div class="chat-tool-group">
+      <ChatEvent event={first} />
+      {middle.length > 0 && (
+        expanded ? (
+          <>
+            {middle.map((ev) => <ChatEvent key={ev.eventId} event={ev} />)}
+          </>
+        ) : (
+          <button class="chat-tool-fold-btn" onClick={() => setExpanded(true)}>
+            ··· {middle.length} more
+          </button>
+        )
+      )}
+      {last && <ChatEvent event={last} />}
+      {expanded && middle.length > 0 && (
+        <button class="chat-tool-fold-btn" onClick={() => setExpanded(false)}>
+          ▲ collapse
         </button>
       )}
     </div>
