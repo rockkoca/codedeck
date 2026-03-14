@@ -136,6 +136,36 @@ export function parseLine(sessionName: string, line: string, model?: string): vo
     return;
   }
 
+  // Handle Codex function/tool calls: type=response_item, payload.type=function_call|function_call_output
+  if (raw['type'] === 'response_item') {
+    const pl = raw['payload'] as Record<string, unknown> | undefined;
+    if (!pl) return;
+
+    if (pl['type'] === 'function_call') {
+      const name = String(pl['name'] ?? 'tool');
+      const argsStr = pl['arguments'] as string | undefined;
+      let input = argsStr ?? '';
+      try {
+        const args = JSON.parse(argsStr ?? '{}') as Record<string, unknown>;
+        // Surface the most meaningful field as the summary
+        const summary = args['cmd'] ?? args['command'] ?? args['path'] ?? args['query'] ?? args['input'];
+        if (summary !== undefined) input = String(summary);
+      } catch { /* keep raw args */ }
+      timelineEmitter.emit(sessionName, 'tool.call', {
+        tool: name,
+        input,
+        callId: pl['call_id'],
+      }, { source: 'daemon', confidence: 'high' });
+    } else if (pl['type'] === 'function_call_output') {
+      const output = String(pl['output'] ?? '');
+      timelineEmitter.emit(sessionName, 'tool.result', {
+        output: output.length > 400 ? output.slice(0, 400) + '…' : output,
+        callId: pl['call_id'],
+      }, { source: 'daemon', confidence: 'high' });
+    }
+    return;
+  }
+
   if (raw['type'] !== 'event_msg') return;
 
   const payload = raw['payload'] as Record<string, unknown> | undefined;
@@ -225,7 +255,11 @@ async function emitRecentHistory(sessionName: string, filePath: string, model?: 
     const startIdx = size > readSize ? 1 : 0; // skip possible partial first line
 
     // Pre-pass: deduplicate streaming final_answer snapshots and find last token_count.
-    interface HistoryEvent { type: 'user' | 'assistant'; text: string }
+    type HistoryEvent =
+      | { type: 'user'; text: string }
+      | { type: 'assistant'; text: string }
+      | { type: 'tool_call'; name: string; input: string; callId: string }
+      | { type: 'tool_result'; output: string; callId: string };
     const historyEvents: HistoryEvent[] = [];
     let lastTokenPayload: Record<string, unknown> | null = null;
     for (let i = startIdx; i < lines.length; i++) {
@@ -233,6 +267,28 @@ async function emitRecentHistory(sessionName: string, filePath: string, model?: 
       if (!line.trim()) continue;
       let raw: Record<string, unknown>;
       try { raw = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+
+      // Tool calls (response_item)
+      if (raw['type'] === 'response_item') {
+        const pl = raw['payload'] as Record<string, unknown> | undefined;
+        if (!pl) continue;
+        if (pl['type'] === 'function_call') {
+          const name = String(pl['name'] ?? 'tool');
+          const argsStr = pl['arguments'] as string | undefined;
+          let input = argsStr ?? '';
+          try {
+            const args = JSON.parse(argsStr ?? '{}') as Record<string, unknown>;
+            const summary = args['cmd'] ?? args['command'] ?? args['path'] ?? args['query'] ?? args['input'];
+            if (summary !== undefined) input = String(summary);
+          } catch { /* keep raw */ }
+          historyEvents.push({ type: 'tool_call', name, input, callId: String(pl['call_id'] ?? '') });
+        } else if (pl['type'] === 'function_call_output') {
+          const output = String(pl['output'] ?? '');
+          historyEvents.push({ type: 'tool_result', output: output.length > 400 ? output.slice(0, 400) + '…' : output, callId: String(pl['call_id'] ?? '') });
+        }
+        continue;
+      }
+
       if (raw['type'] !== 'event_msg') continue;
       const payload = raw['payload'] as Record<string, unknown> | undefined;
       if (!payload) continue;
@@ -269,9 +325,17 @@ async function emitRecentHistory(sessionName: string, filePath: string, model?: 
       if (ev.type === 'user') {
         timelineEmitter.emit(sessionName, 'user.message', { text: ev.text },
           { source: 'daemon', confidence: 'high' });
-      } else {
+      } else if (ev.type === 'assistant') {
         timelineEmitter.emit(sessionName, 'assistant.text',
           { text: ev.text, streaming: false },
+          { source: 'daemon', confidence: 'high' });
+      } else if (ev.type === 'tool_call') {
+        timelineEmitter.emit(sessionName, 'tool.call',
+          { tool: ev.name, input: ev.input, callId: ev.callId },
+          { source: 'daemon', confidence: 'high' });
+      } else if (ev.type === 'tool_result') {
+        timelineEmitter.emit(sessionName, 'tool.result',
+          { output: ev.output, callId: ev.callId },
           { source: 'daemon', confidence: 'high' });
       }
     }
