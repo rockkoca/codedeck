@@ -5,7 +5,7 @@
 
 import { sessionExists, sendKeysDelayedEnter } from '../agent/tmux.js';
 import { startSubSession, stopSubSession, readSubSessionResponse } from './subsession-manager.js';
-import { writeFile, mkdir, appendFile } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, appendFile } from 'node:fs/promises';
 import path from 'node:path';
 import logger from '../util/logger.js';
 import type { AgentType } from '../agent/detect.js';
@@ -245,6 +245,13 @@ async function runDiscussion(
 
   d.state = 'running';
 
+  // Persist initial discussion state to DB
+  onUpdate({
+    type: 'discussion.save',
+    id: d.id, topic: d.topic, state: d.state, maxRounds: d.maxRounds,
+    filePath: d.filePath, startedAt: d.startedAt,
+  });
+
   const isStopped = () => (d.state as string) === 'failed';
 
   // 2. Multi-round discussion
@@ -283,6 +290,18 @@ async function runDiscussion(
         `\n### ${participant.roleLabel} (${participant.agentType}${modelTag})\n\n${response}\n`,
       );
 
+      // Persist round to DB
+      onUpdate({
+        type: 'discussion.round_save',
+        roundId: crypto.randomUUID(),
+        discussionId: d.id,
+        round,
+        speakerRole: participant.roleLabel,
+        speakerAgent: participant.agentType,
+        speakerModel: participant.model,
+        response,
+      });
+
       onUpdate({
         type: 'discussion.update',
         discussionId: d.id,
@@ -316,6 +335,27 @@ async function runDiscussion(
   d.state = 'done';
   d.conclusion = verdict.slice(0, 500);
   d.updatedAt = Date.now();
+
+  // Save verdict as a round
+  onUpdate({
+    type: 'discussion.round_save',
+    roundId: crypto.randomUUID(),
+    discussionId: d.id,
+    round: d.maxRounds + 1,
+    speakerRole: `Verdict (${judge.roleLabel})`,
+    speakerAgent: judge.agentType,
+    speakerModel: judge.model,
+    response: verdict,
+  });
+
+  // Read final file content and persist to DB
+  const fileContent = await readFile(d.filePath, 'utf8').catch(() => '');
+  onUpdate({
+    type: 'discussion.save',
+    id: d.id, topic: d.topic, state: 'done', maxRounds: d.maxRounds,
+    filePath: d.filePath, conclusion: d.conclusion, fileContent,
+    startedAt: d.startedAt, finishedAt: Date.now(),
+  });
 
   onUpdate({
     type: 'discussion.done',
@@ -411,6 +451,12 @@ export async function startDiscussion(
     discussion.state = 'failed';
     discussion.error = e instanceof Error ? e.message : String(e);
     onUpdate({ type: 'discussion.error', discussionId: discussion.id, error: discussion.error });
+    onUpdate({
+      type: 'discussion.save',
+      id: discussion.id, topic: discussion.topic, state: 'failed', maxRounds: discussion.maxRounds,
+      filePath: discussion.filePath || null, error: discussion.error,
+      startedAt: discussion.startedAt, finishedAt: Date.now(),
+    });
     logger.error({ err: e, discussionId: discussion.id }, 'Discussion failed');
   });
 

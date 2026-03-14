@@ -588,6 +588,15 @@ export function App() {
     } catch {
       // fallback: WS will populate sessions on connect
     }
+    // Load discussion history from DB
+    try {
+      const dData = await apiFetch<{ discussions: Array<{ id: string; topic: string; state: string; max_rounds: number; file_path: string | null; conclusion: string | null; started_at: number; finished_at: number | null }> }>(`/api/server/${serverId}/discussions`);
+      setDiscussions(dData.discussions.map((d) => ({
+        id: d.id, topic: d.topic, state: d.state,
+        currentRound: d.max_rounds, maxRounds: d.max_rounds,
+        conclusion: d.conclusion ?? undefined, filePath: d.file_path ?? undefined,
+      })));
+    } catch { /* ignore */ }
   }, [setActiveSession]);
 
   const handleBackToDashboard = useCallback(() => {

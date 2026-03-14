@@ -16,7 +16,7 @@ import type { PgDatabase } from '../db/client.js';
 import type { Env } from '../env.js';
 import { MemoryRateLimiter } from './rate-limiter.js';
 import { sha256Hex } from '../security/crypto.js';
-import { updateServerHeartbeat, updateServerStatus } from '../db/queries.js';
+import { updateServerHeartbeat, updateServerStatus, upsertDiscussion, insertDiscussionRound } from '../db/queries.js';
 import logger from '../util/logger.js';
 
 const AUTH_TIMEOUT_MS = 5000;
@@ -435,6 +435,36 @@ export class WsBridge {
         return;
       }
       this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      return;
+    }
+
+    // ── Discussion persistence: daemon → DB (not relayed to browsers) ────────
+    if (type === 'discussion.save' && this.db) {
+      void upsertDiscussion(this.db, {
+        id: msg.id as string,
+        serverId: this.serverId,
+        topic: msg.topic as string,
+        state: msg.state as string,
+        maxRounds: msg.maxRounds as number,
+        filePath: (msg.filePath as string) || null,
+        conclusion: (msg.conclusion as string) || null,
+        fileContent: (msg.fileContent as string) || null,
+        error: (msg.error as string) || null,
+        startedAt: msg.startedAt as number,
+        finishedAt: (msg.finishedAt as number) || null,
+      }).catch((e) => logger.error({ err: e, discussionId: msg.id }, 'Failed to save discussion'));
+      return;
+    }
+    if (type === 'discussion.round_save' && this.db) {
+      void insertDiscussionRound(this.db, {
+        id: msg.roundId as string,
+        discussionId: msg.discussionId as string,
+        round: msg.round as number,
+        speakerRole: msg.speakerRole as string,
+        speakerAgent: msg.speakerAgent as string,
+        speakerModel: (msg.speakerModel as string) || null,
+        response: msg.response as string,
+      }).catch((e) => logger.error({ err: e, discussionId: msg.discussionId }, 'Failed to save discussion round'));
       return;
     }
 

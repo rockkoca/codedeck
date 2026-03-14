@@ -395,6 +395,113 @@ export async function deleteUserPref(db: PgDatabase, userId: string, key: string
   await db.prepare('DELETE FROM user_preferences WHERE user_id = ? AND key = ?').bind(userId, key).run();
 }
 
+// ── Discussions ───────────────────────────────────────────────────────────
+
+export interface DbDiscussion {
+  id: string;
+  server_id: string;
+  topic: string;
+  state: string;
+  max_rounds: number;
+  file_path: string | null;
+  conclusion: string | null;
+  file_content: string | null;
+  error: string | null;
+  started_at: number;
+  finished_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DbDiscussionRound {
+  id: string;
+  discussion_id: string;
+  round: number;
+  speaker_role: string;
+  speaker_agent: string;
+  speaker_model: string | null;
+  response: string;
+  created_at: number;
+}
+
+export async function getDiscussionsByServer(db: PgDatabase, serverId: string): Promise<DbDiscussion[]> {
+  const rows = await db
+    .prepare('SELECT * FROM discussions WHERE server_id = ? ORDER BY created_at DESC LIMIT 50')
+    .bind(serverId)
+    .all<DbDiscussion>();
+  return rows.results ?? [];
+}
+
+export async function getDiscussionById(db: PgDatabase, id: string): Promise<DbDiscussion | null> {
+  return db.prepare('SELECT * FROM discussions WHERE id = ?').bind(id).first<DbDiscussion>();
+}
+
+export async function upsertDiscussion(
+  db: PgDatabase,
+  d: {
+    id: string;
+    serverId: string;
+    topic: string;
+    state: string;
+    maxRounds: number;
+    filePath?: string | null;
+    conclusion?: string | null;
+    fileContent?: string | null;
+    error?: string | null;
+    startedAt: number;
+    finishedAt?: number | null;
+  },
+): Promise<void> {
+  const now = Date.now();
+  await db
+    .prepare(
+      `INSERT INTO discussions (id, server_id, topic, state, max_rounds, file_path, conclusion, file_content, error, started_at, finished_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         state = excluded.state,
+         file_path = excluded.file_path,
+         conclusion = excluded.conclusion,
+         file_content = excluded.file_content,
+         error = excluded.error,
+         finished_at = excluded.finished_at,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(
+      d.id, d.serverId, d.topic, d.state, d.maxRounds,
+      d.filePath ?? null, d.conclusion ?? null, d.fileContent ?? null, d.error ?? null,
+      d.startedAt, d.finishedAt ?? null, now, now,
+    )
+    .run();
+}
+
+export async function insertDiscussionRound(
+  db: PgDatabase,
+  r: {
+    id: string;
+    discussionId: string;
+    round: number;
+    speakerRole: string;
+    speakerAgent: string;
+    speakerModel?: string | null;
+    response: string;
+  },
+): Promise<void> {
+  await db
+    .prepare(
+      'INSERT INTO discussion_rounds (id, discussion_id, round, speaker_role, speaker_agent, speaker_model, response, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(r.id, r.discussionId, r.round, r.speakerRole, r.speakerAgent, r.speakerModel ?? null, r.response, Date.now())
+    .run();
+}
+
+export async function getDiscussionRounds(db: PgDatabase, discussionId: string): Promise<DbDiscussionRound[]> {
+  const rows = await db
+    .prepare('SELECT * FROM discussion_rounds WHERE discussion_id = ? ORDER BY round, created_at')
+    .bind(discussionId)
+    .all<DbDiscussionRound>();
+  return rows.results ?? [];
+}
+
 // ── Audit log ─────────────────────────────────────────────────────────────
 
 export async function writeAuditLog(

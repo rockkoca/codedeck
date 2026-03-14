@@ -30,6 +30,7 @@ import { pushRoutes } from './routes/push.js';
 import { quickDataRoutes } from './routes/quick-data.js';
 import { sessionMgmtRoutes } from './routes/session-mgmt.js';
 import { subSessionRoutes } from './routes/sub-sessions.js';
+import { discussionRoutes } from './routes/discussions.js';
 import { preferencesRoutes } from './routes/preferences.js';
 import { healthCheckCron } from './cron/health-check.js';
 import { jobDispatchCron } from './cron/job-dispatch.js';
@@ -96,6 +97,7 @@ export function buildApp(env: Env) {
   app.route('/api/quick-data', quickDataRoutes);
   app.route('/api/server', sessionMgmtRoutes);
   app.route('/api/server', subSessionRoutes);
+  app.route('/api/server', discussionRoutes);
   app.route('/api/preferences', preferencesRoutes);
 
   app.get('/health', (c) => c.json({ ok: true, ts: Date.now() }));
