@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
-import { getServersByUserId, updateServerHeartbeat, upsertChannelBinding } from '../db/queries.js';
+import { getServersByUserId, updateServerHeartbeat, updateServerName, upsertChannelBinding } from '../db/queries.js';
 import { sha256Hex, randomHex } from '../security/crypto.js';
 import { requireAuth } from '../security/authorization.js';
 import { z } from 'zod';
@@ -21,6 +21,19 @@ serverRoutes.get('/', requireAuth(), async (c) => {
   }));
 
   return c.json({ servers });
+});
+
+// PATCH /api/server/:id/name — rename a server (authenticated user must own the server)
+serverRoutes.patch('/:id/name', requireAuth(), async (c) => {
+  const userId = c.get('userId' as never) as string;
+  const serverId = c.req.param('id') ?? '';
+  const body = await c.req.json().catch(() => null);
+  const parsed = z.object({ name: z.string().min(1).max(64) }).safeParse(body);
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
+
+  const updated = await updateServerName(c.env.DB, serverId, userId, parsed.data.name.trim());
+  if (!updated) return c.json({ error: 'not_found' }, 404);
+  return c.json({ ok: true });
 });
 
 // POST /api/server/:id/heartbeat — authenticated via Bearer server token

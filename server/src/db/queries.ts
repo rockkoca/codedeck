@@ -140,6 +140,11 @@ export async function updateServerStatus(db: PgDatabase, id: string, status: str
   await db.prepare('UPDATE servers SET status = ? WHERE id = ?').bind(status, id).run();
 }
 
+export async function updateServerName(db: PgDatabase, id: string, userId: string, name: string): Promise<boolean> {
+  const result = await db.prepare('UPDATE servers SET name = ? WHERE id = ? AND user_id = ?').bind(name, id, userId).run();
+  return (result.changes ?? 0) > 0;
+}
+
 export async function getServersByUserId(db: PgDatabase, userId: string): Promise<DbServer[]> {
   const ownResult = await db.prepare(
     'SELECT * FROM servers WHERE user_id = ? ORDER BY created_at DESC',

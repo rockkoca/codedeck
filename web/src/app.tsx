@@ -106,6 +106,19 @@ export function App() {
     if (auth) configureApi(auth.baseUrl);
   }, [auth]);
 
+  const handleRenameServer = useCallback(async (server: ServerInfo) => {
+    const newName = prompt('Rename server:', server.name);
+    if (!newName || newName.trim() === server.name) return;
+    try {
+      await apiFetch(`/api/server/${server.id}/name`, { method: 'PATCH', body: JSON.stringify({ name: newName.trim() }) });
+      setServers((prev) => prev.map((s) => s.id === server.id ? { ...s, name: newName.trim() } : s));
+      if (server.id === selectedServerId) {
+        setSelectedServerName(newName.trim());
+        localStorage.setItem('rcc_server_name', newName.trim());
+      }
+    } catch { /* ignore */ }
+  }, [selectedServerId]);
+
   // Load servers list whenever auth is available
   const loadServers = useCallback(async () => {
     if (!auth) return;
@@ -714,6 +727,7 @@ export function App() {
                 key={server.id}
                 class={`server-item${server.id === selectedServerId ? ' active' : ''}${online ? '' : ' offline'}`}
                 onClick={() => handleSelectServer(server.id, server.name)}
+                onContextMenu={(e) => { e.preventDefault(); handleRenameServer(server); }}
               >
                 <span class="server-item-dot" style={{ color: online ? '#4ade80' : '#475569' }}>
                   {online ? '●' : '○'}
