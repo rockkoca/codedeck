@@ -68,6 +68,22 @@ function responseItemLine(): string {
   });
 }
 
+function functionCallLine(name: string, args: Record<string, unknown>, callId = 'call_abc123'): string {
+  return JSON.stringify({
+    timestamp: '2026-03-13T00:05:00.000Z',
+    type: 'response_item',
+    payload: { type: 'function_call', name, arguments: JSON.stringify(args), call_id: callId },
+  });
+}
+
+function functionCallOutputLine(output: string, callId = 'call_abc123'): string {
+  return JSON.stringify({
+    timestamp: '2026-03-13T00:06:00.000Z',
+    type: 'response_item',
+    payload: { type: 'function_call_output', output, call_id: callId },
+  });
+}
+
 // ── parseLine ─────────────────────────────────────────────────────────────────
 
 describe('parseLine — user_message', () => {
@@ -174,7 +190,7 @@ describe('parseLine — ignored line types', () => {
     expect(timelineEmitter.emit).not.toHaveBeenCalled();
   });
 
-  it('ignores response_item lines', () => {
+  it('ignores non-tool response_item lines (e.g. assistant message)', () => {
     parseLine('session-c', responseItemLine());
     expect(timelineEmitter.emit).not.toHaveBeenCalled();
   });
@@ -361,6 +377,85 @@ describe('startWatching — file-based integration', () => {
     expect(calls[0][2]).toEqual({ text: 'msg from A' });
     expect(calls[1][0]).toBe('session-proj-b');
     expect(calls[1][2]).toEqual({ text: 'msg from B' });
+  });
+});
+
+// ── parseLine — function_call / function_call_output (Codex tool calls) ────────
+
+describe('parseLine — function_call (Codex tool calls)', () => {
+  beforeEach(() => vi.mocked(timelineEmitter.emit).mockClear());
+
+  it('emits tool.call for function_call with cmd arg', () => {
+    parseLine('session-f', functionCallLine('exec_command', { cmd: 'git status', workdir: '/project' }));
+    expect(timelineEmitter.emit).toHaveBeenCalledOnce();
+    expect(timelineEmitter.emit).toHaveBeenCalledWith(
+      'session-f',
+      'tool.call',
+      { tool: 'exec_command', input: 'git status', callId: 'call_abc123' },
+      { source: 'daemon', confidence: 'high' },
+    );
+  });
+
+  it('emits tool.call for function_call with path arg', () => {
+    parseLine('session-f', functionCallLine('read_file', { path: '/project/src/index.ts' }));
+    expect(timelineEmitter.emit).toHaveBeenCalledWith(
+      'session-f',
+      'tool.call',
+      { tool: 'read_file', input: '/project/src/index.ts', callId: 'call_abc123' },
+      expect.any(Object),
+    );
+  });
+
+  it('emits tool.call with raw args string when no known summary field', () => {
+    parseLine('session-f', functionCallLine('custom_tool', { x: 1, y: 2 }));
+    const call = vi.mocked(timelineEmitter.emit).mock.calls[0];
+    expect(call[1]).toBe('tool.call');
+    expect(call[2]).toMatchObject({ tool: 'custom_tool' });
+    // input should be the raw JSON string
+    expect(typeof (call[2] as { input: string }).input).toBe('string');
+  });
+
+  it('emits tool.result for function_call_output', () => {
+    parseLine('session-f', functionCallOutputLine('Process exited with code 0\nOutput:\nhello world'));
+    expect(timelineEmitter.emit).toHaveBeenCalledOnce();
+    expect(timelineEmitter.emit).toHaveBeenCalledWith(
+      'session-f',
+      'tool.result',
+      expect.objectContaining({ output: expect.stringContaining('hello world'), callId: 'call_abc123' }),
+      { source: 'daemon', confidence: 'high' },
+    );
+  });
+
+  it('truncates long tool output to 400 chars', () => {
+    const longOutput = 'x'.repeat(600);
+    parseLine('session-f', functionCallOutputLine(longOutput));
+    const call = vi.mocked(timelineEmitter.emit).mock.calls[0];
+    const output = (call[2] as { output: string }).output;
+    expect(output.length).toBeLessThanOrEqual(404); // 400 + '…'
+    expect(output.endsWith('…')).toBe(true);
+  });
+
+  it('does not truncate short tool output', () => {
+    const shortOutput = 'done';
+    parseLine('session-f', functionCallOutputLine(shortOutput));
+    const call = vi.mocked(timelineEmitter.emit).mock.calls[0];
+    expect((call[2] as { output: string }).output).toBe('done');
+  });
+
+  it('tool.call and tool.result carry same callId', () => {
+    parseLine('session-f', functionCallLine('exec_command', { cmd: 'ls' }, 'call_xyz'));
+    parseLine('session-f', functionCallOutputLine('file1\nfile2', 'call_xyz'));
+    const calls = vi.mocked(timelineEmitter.emit).mock.calls;
+    expect((calls[0][2] as { callId: string }).callId).toBe('call_xyz');
+    expect((calls[1][2] as { callId: string }).callId).toBe('call_xyz');
+  });
+
+  it('emits tool.call for each consecutive function_call independently', () => {
+    parseLine('session-f', functionCallLine('read_file', { path: '/a' }, 'call_1'));
+    parseLine('session-f', functionCallLine('read_file', { path: '/b' }, 'call_2'));
+    expect(timelineEmitter.emit).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(timelineEmitter.emit).mock.calls[0][2]).toMatchObject({ input: '/a', callId: 'call_1' });
+    expect(vi.mocked(timelineEmitter.emit).mock.calls[1][2]).toMatchObject({ input: '/b', callId: 'call_2' });
   });
 });
 

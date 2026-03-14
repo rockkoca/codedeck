@@ -218,7 +218,7 @@ export function SubSessionWindow({
       <div class="subsession-header" onMouseDown={onHeaderMouseDown}>
         <span class="subsession-drag-icon">⠿</span>
         <span class="subsession-title">{typeLabel}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
           <button class="subsession-mode-btn" onClick={() => { const next = viewMode === 'chat' ? 'terminal' : 'chat'; setViewMode(next); if (next === 'chat') requestAnimationFrame(() => chatScrollRef.current?.()); }} title={viewMode === 'chat' ? 'Switch to terminal' : 'Switch to chat'}>{viewMode === 'chat' ? '⌨' : '💬'}</button>
           <button class="subsession-minimize-btn" onClick={onMinimize} title="Minimize">─</button>
           {confirmClose ? (
