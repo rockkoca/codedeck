@@ -5,7 +5,7 @@
 
 import { sessionExists, sendKeys } from '../agent/tmux.js';
 import { startSubSession, stopSubSession, readSubSessionResponse } from './subsession-manager.js';
-import { writeFile, readFile, mkdir, appendFile } from 'node:fs/promises';
+import { writeFile, mkdir, appendFile } from 'node:fs/promises';
 import path from 'node:path';
 import logger from '../util/logger.js';
 import type { AgentType } from '../agent/detect.js';
@@ -23,19 +23,19 @@ const MODEL_STRENGTH: Record<string, number> = {
 
 const BUILTIN_ROLES: Record<string, { label: string; prompt: string }> = {
   critic: {
-    label: '批判者',
+    label: 'Critic',
     prompt:
-      '你是严格的批判者。专注于发现方案中的漏洞、风险和不合理之处。对每个观点提出质疑，不轻易认同。如果发现安全隐患、性能问题或架构缺陷，务必指出。',
+      'You are a rigorous critic. Focus on finding flaws, risks, and inconsistencies in the proposal. Challenge every point and do not agree easily. If you spot security vulnerabilities, performance issues, or architectural defects, call them out.',
   },
   pragmatist: {
-    label: '实用主义者',
+    label: 'Pragmatist',
     prompt:
-      '你是务实的工程师。关注方案的可行性、实现成本和时间线。评估技术选型是否成熟、团队是否有能力执行、是否有更简单的替代方案。避免过度设计。',
+      'You are a pragmatic engineer. Focus on feasibility, implementation cost, and timeline. Evaluate whether the technology choices are mature, whether the team can execute, and whether simpler alternatives exist. Avoid over-engineering.',
   },
   innovator: {
-    label: '创新者',
+    label: 'Innovator',
     prompt:
-      '你是富有创意的思考者。从不同角度审视问题，提出非常规的解决思路。关注用户体验、长期演进和技术趋势。挑战现有假设，但建议必须可落地。',
+      'You are a creative thinker. Examine problems from different angles and propose unconventional solutions. Focus on user experience, long-term evolution, and technology trends. Challenge existing assumptions, but keep suggestions actionable.',
   },
 };
 
@@ -97,7 +97,7 @@ function buildFileHeader(d: Discussion): string {
 }
 
 function buildRoundPrompt(
-  fileContent: string,
+  discussionFilePath: string,
   participant: DiscussionParticipant,
   round: number,
   maxRounds: number,
@@ -110,11 +110,8 @@ function buildRoundPrompt(
       '',
       roleBlock,
       '',
-      'Discussion topic and context:',
-      '',
-      '---',
-      fileContent,
-      '---',
+      `Read the discussion file at: ${discussionFilePath}`,
+      'It contains the topic and context for this discussion.',
       '',
       'Give your perspective based on your role. Be specific, constructive, under 500 words.',
     ].join('\n');
@@ -125,11 +122,7 @@ function buildRoundPrompt(
     '',
     roleBlock,
     '',
-    'Full discussion so far:',
-    '',
-    '---',
-    fileContent,
-    '---',
+    `Read the full discussion so far at: ${discussionFilePath}`,
     '',
     'Respond to previous participants:',
     '- What do you agree/disagree with and why?',
@@ -138,16 +131,12 @@ function buildRoundPrompt(
   ].join('\n');
 }
 
-function buildVerdictPrompt(fileContent: string, judge: DiscussionParticipant): string {
+function buildVerdictPrompt(discussionFilePath: string, judge: DiscussionParticipant): string {
   return [
     'You are the final arbiter of this multi-agent discussion.',
     `Your perspective: ${judge.roleLabel} — ${judge.rolePrompt}`,
     '',
-    'Full discussion transcript:',
-    '',
-    '---',
-    fileContent,
-    '---',
+    `Read the full discussion transcript at: ${discussionFilePath}`,
     '',
     'Deliver a final verdict:',
     '1. Summarize the key points of agreement and disagreement',
@@ -279,8 +268,7 @@ async function runDiscussion(
         currentSpeaker: participant.roleLabel,
       });
 
-      const fileContent = await readFile(d.filePath, 'utf8');
-      const prompt = buildRoundPrompt(fileContent, participant, round, d.maxRounds);
+      const prompt = buildRoundPrompt(d.filePath, participant, round, d.maxRounds);
 
       await sendKeys(participant.sessionName, prompt);
       await waitForIdle(participant.sessionName, IDLE_TIMEOUT);
@@ -313,8 +301,7 @@ async function runDiscussion(
 
   await appendFile(d.filePath, `\n---\n\n## Verdict (by ${judge.roleLabel}${modelTag})\n`);
 
-  const fileContent = await readFile(d.filePath, 'utf8');
-  const verdictPrompt = buildVerdictPrompt(fileContent, judge);
+  const verdictPrompt = buildVerdictPrompt(d.filePath, judge);
 
   await sendKeys(judge.sessionName, verdictPrompt);
   await waitForIdle(judge.sessionName, IDLE_TIMEOUT);
