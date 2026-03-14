@@ -1,11 +1,11 @@
 #!/bin/bash
-# Rebuild and restart the local codedeck daemon.
+# Rebuild and restart the local codedeck daemon (dev only).
 # Usage: ./scripts/restart-daemon.sh
 
 set -e
 cd "$(dirname "$0")/.."
 
 npm run build
-npm link
+npm link --force
 
-codedeck service restart
+codedeck service restart --no-build
