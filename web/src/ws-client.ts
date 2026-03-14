@@ -3,6 +3,7 @@
  * Handles auth, reconnect, and message dispatch.
  */
 import type { TerminalDiff } from './types.js';
+import { refreshSession } from './api.js';
 
 export type MessageHandler = (msg: ServerMessage) => void;
 
@@ -291,6 +292,15 @@ export class WsClient {
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
+        if (res.status === 401) {
+          // Access token expired — try to refresh before giving up
+          const refreshed = await refreshSession().catch(() => false);
+          if (refreshed) {
+            this._connecting = false;
+            void this.openSocket();
+            return;
+          }
+        }
         this._connecting = false;
         this.scheduleReconnect();
         return;

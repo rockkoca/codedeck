@@ -19,7 +19,7 @@ import { DiscussionsPage } from './pages/DiscussionsPage.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
 import { WsClient } from './ws-client.js';
-import { configure as configureApi, apiFetch, onAuthExpired, getUserPref } from './api.js';
+import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
 
 type ViewMode = 'terminal' | 'chat';
@@ -107,9 +107,15 @@ export function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Configure API client when auth changes
+  // Configure API client when auth changes; start/stop proactive refresh timer
   useEffect(() => {
-    if (auth) configureApi(auth.baseUrl);
+    if (auth) {
+      configureApi(auth.baseUrl);
+      startProactiveRefresh();
+    } else {
+      stopProactiveRefresh();
+    }
+    return () => stopProactiveRefresh();
   }, [auth]);
 
   const handleRenameServer = useCallback(async (server: ServerInfo) => {

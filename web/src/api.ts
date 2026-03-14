@@ -30,6 +30,33 @@ async function doRefresh(): Promise<boolean> {
   return res.ok;
 }
 
+/** Attempt a token refresh. Returns true if successful. Exported for use by WsClient. */
+export async function refreshSession(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+}
+
+// ── Proactive refresh ─────────────────────────────────────────────────────
+
+let _refreshTimerId: ReturnType<typeof setInterval> | null = null;
+const PROACTIVE_REFRESH_MS = 12 * 60 * 1000; // refresh every 12 min (before 15-min expiry)
+
+/** Start proactive token refresh timer. Call when user logs in. */
+export function startProactiveRefresh(): void {
+  stopProactiveRefresh();
+  _refreshTimerId = setInterval(() => { void doRefresh(); }, PROACTIVE_REFRESH_MS);
+}
+
+/** Stop proactive token refresh timer. Call when user logs out. */
+export function stopProactiveRefresh(): void {
+  if (_refreshTimerId !== null) {
+    clearInterval(_refreshTimerId);
+    _refreshTimerId = null;
+  }
+}
+
 async function rawFetch(path: string, opts: RequestInit = {}): Promise<Response> {
   const headers = new Headers(opts.headers);
   if (!headers.has('Content-Type') && opts.body) {
