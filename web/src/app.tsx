@@ -825,7 +825,7 @@ export function App() {
                   });
                 }}
                 onViewDiscussions={() => setShowDiscussionsPage(true)}
-                discussions={discussions}
+                discussions={discussions.filter((d) => d.state !== 'done' && d.state !== 'failed')}
                 onStopDiscussion={(id) => wsRef.current?.discussionStop(id)}
                 ws={wsRef.current}
                 connected={connected}
