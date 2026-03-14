@@ -1,4 +1,5 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
+import { existsSync as existsSyncFs } from 'fs';
 import { join } from 'path';
 import { homedir, hostname } from 'os';
 import { execSync } from 'child_process';
@@ -22,7 +23,7 @@ interface ServerCredentials {
  * Main entry point.
  * Usage: codedeck bind https://app.codedeck.cc/bind/<apiKey> [device-name]
  */
-export async function bindFlow(bindUrl: string, deviceName?: string): Promise<void> {
+export async function bindFlow(bindUrl: string, deviceName?: string, opts?: { force?: boolean }): Promise<void> {
   // Parse the bind URL
   let url: URL;
   try {
@@ -41,6 +42,48 @@ export async function bindFlow(bindUrl: string, deviceName?: string): Promise<vo
   const apiKey = pathParts[1];
   const workerUrl = url.origin;
   const serverName = deviceName ?? hostname();
+
+  // Check if already bound
+  const existing = await loadCredentials();
+  if (existing && existing.workerUrl === workerUrl) {
+    // Verify if current token is still valid
+    const verifyRes = await fetch(`${workerUrl}/api/bind/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serverId: existing.serverId, token: existing.token }),
+    }).catch(() => null);
+
+    if (verifyRes?.ok) {
+      if (!opts?.force) {
+        console.error(`Already bound as "${existing.serverName}" (serverId: ${existing.serverId}).`);
+        console.error('Token is still valid. Use --force to re-bind and replace the server entry.');
+        process.exit(1);
+      }
+      // --force: rebind using existing serverId (update token, keep same server)
+      console.log(`Re-binding "${serverName}" (replacing existing server ${existing.serverId})...`);
+      const rebindRes = await fetch(`${workerUrl}/api/bind/rebind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ serverId: existing.serverId, serverName }),
+      });
+      if (!rebindRes.ok) {
+        const body = await rebindRes.text().catch(() => '');
+        console.error(`Rebind failed: ${rebindRes.status} ${body}`);
+        process.exit(1);
+      }
+      const { token } = await rebindRes.json() as { token: string };
+      const creds: ServerCredentials = { serverId: existing.serverId, token, workerUrl, serverName, boundAt: Date.now() };
+      await mkdir(CREDS_DIR, { recursive: true });
+      await writeFile(CREDS_PATH, JSON.stringify(creds, null, 2), { encoding: 'utf8', mode: 0o600 });
+      console.log(`\nRe-bound! Device "${serverName}" updated.`);
+      await ensureTmux();
+      await restartDaemon();
+      return;
+    }
+    // Token invalid (server deleted) — fall through to normal bind but keep same serverId not possible,
+    // so just create a new server entry
+    console.log('Previous bind is no longer valid (server was deleted). Creating new server entry...');
+  }
 
   console.log(`Binding "${serverName}" to ${workerUrl}...`);
 
@@ -84,6 +127,25 @@ export async function bindFlow(bindUrl: string, deviceName?: string): Promise<vo
 
   console.log(`\nBound! Device "${serverName}" is ready.`);
   console.log(`Open ${workerUrl} to see it online.`);
+}
+
+function restartDaemon(): void {
+  try {
+    if (process.platform === 'darwin') {
+      const plist = join(homedir(), 'Library', 'LaunchAgents', `${PLIST_LABEL}.plist`);
+      execSync(`launchctl unload "${plist}" 2>/dev/null; launchctl load -w "${plist}"`, { stdio: 'ignore' });
+    } else if (process.platform === 'linux') {
+      const userService = join(homedir(), '.config/systemd/user/codedeck.service');
+      if (existsSyncFs(userService)) {
+        execSync('systemctl --user restart codedeck', { stdio: 'ignore' });
+      } else {
+        execSync('sudo systemctl restart codedeck', { stdio: 'ignore' });
+      }
+    }
+    console.log('Daemon restarted.');
+  } catch {
+    console.log('Could not restart daemon automatically. Run "codedeck restart" manually.');
+  }
 }
 
 async function ensureTmux(): Promise<void> {

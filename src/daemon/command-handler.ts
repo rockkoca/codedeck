@@ -820,19 +820,18 @@ async function handleDaemonUpgrade(): Promise<void> {
   npm.stdout?.on('data', (d: Buffer) => logger.info({ out: d.toString().trim() }, 'upgrade'));
   npm.stderr?.on('data', (d: Buffer) => logger.warn({ err: d.toString().trim() }, 'upgrade'));
 
-  npm.on('close', (code) => {
+  npm.on('close', async (code) => {
     if (code !== 0) {
       logger.error({ code }, 'daemon.upgrade: npm install failed');
       return;
     }
     logger.info('daemon.upgrade: install done, restarting service');
-    // Restart via systemd/launchctl — the service will pick up the new binary
     try {
-      const { execSync } = require('child_process') as typeof import('child_process');
+      const { execSync } = await import('child_process');
       if (process.platform === 'linux') {
-        const { join } = require('path') as typeof import('path');
-        const { homedir } = require('os') as typeof import('os');
-        const { existsSync } = require('fs') as typeof import('fs');
+        const { join } = await import('path');
+        const { homedir } = await import('os');
+        const { existsSync } = await import('fs');
         const userSvc = join(homedir(), '.config/systemd/user/codedeck.service');
         if (existsSync(userSvc)) {
           execSync('systemctl --user restart codedeck', { stdio: 'ignore' });
@@ -840,8 +839,8 @@ async function handleDaemonUpgrade(): Promise<void> {
           execSync('sudo systemctl restart codedeck', { stdio: 'ignore' });
         }
       } else if (process.platform === 'darwin') {
-        const { join } = require('path') as typeof import('path');
-        const { homedir } = require('os') as typeof import('os');
+        const { join } = await import('path');
+        const { homedir } = await import('os');
         const plist = join(homedir(), 'Library/LaunchAgents/codedeck.daemon.plist');
         execSync(`launchctl unload "${plist}" && launchctl load -w "${plist}"`, { stdio: 'ignore' });
       }
