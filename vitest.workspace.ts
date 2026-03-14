@@ -29,6 +29,7 @@ export default defineWorkspace([
       exclude: [
         'server/test/**/*.integration.test.ts',
         'server/test/auth-flow.test.ts',
+        'server/test/bind-rebind.test.ts',
         'server/test/proxy-addr.test.ts',
         '**/node_modules/**',
       ],
