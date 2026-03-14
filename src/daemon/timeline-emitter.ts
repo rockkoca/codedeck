@@ -15,6 +15,8 @@ export class TimelineEmitter {
   private handlers = new Set<(e: TimelineEvent) => void>();
   /** Track last session.state per session to deduplicate repeated idle events */
   private lastSessionState = new Map<string, string>();
+  /** Track recent user.message per session to deduplicate (text → timestamp) */
+  private recentUserMsg = new Map<string, { text: string; ts: number }>();
   /** Daemon startup timestamp — changes on restart, used for epoch-based seq continuity */
   readonly epoch = Date.now();
 
@@ -29,6 +31,16 @@ export class TimelineEmitter {
       const state = String(payload.state ?? '');
       if (this.lastSessionState.get(sessionId) === state) return null;
       this.lastSessionState.set(sessionId, state);
+    }
+
+    // Deduplicate user.message — skip if same session + same text within 5s
+    if (type === 'user.message') {
+      const text = String(payload.text ?? '');
+      const key = sessionId;
+      const prev = this.recentUserMsg.get(key);
+      const now = Date.now();
+      if (prev && prev.text === text && now - prev.ts < 5_000) return null;
+      this.recentUserMsg.set(key, { text, ts: now });
     }
 
     const seq = (this.seqMap.get(sessionId) ?? 0) + 1;
