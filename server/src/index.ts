@@ -102,6 +102,23 @@ export function buildApp(env: Env) {
 
   app.get('/health', (c) => c.json({ ok: true, ts: Date.now() }));
 
+  // Security headers for HTML responses — added here since Caddy is a transparent proxy, not an edge.
+  const SECURITY_HEADERS: Record<string, string> = {
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",   // Vite bundles inline runtime; tighten with hashes in future
+      "style-src 'self' 'unsafe-inline'",
+      "connect-src 'self' wss: ws: https://api.github.com",
+      "img-src 'self' data: https:",
+      "font-src 'self'",
+      "frame-ancestors 'none'",
+    ].join('; '),
+  };
+
   // Static file serving + SPA fallback
   app.get('*', async (c) => {
     const reqPath = new URL(c.req.url).pathname;
@@ -120,14 +137,16 @@ export function buildApp(env: Env) {
           woff2: 'font/woff2', ico: 'image/x-icon', json: 'application/json',
         };
         const content = await readFile(filePath);
-        return new Response(content, { headers: { 'Content-Type': mime[ext] ?? 'application/octet-stream' } });
+        const headers: Record<string, string> = { 'Content-Type': mime[ext] ?? 'application/octet-stream' };
+        if (ext === 'html') Object.assign(headers, SECURITY_HEADERS);
+        return new Response(content, { headers });
       }
     } catch { /* fall through */ }
 
     // SPA fallback
     try {
       const html = await readFile(join(WEB_DIST, 'index.html'));
-      return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+      return new Response(html, { headers: { 'Content-Type': 'text/html', ...SECURITY_HEADERS } });
     } catch {
       return c.text('Not found', 404);
     }

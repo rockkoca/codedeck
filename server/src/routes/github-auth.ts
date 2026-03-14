@@ -7,21 +7,40 @@ import logger from '../util/logger.js';
 
 export const githubAuthRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; role: string } }>();
 
+// Builds the set of allowed origins from env (SERVER_URL + ALLOWED_ORIGINS).
+function allowedOrigins(env: { SERVER_URL: string; ALLOWED_ORIGINS?: string }): Set<string> {
+  const list = new Set<string>();
+  if (env.SERVER_URL) list.add(env.SERVER_URL.replace(/\/$/, ''));
+  for (const o of (env.ALLOWED_ORIGINS ?? '').split(',')) {
+    const t = o.trim();
+    if (t) list.add(t.replace(/\/$/, ''));
+  }
+  return list;
+}
+
+// Resolves the current origin from proxy headers, validated against the allowlist.
+// Falls back to SERVER_URL when the header value is not in the allowlist.
+function resolveCurrentOrigin(
+  c: { req: { header(name: string): string | undefined }; env: { SERVER_URL: string; ALLOWED_ORIGINS?: string; NODE_ENV?: string } },
+): string {
+  const protocol = c.env.NODE_ENV === 'production' ? 'https' : (c.req.header('x-forwarded-proto') ?? 'http');
+  const host = c.req.header('x-forwarded-host') ?? c.req.header('host');
+  const candidate = host ? `${protocol}://${host}` : null;
+  if (candidate && allowedOrigins(c.env).has(candidate)) return candidate;
+  return c.env.SERVER_URL;
+}
+
 // GET /api/auth/github — redirect to GitHub OAuth
 // ?reauth=1 → forces GitHub login page (prevents auto-login after logout)
 githubAuthRoutes.get('/', async (c): Promise<Response> => {
-  // Detect the origin the user's browser is actually on (proxy-aware).
-  // X-Forwarded-Host is set by the Caddy proxy on codedeck.cc.
-  const host = c.req.header('x-original-host') ?? c.req.header('x-forwarded-host') ?? c.req.header('host');
-  const protocol = c.env.NODE_ENV === 'production' ? 'https' : (c.req.header('x-forwarded-proto') ?? 'http');
-  const currentOrigin = host ? `${protocol}://${host}` : c.env.SERVER_URL;
+  const currentOrigin = resolveCurrentOrigin(c);
 
   // State JWT embeds the origin so we know where to redirect after OAuth.
   // Cookie is set on the user's actual domain (e.g. codedeck.cc via proxy).
   const stateValue = randomHex(32);
   const stateJwt = signJwt({ nonce: stateValue, origin: currentOrigin }, c.env.JWT_SIGNING_KEY, 600);
 
-  const isSecure = c.env.NODE_ENV === 'production' || protocol === 'https';
+  const isSecure = c.env.NODE_ENV === 'production';
   setCookie(c, 'oauth_state', stateValue, {
     httpOnly: true,
     secure: isSecure,
@@ -82,17 +101,14 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
     // Cross-domain relay: if the OAuth was initiated on a proxy domain (e.g. codedeck.cc),
     // the oauth_state cookie lives on that domain, not here (app.codedeck.org).
     // Forward code+state to the proxy domain where the cookie can be verified.
-    const actualHost = c.req.header('x-original-host') ?? c.req.header('x-forwarded-host') ?? c.req.header('host');
-    const actualOrigin = actualHost
-      ? `${c.env.NODE_ENV === 'production' ? 'https' : 'http'}://${actualHost}`
-      : c.env.SERVER_URL;
+    const actualOrigin = resolveCurrentOrigin(c);
 
-    logger.info({ targetOrigin, actualOrigin, actualHost, xoh: c.req.header('x-original-host'), xfh: c.req.header('x-forwarded-host'), host: c.req.header('host') }, 'oauth callback: origin detection');
+    logger.info({ targetOrigin, actualOrigin }, 'oauth callback: origin detection');
 
     if (targetOrigin && targetOrigin !== actualOrigin) {
-      const allowed = (c.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim());
-      logger.info({ targetOrigin, allowed, match: allowed.includes(targetOrigin) }, 'oauth callback: cross-domain relay check');
-      if (allowed.includes(targetOrigin)) {
+      const allowed = allowedOrigins(c.env);
+      logger.info({ targetOrigin, match: allowed.has(targetOrigin) }, 'oauth callback: cross-domain relay check');
+      if (allowed.has(targetOrigin)) {
         const relayUrl = new URL(`${targetOrigin}/api/auth/github/callback`);
         relayUrl.searchParams.set('code', code);
         relayUrl.searchParams.set('state', state);
@@ -158,8 +174,7 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
     userId = user.id;
   }
 
-  const protocol = c.env.NODE_ENV === 'production' ? 'https' : (c.req.header('x-forwarded-proto') ?? 'http');
-  const isSecure = c.env.NODE_ENV === 'production' || protocol === 'https';
+  const isSecure = c.env.NODE_ENV === 'production';
 
   // Task 5: Issue 15-minute access token
   const accessToken = signJwt({ sub: userId, type: 'web' }, c.env.JWT_SIGNING_KEY, 15 * 60);
@@ -185,7 +200,7 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
     httpOnly: true,
     secure: isSecure,
     sameSite: 'Lax',
-    path: '/api/auth/refresh',
+    path: '/',
     maxAge: 30 * 86400,
   });
   setCookie(c, 'rcc_csrf', randomHex(32), {
@@ -199,6 +214,8 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
   c.header('Cache-Control', 'no-store');
   c.header('Pragma', 'no-cache');
 
-  // Final redirect back to origin
-  return c.redirect(targetOrigin ?? c.env.SERVER_URL);
+  // Final redirect — must be an allowlisted origin to prevent open redirect
+  const allowed = allowedOrigins(c.env);
+  const safeTarget = (targetOrigin && allowed.has(targetOrigin)) ? targetOrigin : c.env.SERVER_URL;
+  return c.redirect(safeTarget);
 });
