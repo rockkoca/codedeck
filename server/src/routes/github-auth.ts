@@ -3,6 +3,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import type { Env } from '../env.js';
 import { createUser, getUserByPlatformId, upsertPlatformIdentity } from '../db/queries.js';
 import { randomHex, sha256Hex, signJwt, verifyJwt } from '../security/crypto.js';
+import logger from '../util/logger.js';
 
 export const githubAuthRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; role: string } }>();
 
@@ -85,21 +86,26 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
     const actualOrigin = actualHost
       ? `${c.env.NODE_ENV === 'production' ? 'https' : 'http'}://${actualHost}`
       : c.env.SERVER_URL;
+
+    logger.info({ targetOrigin, actualOrigin, actualHost, xfh: c.req.header('x-forwarded-host'), host: c.req.header('host') }, 'oauth callback: origin detection');
+
     if (targetOrigin && targetOrigin !== actualOrigin) {
       const allowed = (c.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim());
+      logger.info({ targetOrigin, allowed, match: allowed.includes(targetOrigin) }, 'oauth callback: cross-domain relay check');
       if (allowed.includes(targetOrigin)) {
-        // Redirect to proxy domain — Caddy will proxy back to us, but now with
-        // X-Forwarded-Host matching targetOrigin, so the cookie will be present.
         const relayUrl = new URL(`${targetOrigin}/api/auth/github/callback`);
         relayUrl.searchParams.set('code', code);
         relayUrl.searchParams.set('state', state);
+        logger.info({ relayUrl: relayUrl.toString() }, 'oauth callback: relaying to proxy domain');
         return c.redirect(relayUrl.toString());
       }
     }
 
     // Verify state JWT + cookie binding (same-domain or proxied-back request)
     const cookieState = getCookie(c, 'oauth_state');
+    logger.info({ cookieState: !!cookieState, nonce: statePayload.nonce?.slice(0, 8) }, 'oauth callback: cookie check');
     if (!cookieState || statePayload.nonce !== cookieState) {
+      logger.warn({ hasCookie: !!cookieState, targetOrigin, actualOrigin }, 'oauth callback: state_mismatch');
       return c.json({ error: 'state_mismatch' }, 400);
     }
     // Consume the state cookie immediately (one-time use)
