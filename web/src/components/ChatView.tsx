@@ -38,7 +38,7 @@ interface ViewItem {
  *  - Deduplicate consecutive session.state events with same state (keep last)
  */
 function buildViewItems(events: TimelineEvent[]): ViewItem[] {
-  const visible = events.filter((e) => !e.hidden && e.type !== 'assistant.thinking' && e.type !== 'agent.status');
+  const visible = events.filter((e) => !e.hidden && e.type !== 'assistant.thinking' && e.type !== 'agent.status' && e.type !== 'usage.update');
 
   // Pre-pass: merge tool.call+tool.result pairs and dedup session.state
   const consolidated: TimelineEvent[] = [];
@@ -225,15 +225,20 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onScrollBottomFn]);
 
-  // Auto-scroll on new events — use requestAnimationFrame so DOM has updated
-  // In preview mode, always scroll to bottom (no user interaction possible)
+  // Auto-scroll on new events — track the last event timestamp to avoid
+  // re-scrolling when viewItems regroup without new content arriving.
+  const lastEventTs = events.length > 0 ? events[events.length - 1].ts : 0;
+  const prevEventTsRef = useRef(lastEventTs);
   useEffect(() => {
+    const changed = lastEventTs !== prevEventTsRef.current;
+    prevEventTsRef.current = lastEventTs;
+    if (!changed && !preview) return;
     if (preview || autoScrollRef.current) {
       requestAnimationFrame(() => {
         scrollToBottom();
       });
     }
-  }, [viewItems.length, events.length, preview]);
+  }, [lastEventTs, preview]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
