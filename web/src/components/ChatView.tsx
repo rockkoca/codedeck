@@ -182,8 +182,6 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     if (!el) return;
     autoScrollRef.current = true;
     el.scrollTop = el.scrollHeight;
-    // Fallback: scrollIntoView on sentinel (more reliable in flex/preview containers)
-    bottomRef.current?.scrollIntoView({ block: 'end' });
   };
 
   // On session change, reset scroll position to bottom
@@ -244,11 +242,16 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     const changed = lastVisibleTs !== prevVisibleTsRef.current;
     prevVisibleTsRef.current = lastVisibleTs;
     if (!changed && !preview) return;
-    if (preview || autoScrollRef.current) {
-      requestAnimationFrame(() => {
-        scrollToBottom();
-      });
-    }
+    // Check scroll position inside rAF to avoid race: user may have scrolled
+    // between effect firing and rAF executing. Re-read DOM position instead of
+    // trusting autoScrollRef which may have been set true by a prior scrollToBottom.
+    requestAnimationFrame(() => {
+      if (preview) { scrollToBottom(); return; }
+      const el = scrollRef.current;
+      if (!el) return;
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+      if (atBottom) scrollToBottom();
+    });
   }, [lastVisibleTs, preview]);
 
   const handleScroll = () => {
