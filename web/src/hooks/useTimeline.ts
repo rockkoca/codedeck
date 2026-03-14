@@ -71,7 +71,9 @@ export function useTimeline(
     setRefreshing(false);
     historyLoadedRef.current = null;
 
-    // Load from IndexedDB as immediate cache while waiting for daemon
+    // Load from IndexedDB as immediate cache while waiting for daemon.
+    // Use getRecentEvents (ts-based, no epoch filter) so cached events across
+    // daemon restarts are all included — epoch change doesn't hide old messages.
     const load = async () => {
       const db = dbRef.current;
       if (!db) return;
@@ -79,7 +81,7 @@ export function useTimeline(
       if (last) {
         epochRef.current = last.epoch;
         seqRef.current = last.seq;
-        const stored = await db.getEvents(sessionId, last.epoch, { limit: MAX_MEMORY_EVENTS });
+        const stored = await db.getRecentEvents(sessionId, { limit: MAX_MEMORY_EVENTS });
         setEvents(stored);
         // Cache hit — show immediately, but always request full history from daemon
         // so tool.call / other events not in cache get filled in.

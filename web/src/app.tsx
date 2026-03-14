@@ -433,6 +433,8 @@ export function App() {
       }
       if (msg.type === 'session.idle') {
         const sessionName = msg.session as string;
+        // Sub-sessions are handled by useSubSessions — skip them here to avoid cross-contamination
+        if (!sessionName || sessionName.startsWith('deck_sub_')) return;
         const project = (msg.project as string) || sessionName;
         // Mark session as idle in local state (session_event never carries idle state)
         setSessions((prev) => prev.map((s) => s.name === sessionName ? { ...s, state: 'idle' as SessionInfo['state'] } : s));

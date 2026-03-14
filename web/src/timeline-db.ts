@@ -120,6 +120,51 @@ export class TimelineDB {
     }
   }
 
+  /**
+   * Get recent events for a session across ALL epochs, ordered by timestamp.
+   * Used for initial cache restore on page load — no epoch filtering so all
+   * stored events (across daemon restarts) are included.
+   */
+  async getRecentEvents(
+    sessionId: string,
+    opts?: { limit?: number },
+  ): Promise<TimelineEvent[]> {
+    if (this._memoryOnly || !this.db) {
+      return this.memGetByTime(sessionId, opts);
+    }
+
+    try {
+      const limit = opts?.limit ?? Infinity;
+
+      return await new Promise<TimelineEvent[]>((resolve, reject) => {
+        const tx = this.db!.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const index = store.index('session_ts');
+
+        const lower = [sessionId, 0];
+        const upper = [sessionId, Infinity];
+        const range = IDBKeyRange.bound(lower, upper);
+
+        // Walk in reverse to get the most recent events, then reverse at end
+        const results: TimelineEvent[] = [];
+        const req = index.openCursor(range, 'prev');
+
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (cursor && results.length < limit) {
+            results.push(cursor.value as TimelineEvent);
+            cursor.continue();
+          } else {
+            resolve(results.reverse());
+          }
+        };
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      return this.memGetByTime(sessionId, opts);
+    }
+  }
+
   async getLastSeqAndEpoch(sessionId: string): Promise<{ seq: number; epoch: number } | null> {
     if (this._memoryOnly || !this.db) {
       return this.memLastSeqEpoch(sessionId);
@@ -242,6 +287,15 @@ export class TimelineDB {
       .filter((e) => e.epoch === epoch && e.seq > afterSeq)
       .sort((a, b) => a.seq - b.seq)
       .slice(0, limit);
+  }
+
+  private memGetByTime(
+    sessionId: string,
+    opts?: { limit?: number },
+  ): TimelineEvent[] {
+    const events = this.memoryFallback.get(sessionId) ?? [];
+    const limit = opts?.limit ?? Infinity;
+    return [...events].sort((a, b) => a.ts - b.ts).slice(-limit);
   }
 
   private memLastSeqEpoch(sessionId: string): { seq: number; epoch: number } | null {
