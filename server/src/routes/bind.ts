@@ -69,13 +69,14 @@ bindRoutes.post('/direct', requireAuth(), async (c) => {
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
 
   const userId = c.get('userId' as never) as string;
+  const keyId = c.get('keyId' as never) as string | undefined;
   const { serverName } = parsed.data;
 
   const rawToken = randomHex(32);
   const tokenHash = sha256Hex(rawToken);
   const serverId = randomHex(16);
 
-  await createServer(c.env.DB, serverId, userId, serverName, tokenHash);
+  await createServer(c.env.DB, serverId, userId, serverName, tokenHash, keyId);
 
   const ip = c.get('clientIp' as never) as string ?? 'unknown';
   await logAudit({ userId, action: 'bind.direct', ip, details: { serverId } }, c.env.DB);
@@ -91,12 +92,13 @@ bindRoutes.post('/rebind', requireAuth(), async (c) => {
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
 
   const userId = c.get('userId' as never) as string;
+  const keyId = c.get('keyId' as never) as string | undefined;
   const { serverId, serverName } = parsed.data;
 
   const rawToken = randomHex(32);
   const tokenHash = sha256Hex(rawToken);
 
-  const updated = await updateServerToken(c.env.DB, serverId, userId, tokenHash, serverName);
+  const updated = await updateServerToken(c.env.DB, serverId, userId, tokenHash, serverName, keyId);
   if (!updated) return c.json({ error: 'not_found' }, 404);
 
   // Evict the existing daemon WebSocket so it must reconnect with the new token

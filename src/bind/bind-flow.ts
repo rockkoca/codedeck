@@ -54,13 +54,8 @@ export async function bindFlow(bindUrl: string, deviceName?: string, opts?: { fo
     }).catch(() => null);
 
     if (verifyRes?.ok) {
-      if (!opts?.force) {
-        console.error(`Already bound as "${existing.serverName}" (serverId: ${existing.serverId}).`);
-        console.error('Token is still valid. Use --force to re-bind and replace the server entry.');
-        process.exit(1);
-      }
-      // --force: rebind using existing serverId (update token, keep same server)
-      console.log(`Re-binding "${serverName}" (replacing existing server ${existing.serverId})...`);
+      // Already bound — auto-rebind to update the token and name
+      console.log(`Already bound as "${existing.serverName}". Re-binding as "${serverName}"...`);
       const rebindRes = await fetch(`${workerUrl}/api/bind/rebind`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },

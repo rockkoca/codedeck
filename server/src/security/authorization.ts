@@ -14,6 +14,7 @@ export type Role = 'owner' | 'admin' | 'member' | 'unauthenticated';
 interface AuthContext {
   userId: string;
   role: Role;
+  keyId?: string;
 }
 
 /**
@@ -52,13 +53,13 @@ async function resolveAuth(c: Context<{ Bindings: Env }>): Promise<AuthContext |
     const keyHash = sha256Hex(token);
     const now = Date.now();
     const row = await c.env.DB.prepare(
-      `SELECT user_id FROM api_keys
+      `SELECT id, user_id FROM api_keys
        WHERE key_hash = ?
          AND revoked_at IS NULL
          AND (grace_expires_at IS NULL OR grace_expires_at > ?)`,
-    ).bind(keyHash, now).first<{ user_id: string }>();
+    ).bind(keyHash, now).first<{ id: string; user_id: string }>();
     if (!row) return null;
-    return { userId: row.user_id, role: 'member' }; // API keys default to member
+    return { userId: row.user_id, role: 'member', keyId: row.id }; // API keys default to member
   }
 
   // Try JWT (access token) — verify HMAC-SHA256 signature
@@ -99,6 +100,7 @@ export function requireAuth() {
 
     c.set('userId' as never, auth.userId);
     c.set('role' as never, auth.role);
+    if (auth.keyId) c.set('keyId' as never, auth.keyId);
     await next();
   };
 }

@@ -7,6 +7,7 @@ import { checkIdempotency, recordIdempotency } from '../security/replay.js';
 import { logAudit } from '../security/audit.js';
 import { recordAuthFailure, checkAuthLockout } from '../security/lockout.js';
 import { resolveServerRole } from '../security/authorization.js';
+import { WsBridge } from '../ws/bridge.js';
 import { z } from 'zod';
 
 export const authRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; role: string } }>();
@@ -227,8 +228,16 @@ authRoutes.delete('/user/me/keys/:keyId', async (c) => {
     'UPDATE api_keys SET revoked_at = ? WHERE id = ? AND user_id = ?',
   ).bind(now, keyId, userId).run();
 
+  // Kick all daemon WebSocket connections that were bound using this API key
+  const boundServers = await c.env.DB.prepare(
+    'SELECT id FROM servers WHERE bound_with_key_id = ? AND user_id = ?',
+  ).bind(keyId, userId).all<{ id: string }>();
+  for (const srv of boundServers.results) {
+    try { WsBridge.get(srv.id).kickDaemon(); } catch { /* bridge may not be active */ }
+  }
+
   const ip = c.get('clientIp' as never) as string ?? 'unknown';
-  await logAudit({ userId, action: 'auth.revoke_key', ip }, c.env.DB);
+  await logAudit({ userId, action: 'auth.revoke_key', ip, details: { keyId, serversKicked: boundServers.results.length } }, c.env.DB);
 
   return c.json({ ok: true, revokedAt: now });
 });
