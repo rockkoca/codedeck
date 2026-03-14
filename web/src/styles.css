@@ -310,7 +310,7 @@ body {
 .subcard-ctx-input { position: absolute; left: 0; top: 0; height: 100%; background: #34d399; border-radius: 2px; }
 .subcard-ctx-cache { position: absolute; left: 0; top: 0; height: 100%; background: #818cf8; border-radius: 2px; }
 
-.subcard-preview { flex: 1; overflow: hidden; pointer-events: none; }
+.subcard-preview { flex: 1; overflow: hidden; pointer-events: none; display: flex; flex-direction: column; }
 .subcard-resize-handle { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: ew-resize; background: transparent; z-index: 10; transition: background 0.15s; }
 .subcard-resize-handle:hover { background: rgba(59,130,246,0.4); }
 
@@ -441,3 +441,7 @@ body {
 .ask-btn-cancel { background: transparent; border: 1px solid #334155; border-radius: 8px; padding: 8px 16px; color: #64748b; font-size: 13px; cursor: pointer; }
 .ask-btn-submit { background: #818cf8; border: none; border-radius: 8px; padding: 8px 16px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
 .ask-btn-submit:hover { background: #6366f1; }
+
+/* Language switcher */
+.lang-switcher { background: none; border: 1px solid #334155; color: #94a3b8; cursor: pointer; font-size: 11px; padding: 2px 7px; border-radius: 4px; transition: all 0.15s; font-family: inherit; }
+.lang-switcher:hover { border-color: #64748b; color: #e2e8f0; }

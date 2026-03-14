@@ -4,6 +4,7 @@
  * Supports basic Markdown rendering (code blocks, inline code, bold).
  */
 import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 import type { TimelineEvent } from '../ws-client.js';
 
 interface Props {
@@ -150,6 +151,7 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
 }
 
 export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview }: Props) {
+  const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -238,6 +240,7 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     return 0;
   }, [events]);
   const prevVisibleTsRef = useRef(lastVisibleTs);
+  const hasInitialScrolledRef = useRef(false);
   useEffect(() => {
     const changed = lastVisibleTs !== prevVisibleTsRef.current;
     prevVisibleTsRef.current = lastVisibleTs;
@@ -249,6 +252,12 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
       if (preview) { scrollToBottom(); return; }
       const el = scrollRef.current;
       if (!el) return;
+      // Force scroll to bottom on initial history load (scrollTop is 0 at top, not at bottom).
+      if (!hasInitialScrolledRef.current && lastVisibleTs > 0) {
+        hasInitialScrolledRef.current = true;
+        scrollToBottom();
+        return;
+      }
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
       if (atBottom) scrollToBottom();
     });
@@ -264,16 +273,16 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   };
 
   if (loading) {
-    return <div class="chat-view"><div class="chat-loading">Loading chat...</div></div>;
+    return <div class="chat-view"><div class="chat-loading">{t('chat.loading')}</div></div>;
   }
 
   return (
     <div class="chat-view-wrap">
-      {refreshing && <div class="chat-refreshing">↻ Syncing...</div>}
+      {refreshing && <div class="chat-refreshing">{t('chat.syncing')}</div>}
       <div class="chat-view" ref={scrollRef} onScroll={preview ? undefined : handleScroll}>
         {viewItems.length === 0 && (
           <div class="chat-loading">
-            {sessionState ? `Session ${sessionState}` : 'No events yet'}
+            {sessionState ? t('chat.session_state', { state: sessionState }) : t('chat.no_events')}
           </div>
         )}
         {viewItems.map((item) =>
