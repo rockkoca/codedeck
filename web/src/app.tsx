@@ -434,6 +434,8 @@ export function App() {
       if (msg.type === 'session.idle') {
         const sessionName = msg.session as string;
         const project = (msg.project as string) || sessionName;
+        // Mark session as idle in local state (session_event never carries idle state)
+        setSessions((prev) => prev.map((s) => s.name === sessionName ? { ...s, state: 'idle' as SessionInfo['state'] } : s));
         // Clear any active tool since session is now idle
         setActiveTools((prev) => { const m = new Map(prev); m.delete(sessionName); return m; });
         // Add tab pulse alert (only when not the currently active tab)
