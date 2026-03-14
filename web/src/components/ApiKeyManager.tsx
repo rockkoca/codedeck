@@ -14,12 +14,80 @@ interface Props {
   onKeysChanged: () => void;
 }
 
+interface RevokeTarget {
+  id: string;
+  label: string | null;
+}
+
+function RevokeConfirmDialog({ target, onConfirm, onCancel }: { target: RevokeTarget; onConfirm: () => void; onCancel: () => void }) {
+  const displayName = target.label || `key-${target.id.slice(0, 8)}`;
+  const [typed, setTyped] = useState('');
+  const [step, setStep] = useState<1 | 2>(1);
+
+  return (
+    <div class="ask-dialog-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div class="ask-dialog" style={{ maxWidth: 420 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#f87171' }}>Revoke API Key</div>
+        {step === 1 ? (
+          <>
+            <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6 }}>
+              You are about to revoke <code style={{ color: '#f87171', background: '#1e293b', padding: '2px 6px', borderRadius: 4 }}>{displayName}</code>.<br /><br />
+              <strong style={{ color: '#e2e8f0' }}>This will immediately block any CLI or external tools using this key.</strong><br />
+              It will <em>not</em> disconnect running daemons (they use their own server tokens) or end your current browser session.
+            </div>
+            <div class="ask-actions">
+              <button class="ask-btn-cancel" onClick={onCancel}>Cancel</button>
+              <button
+                class="ask-btn-submit"
+                style={{ background: '#dc2626' }}
+                onClick={() => setStep(2)}
+              >
+                Continue
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 4 }}>
+              Type the key name to confirm: <code style={{ color: '#f87171', background: '#1e293b', padding: '2px 6px', borderRadius: 4 }}>{displayName}</code>
+            </div>
+            <input
+              class="ask-custom-input"
+              style={{ width: '100%' }}
+              placeholder={displayName}
+              value={typed}
+              onInput={(e) => setTyped((e.target as HTMLInputElement).value)}
+              autoFocus
+            />
+            <div class="ask-actions">
+              <button class="ask-btn-cancel" onClick={onCancel}>Cancel</button>
+              <button
+                class="ask-btn-submit"
+                style={{
+                  background: typed === displayName ? '#ef4444' : '#7f1d1d',
+                  opacity: typed === displayName ? 1 : 0.5,
+                  cursor: typed === displayName ? 'pointer' : 'not-allowed',
+                }}
+                disabled={typed !== displayName}
+                onClick={onConfirm}
+              >
+                Revoke Key
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ApiKeyManager({ keys, onKeysChanged }: Props) {
   const { t } = useTranslation();
   const [newLabel, setNewLabel] = useState('');
   const [newKey, setNewKey] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -39,9 +107,11 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
     }
   };
 
-  const handleRevoke = async (keyId: string) => {
+  const handleRevoke = async () => {
+    if (!revokeTarget) return;
     try {
-      await apiFetch(`/api/auth/user/me/keys/${keyId}`, { method: 'DELETE' });
+      await apiFetch(`/api/auth/user/me/keys/${revokeTarget.id}`, { method: 'DELETE' });
+      setRevokeTarget(null);
       onKeysChanged();
     } catch (err) {
       console.error('Failed to revoke key:', err);
@@ -57,6 +127,14 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
   };
 
   return (
+    <>
+    {revokeTarget && (
+      <RevokeConfirmDialog
+        target={revokeTarget}
+        onConfirm={handleRevoke}
+        onCancel={() => setRevokeTarget(null)}
+      />
+    )}
     <div style={{ marginTop: 32 }}>
       <h2 style={{ fontSize: 18, marginBottom: 16 }}>API Keys</h2>
 
@@ -119,7 +197,7 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
                 </td>
                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                   {!k.revokedAt && (
-                    <button class="btn btn-secondary" style={{ fontSize: 11 }} onClick={() => handleRevoke(k.id)}>
+                    <button class="btn btn-secondary" style={{ fontSize: 11, color: '#f87171' }} onClick={() => setRevokeTarget({ id: k.id, label: k.label })}>
                       {t('api_key.revoke')}
                     </button>
                   )}

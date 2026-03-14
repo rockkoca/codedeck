@@ -682,6 +682,15 @@ export class WsBridge {
     }
   }
 
+  /** Force-close the daemon WebSocket. Use after token rotation to evict the stale connection. */
+  kickDaemon(): void {
+    if (this.daemonWs) {
+      try { this.daemonWs.close(4001, 'token_rotated'); } catch { /* ignore */ }
+      this.daemonWs = null;
+      this.authenticated = false;
+    }
+  }
+
   sendToDaemon(message: string): void {
     if (this.daemonWs && this.authenticated) {
       try {

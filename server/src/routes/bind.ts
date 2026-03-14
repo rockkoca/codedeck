@@ -4,6 +4,7 @@ import { randomHex, sha256Hex } from '../security/crypto.js';
 import { createServer, getServerById, updateServerToken } from '../db/queries.js';
 import { logAudit } from '../security/audit.js';
 import { requireAuth } from '../security/authorization.js';
+import { WsBridge } from '../ws/bridge.js';
 import { z } from 'zod';
 
 export const bindRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; role: string } }>();
@@ -97,6 +98,9 @@ bindRoutes.post('/rebind', requireAuth(), async (c) => {
 
   const updated = await updateServerToken(c.env.DB, serverId, userId, tokenHash, serverName);
   if (!updated) return c.json({ error: 'not_found' }, 404);
+
+  // Evict the existing daemon WebSocket so it must reconnect with the new token
+  try { WsBridge.get(serverId).kickDaemon(); } catch { /* bridge may not exist yet */ }
 
   const ip = c.get('clientIp' as never) as string ?? 'unknown';
   await logAudit({ userId, action: 'bind.rebind', ip, details: { serverId } }, c.env.DB);
