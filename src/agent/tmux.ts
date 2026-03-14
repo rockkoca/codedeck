@@ -49,7 +49,7 @@ export async function capturePaneHistory(session: string, lines = 1000): Promise
  */
 export async function sendKeys(session: string, keys: string): Promise<void> {
   const escaped = keys.replace(/'/g, "'\\''");
-  await tmuxExec(`send-keys -t ${session} -- '${escaped}'`);
+  await tmuxExec(`send-keys -t ${session} -l -- '${escaped}'`);
   await new Promise<void>((r) => setTimeout(r, 80));
   await tmuxExec(`send-keys -t ${session} Enter`);
 }

@@ -255,7 +255,7 @@ export function SubSessionWindow({
         const totalPct = Math.min(100, total / ctx * 100);
         const cachePct = Math.min(totalPct, lastUsage.cacheTokens / ctx * 100);
         const newPct = totalPct - cachePct;
-        const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
+        const fmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
         const pctStr = totalPct < 1 ? totalPct.toFixed(1) : totalPct.toFixed(0);
         const sessionCost = lastCostEvent ? getSessionCost(sub.sessionName) : 0;
         const weeklyCost = sessionCost > 0 ? getWeeklyCost() : 0;

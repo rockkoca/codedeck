@@ -178,11 +178,11 @@ function parseLine(sessionName: string, line: string): void {
       }
     }
     // Emit token usage + model for context bar
-    const usage = msg['usage'] as { input_tokens?: number; cache_read_input_tokens?: number } | undefined;
+    const usage = msg['usage'] as { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | undefined;
     const model = msg['model'] as string | undefined;
     if (usage && typeof usage.input_tokens === 'number') {
       timelineEmitter.emit(sessionName, 'usage.update', {
-        inputTokens: usage.input_tokens,
+        inputTokens: usage.input_tokens + (usage.cache_creation_input_tokens ?? 0),
         cacheTokens: usage.cache_read_input_tokens ?? 0,
         contextWindow: 1_000_000,
         ...(model ? { model } : {}),
@@ -290,11 +290,11 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
       try { raw = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
       if (raw['type'] === 'assistant') {
         const msg = raw['message'] as Record<string, unknown> | undefined;
-        const usage = msg?.['usage'] as { input_tokens?: number; cache_read_input_tokens?: number } | undefined;
+        const usage = msg?.['usage'] as { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | undefined;
         const model = msg?.['model'] as string | undefined;
         if (usage && typeof usage.input_tokens === 'number') {
           lastUsagePayload = {
-            inputTokens: usage.input_tokens,
+            inputTokens: usage.input_tokens + (usage.cache_creation_input_tokens ?? 0),
             cacheTokens: usage.cache_read_input_tokens ?? 0,
             contextWindow: 1_000_000,
             ...(model ? { model } : {}),

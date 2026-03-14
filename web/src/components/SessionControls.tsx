@@ -33,11 +33,11 @@ interface Props {
 
 type MenuAction = 'restart' | 'new' | 'stop';
 type ModelChoice = 'opus' | 'sonnet' | 'haiku';
-type CodexModelChoice = 'o4-mini' | 'o3' | 'gpt-4.1' | 'gpt-4o';
+type CodexModelChoice = 'gpt-5.4' | 'gpt-5.3-codex';
 
 const MODEL_STORAGE_KEY = 'codedeck-model';
 const CODEX_MODEL_STORAGE_KEY = 'codedeck-codex-model';
-const CODEX_MODELS: CodexModelChoice[] = ['o4-mini', 'o3', 'gpt-4.1', 'gpt-4o'];
+const CODEX_MODELS: CodexModelChoice[] = ['gpt-5.4', 'gpt-5.3-codex'];
 
 // Enter moved after ↓ arrow
 const SHORTCUTS: Array<{ label: string; title: string; data: string; wide?: boolean }> = [
