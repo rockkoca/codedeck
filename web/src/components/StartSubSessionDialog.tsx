@@ -62,7 +62,7 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
       const interval = Math.max(1, parseInt(scriptInterval, 10) || 5);
       const escaped = scriptCmd.trim().replace(/'/g, "'\\''");
       const wrapper = `bash -c 'while true; do clear; ${escaped}; sleep ${interval}; done'`;
-      onStart('shell', wrapper, cwd || undefined, label || scriptCmd.trim().slice(0, 30));
+      onStart('script', wrapper, cwd || undefined, label || scriptCmd.trim().slice(0, 30));
       return;
     }
     const selectedShell = type === 'shell' ? (shellBin || undefined) : undefined;

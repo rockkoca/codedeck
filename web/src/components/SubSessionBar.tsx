@@ -52,6 +52,7 @@ const TYPE_ICON: Record<string, string> = {
   'opencode': '🔆',
   'gemini': '♊',
   'shell': '🐚',
+  'script': '🔄',
 };
 
 type Layout = 'single' | 'double';

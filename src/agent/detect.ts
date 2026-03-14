@@ -13,7 +13,7 @@ export type AgentStatus =
   | 'permission'
   | 'unknown';
 
-export type AgentType = 'claude-code' | 'codex' | 'opencode' | 'shell' | 'gemini';
+export type AgentType = 'claude-code' | 'codex' | 'opencode' | 'shell' | 'script' | 'gemini';
 
 // ─── Claude Code patterns ─────────────────────────────────────────────────────
 

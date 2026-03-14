@@ -17,6 +17,7 @@ const TYPE_ICON: Record<string, string> = {
   'opencode': '🔆',
   'gemini': '♊',
   'shell': '🐚',
+  'script': '🔄',
 };
 
 const STATE_BADGE: Record<string, string> = {
@@ -47,7 +48,7 @@ function loadCardW(id: string, fallback: number): number {
 }
 
 export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onHistory, cardW = 350, cardH = 250 }: Props) {
-  const isShell = sub.type === 'shell';
+  const isShell = sub.type === 'shell' || sub.type === 'script';
   const { events, refreshing } = isShell ? { events: [], refreshing: false } : useTimeline(sub.sessionName, ws);
   const termScrollRef = useRef<(() => void) | null>(null);
   const agentTag = isShell ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type;

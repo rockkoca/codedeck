@@ -81,6 +81,7 @@ export function getDriver(type: AgentType): AgentDriver {
     case 'codex': return new CodexDriver();
     case 'opencode': return new OpenCodeDriver();
     case 'shell': return new ShellDriver();
+    case 'script': return new ShellDriver();
     case 'gemini': return new GeminiDriver();
   }
 }
