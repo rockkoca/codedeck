@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 import { apiFetch } from '../api.js';
 
 export interface QuickData {
@@ -164,6 +165,7 @@ export function QuickInputPanel({
   onAddCommand, onAddPhrase, onRemoveCommand, onRemovePhrase,
   onRemoveHistory, onRemoveSessionHistory, onClearHistory, onClearSessionHistory,
 }: Props) {
+  const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
   const [addTarget, setAddTarget] = useState<AddTarget>(null);
@@ -233,35 +235,35 @@ export function QuickInputPanel({
         {/* Toolbar */}
         {addTarget ? (
           <div class="qp-add-row">
-            <span class="qp-add-label">{addTarget === 'command' ? 'Command' : 'Phrase'}</span>
+            <span class="qp-add-label">{addTarget === 'command' ? t('quick_input.label_command') : t('quick_input.label_phrase')}</span>
             <input
               ref={addInputRef}
               class="qp-add-input"
               value={addValue}
               onInput={(e) => setAddValue((e.target as HTMLInputElement).value)}
               onKeyDown={handleAddKeyDown}
-              placeholder={addTarget === 'command' ? '/compact' : 'fix this issue'}
+              placeholder={addTarget === 'command' ? '/compact' : t('quick_input.placeholder_phrase')}
             />
             <button class="qp-add-confirm" onClick={commitAdd}>＋</button>
             <button class="qp-add-cancel" onClick={() => { setAddTarget(null); setAddValue(''); }}>✕</button>
           </div>
         ) : (
           <div class="qp-toolbar">
-            <button class="qp-toolbar-btn" onClick={() => setAddTarget('command')}>＋ Command</button>
-            <button class="qp-toolbar-btn" onClick={() => setAddTarget('phrase')}>＋ Phrase</button>
+            <button class="qp-toolbar-btn" onClick={() => setAddTarget('command')}>{t('quick_input.add_command')}</button>
+            <button class="qp-toolbar-btn" onClick={() => setAddTarget('phrase')}>{t('quick_input.add_phrase')}</button>
             {activeHistory.length > 0 && (
-              <button class="qp-toolbar-btn qp-toolbar-btn-danger" onClick={handleClear}>Clear history</button>
+              <button class="qp-toolbar-btn qp-toolbar-btn-danger" onClick={handleClear}>{t('quick_input.clear_history')}</button>
             )}
           </div>
         )}
 
         <div class="qp-list">
-          {!loaded && <div class="qp-empty">Loading…</div>}
+          {!loaded && <div class="qp-empty">{t('quick_input.loading')}</div>}
 
           {/* Commands — pill wrap */}
           {loaded && (
             <>
-              <div class="qp-section-header">Quick Commands</div>
+              <div class="qp-section-header">{t('quick_input.commands')}</div>
               <div class="qp-pills">
                 {defaultCmds.map((cmd) => (
                   <button key={cmd} class="qp-pill qp-pill-default" onClick={() => handleSend(cmd)}>{cmd}</button>
@@ -279,7 +281,7 @@ export function QuickInputPanel({
           {/* Phrases — pill wrap */}
           {loaded && (
             <>
-              <div class="qp-section-header">Quick Phrases</div>
+              <div class="qp-section-header">{t('quick_input.phrases')}</div>
               <div class="qp-pills">
                 {DEFAULT_PHRASES.map((phrase) => (
                   <button key={phrase} class="qp-pill qp-pill-default" onClick={() => handleSend(phrase)}>{phrase}</button>
@@ -298,16 +300,16 @@ export function QuickInputPanel({
           {loaded && (
             <>
               <div class="qp-section-header qp-history-header">
-                <span>History</span>
+                <span>{t('quick_input.history')}</span>
                 <div class="qp-scope-toggle">
                   <button
                     class={`qp-scope-btn${historyScope === 'session' ? ' active' : ''}`}
                     onClick={() => setHistoryScope('session')}
-                  >This Session</button>
+                  >{t('quick_input.this_session')}</button>
                   <button
                     class={`qp-scope-btn${historyScope === 'global' ? ' active' : ''}`}
                     onClick={() => setHistoryScope('global')}
-                  >All</button>
+                  >{t('quick_input.all')}</button>
                 </div>
               </div>
               {historySlice.length > 0 ? historySlice.map((text, i) => (
@@ -317,7 +319,7 @@ export function QuickInputPanel({
                 </div>
               )) : (
                 <div class="qp-history-empty">
-                  {historyScope === 'session' ? 'No history for this session' : 'No history yet — messages are saved automatically'}
+                  {historyScope === 'session' ? t('quick_input.no_history_session') : t('quick_input.no_history')}
                 </div>
               )}
             </>
@@ -327,9 +329,9 @@ export function QuickInputPanel({
         {/* Pagination */}
         {loaded && totalHistoryPages > 1 && (
           <div class="qp-pagination">
-            <button class="qp-page-btn" disabled={historyPage === 0} onClick={() => setHistoryPage((p) => p - 1)}>← Newer</button>
+            <button class="qp-page-btn" disabled={historyPage === 0} onClick={() => setHistoryPage((p) => p - 1)}>{t('quick_input.newer')}</button>
             <span class="qp-page-info">{historyPage + 1} / {totalHistoryPages}</span>
-            <button class="qp-page-btn" disabled={historyPage >= totalHistoryPages - 1} onClick={() => setHistoryPage((p) => p + 1)}>Older →</button>
+            <button class="qp-page-btn" disabled={historyPage >= totalHistoryPages - 1} onClick={() => setHistoryPage((p) => p + 1)}>{t('quick_input.older')}</button>
           </div>
         )}
       </div>

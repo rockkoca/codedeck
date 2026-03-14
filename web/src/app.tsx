@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
+import { LanguageSwitcher } from './components/LanguageSwitcher.js';
 import { LoginPage } from './pages/LoginPage.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 import { SessionTabs } from './components/SessionTabs.js';
@@ -42,6 +44,7 @@ function isServerOnline(s: ServerInfo): boolean {
 }
 
 export function App() {
+  const { t: trans } = useTranslation();
   const [auth, setAuth] = useState<AuthState | null>(() => {
     try {
       const raw = localStorage.getItem('rcc_auth');
@@ -125,11 +128,11 @@ export function App() {
   const handleUpgradeDaemon = useCallback(async (server: ServerInfo) => {
     try {
       await apiFetch(`/api/server/${server.id}/upgrade`, { method: 'POST' });
-      alert(`Upgrade command sent to "${server.name}". The daemon will install the latest version and restart.`);
+      alert(trans('server.upgrade_sent', { name: server.name }));
     } catch {
-      alert('Failed to send upgrade command. The daemon may be offline.');
+      alert(trans('server.upgrade_failed'));
     }
-  }, []);
+  }, [trans]);
 
   const handleDeleteServer = useCallback(async (server: ServerInfo) => {
     try {
@@ -811,6 +814,9 @@ export function App() {
           <div style={{ fontSize: 10, color: '#475569', marginBottom: 8, textAlign: 'center' }}>
             {(() => { try { const d = new Date(__BUILD_TIME__); return `Build: ${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; } catch { return ''; } })()}
           </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+            <LanguageSwitcher />
+          </div>
           <button class="btn btn-secondary" style={{ width: '100%', fontSize: 11 }} onClick={handleLogout}>
             Log Out
           </button>
@@ -1107,7 +1113,7 @@ export function App() {
               <span class="toast-icon">{t.kind === 'idle' ? '✓' : '🔔'}</span>
               <span class="toast-body">
                 {t.kind === 'idle' ? (
-                  <><strong>{t.project}</strong> finished</>
+                  <><strong>{t.project}</strong> {trans('toast.finished')}</>
                 ) : (
                   <><strong>{t.title || t.project}</strong>{t.message ? <> — {t.message}</> : null}</>
                 )}

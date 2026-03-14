@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 import { apiFetch } from '../api.js';
 
 interface KeyInfo {
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function ApiKeyManager({ keys, onKeysChanged }: Props) {
+  const { t } = useTranslation();
   const [newLabel, setNewLabel] = useState('');
   const [newKey, setNewKey] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -65,7 +67,7 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <code style={{ flex: 1, wordBreak: 'break-all', fontSize: 13, color: '#e2e8f0' }}>{newKey}</code>
             <button class="btn btn-primary" style={{ whiteSpace: 'nowrap' }} onClick={handleCopy}>
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? t('api_key.copied') : t('api_key.copy')}
             </button>
           </div>
           <button class="btn btn-secondary" style={{ marginTop: 8, fontSize: 12 }} onClick={() => setNewKey(null)}>
@@ -78,13 +80,13 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <input
           type="text"
-          placeholder="Label (optional)"
+          placeholder={t('api_key.label_placeholder')}
           value={newLabel}
           onInput={(e) => setNewLabel((e.target as HTMLInputElement).value)}
           style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0' }}
         />
         <button class="btn btn-primary" onClick={handleGenerate} disabled={generating}>
-          {generating ? 'Generating...' : 'Generate Key'}
+          {generating ? t('api_key.generating') : t('api_key.generate')}
         </button>
       </div>
 
@@ -118,7 +120,7 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                   {!k.revokedAt && (
                     <button class="btn btn-secondary" style={{ fontSize: 11 }} onClick={() => handleRevoke(k.id)}>
-                      Revoke
+                      {t('api_key.revoke')}
                     </button>
                   )}
                 </td>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 import type { RefObject } from 'preact';
 import type { WsClient } from '../ws-client.js';
 import type { SessionInfo } from '../types.js';
@@ -69,6 +70,7 @@ function loadCodexModel(): CodexModelChoice | null {
 }
 
 export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop }: Props) {
+  const { t } = useTranslation();
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -281,7 +283,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     onAfterAction?.();
   };
 
-  const placeholder = !hasSession ? 'No session' : !connected ? `Reconnecting… (send queued)` : `Send to ${sessionDisplayName ?? activeSession?.name ?? 'session'}…`;
+  const placeholder = !hasSession ? t('session.no_session') : !connected ? t('session.send_queued') : t('session.send_placeholder', { name: sessionDisplayName ?? activeSession?.name ?? 'session' });
 
   return (
     <div class={`controls-wrapper${activeSession?.state === 'running' ? ' controls-wrapper-running' : ''}`}>
@@ -362,7 +364,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
         <div class="qp-trigger-wrap" ref={quickWrapRef}>
           <button
             class="qp-trigger"
-            title="Quick input"
+            title={t('quick_input.title')}
             onClick={() => setQuickOpen((o) => !o)}
           >
             ⚡
@@ -414,7 +416,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
           onClick={handleSend}
           disabled={inputDisabled || !hasText || !connected}
         >
-          Send
+          {t('common.send')}
         </button>
 
         {/* Menu button */}
@@ -423,7 +425,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
             class="btn btn-secondary"
             onClick={() => { setMenuOpen((o) => !o); setConfirm(null); }}
             disabled={disabled}
-            title="Session actions"
+            title={t('session.actions')}
             style={{ padding: '6px 10px' }}
           >
             ⋯
@@ -434,26 +436,26 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
                 class={`menu-item ${confirm === 'restart' ? 'menu-item-warn' : ''}`}
                 onClick={() => handleMenuAction('restart')}
               >
-                {confirm === 'restart' ? 'Confirm restart?' : '↺ Restart'}
+                {confirm === 'restart' ? t('session.confirm_restart') : t('session.restart')}
               </button>
               <button
                 class={`menu-item ${confirm === 'new' ? 'menu-item-warn' : ''}`}
                 onClick={() => handleMenuAction('new')}
               >
-                {confirm === 'new' ? 'Confirm new?' : '+ New'}
+                {confirm === 'new' ? t('session.confirm_new') : t('session.new')}
               </button>
               <button
                 class="menu-item"
                 onClick={() => { onRenameSession?.(); setMenuOpen(false); }}
               >
-                ✎ Rename
+                {t('session.rename')}
               </button>
               <div class="menu-divider" />
               <button
                 class={`menu-item ${confirm === 'stop' ? 'menu-item-danger' : ''}`}
                 onClick={() => handleMenuAction('stop')}
               >
-                {confirm === 'stop' ? 'Confirm stop?' : '✕ Stop'}
+                {confirm === 'stop' ? t('session.confirm_stop') : t('session.stop')}
               </button>
             </div>
           )}

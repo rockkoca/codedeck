@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   x: number;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function ServerContextMenu({ x, y, onRename, onUpgrade, onDelete, onClose }: Props) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,14 +35,14 @@ export function ServerContextMenu({ x, y, onRename, onUpgrade, onDelete, onClose
   return (
     <div ref={ref} class="server-ctx-menu" style={style}>
       <button class="server-ctx-item" onClick={() => { onClose(); onRename(); }}>
-        ✎ Rename
+        {t('session.rename')}
       </button>
       <button class="server-ctx-item" onClick={() => { onClose(); onUpgrade(); }}>
-        ↑ Upgrade Daemon
+        {t('server.upgrade_daemon')}
       </button>
       <div class="menu-divider" />
       <button class="server-ctx-item server-ctx-item-danger" onClick={() => { onClose(); onDelete(); }}>
-        ✕ Delete server
+        {t('server.delete')}
       </button>
     </div>
   );
@@ -53,19 +55,20 @@ interface DeleteConfirmProps {
 }
 
 export function DeleteServerDialog({ serverName, onConfirm, onCancel }: DeleteConfirmProps) {
+  const { t } = useTranslation();
   const [typed, setTyped] = useState('');
   const match = typed === serverName;
 
   return (
     <div class="ask-dialog-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <div class="ask-dialog" style={{ maxWidth: 400 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#f87171' }}>Delete server: {serverName}</div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#f87171' }}>{t('server.delete_title', { name: serverName })}</div>
         <div style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6 }}>
-          This will remove all bindings and session records from the server, and notify the daemon to stop and delete local credentials.<br />
-          <strong style={{ color: '#e2e8f0' }}>tmux sessions will not be closed</strong>, but the daemon will no longer auto-start.
+          {t('server.delete_warning')}<br />
+          <strong style={{ color: '#e2e8f0' }}>{t('server.delete_tmux_note')}</strong>{t('server.delete_tmux_suffix')}
         </div>
         <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 4 }}>
-          Type the server name to confirm deletion: <code style={{ color: '#f87171', background: '#1e293b', padding: '2px 6px', borderRadius: 4 }}>{serverName}</code>
+          {t('server.delete_confirm_prompt')} <code style={{ color: '#f87171', background: '#1e293b', padding: '2px 6px', borderRadius: 4 }}>{serverName}</code>
         </div>
         <input
           class="ask-custom-input"
@@ -76,14 +79,14 @@ export function DeleteServerDialog({ serverName, onConfirm, onCancel }: DeleteCo
           autoFocus
         />
         <div class="ask-actions">
-          <button class="ask-btn-cancel" onClick={onCancel}>Cancel</button>
+          <button class="ask-btn-cancel" onClick={onCancel}>{t('common.cancel')}</button>
           <button
             class="ask-btn-submit"
             style={{ background: match ? '#ef4444' : '#7f1d1d', opacity: match ? 1 : 0.5, cursor: match ? 'pointer' : 'not-allowed' }}
             disabled={!match}
             onClick={onConfirm}
           >
-            Confirm Delete
+            {t('server.delete_confirm')}
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 import type { WsClient } from '../ws-client.js';
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
 type AgentType = 'claude-code' | 'codex' | 'opencode' | 'gemini';
 
 export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
+  const { t } = useTranslation();
   const [project, setProject] = useState('');
   const [dir, setDir] = useState('~/');
   const [agentType, setAgentType] = useState<AgentType>('claude-code');
@@ -42,7 +44,7 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
     // Timeout after 15s
     const timeout = setTimeout(() => {
       unsub();
-      setError('Timed out waiting for session to start. Check daemon logs.');
+      setError(t('new_session.timeout'));
       setStarting(false);
     }, 15_000);
 
@@ -50,10 +52,10 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
   }, [starting, ws, project]);
 
   const handleStart = () => {
-    if (!project.trim()) { setError('Project name is required'); return; }
-    if (!dir.trim()) { setError('Working directory is required'); return; }
-    if (!ws) { setError('Not connected to daemon'); return; }
-    if (!ws.connected) { setError('Daemon is offline — check that codedeck daemon is running'); return; }
+    if (!project.trim()) { setError(t('new_session.project_required')); return; }
+    if (!dir.trim()) { setError(t('new_session.dir_required')); return; }
+    if (!ws) { setError(t('new_session.not_connected')); return; }
+    if (!ws.connected) { setError(t('new_session.daemon_offline')); return; }
 
     setError('');
     setStarting(true);
@@ -133,14 +135,14 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
 
         {starting && (
           <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 12px' }}>
-            Starting session...
+            {t('new_session.starting')}
           </p>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button class="btn btn-secondary" onClick={onClose} disabled={starting}>Cancel</button>
+          <button class="btn btn-secondary" onClick={onClose} disabled={starting}>{t('common.cancel')}</button>
           <button class="btn btn-primary" onClick={handleStart} disabled={starting}>
-            {starting ? 'Starting...' : 'Start'}
+            {starting ? t('new_session.starting') : t('new_session.start')}
           </button>
         </div>
       </div>

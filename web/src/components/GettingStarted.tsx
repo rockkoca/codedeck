@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 import { apiFetch } from '../api.js';
 
 interface KeyInfo {
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function GettingStarted({ keys, onKeyCreated, onDeviceAppeared }: Props) {
+  const { t } = useTranslation();
   const existingKey = keys.find((k) => !k.revokedAt);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -76,11 +78,11 @@ export function GettingStarted({ keys, onKeyCreated, onDeviceAppeared }: Props) 
       {/* Step 1 */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontWeight: 600, marginBottom: 10, color: hasBindUrl ? '#94a3b8' : '#e2e8f0', fontSize: 15 }}>
-          {hasBindUrl ? '✓ Step 1: API Key ready' : 'Step 1: Generate an API Key'}
+          {hasBindUrl ? t('getting_started.step1_done') : t('getting_started.step1_pending')}
         </div>
         {!hasBindUrl && (
           <button class="btn btn-primary" onClick={handleGenerate} disabled={generating}>
-            {generating ? 'Generating...' : 'Generate Key'}
+            {generating ? t('api_key.generating') : t('api_key.generate')}
           </button>
         )}
       </div>
@@ -101,7 +103,7 @@ export function GettingStarted({ keys, onKeyCreated, onDeviceAppeared }: Props) 
                 style={{ marginTop: 10, fontSize: 11 }}
                 onClick={() => handleCopy(fullCmd)}
               >
-                {copied ? 'Copied!' : 'Copy'}
+                {copied ? t('api_key.copied') : t('api_key.copy')}
               </button>
             )}
             <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>

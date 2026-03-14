@@ -1,13 +1,7 @@
 import { useState } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 import type { WsClient } from '../ws-client.js';
 import { saveUserPref } from '../api.js';
-
-const PRESET_ROLES = [
-  { id: 'critic', label: 'Critic', icon: '🔍' },
-  { id: 'pragmatist', label: 'Pragmatist', icon: '🔧' },
-  { id: 'innovator', label: 'Innovator', icon: '💡' },
-  { id: 'custom', label: 'Custom...', icon: '✏️' },
-];
 
 const AGENTS = [
   { id: 'claude-code', label: 'Claude Code', models: ['opus', 'sonnet'] },
@@ -45,6 +39,15 @@ interface Props {
 }
 
 export function StartDiscussionDialog({ ws, defaultCwd, existingSessions, savedPrefs, onClose }: Props) {
+  const { t } = useTranslation();
+
+  const PRESET_ROLES = [
+    { id: 'critic', label: t('discussion.role_critic'), icon: '🔍' },
+    { id: 'pragmatist', label: t('discussion.role_pragmatist'), icon: '🔧' },
+    { id: 'innovator', label: t('discussion.role_innovator'), icon: '💡' },
+    { id: 'custom', label: t('discussion.role_custom'), icon: '✏️' },
+  ];
+
   const [topic, setTopic] = useState('');
   const [cwd, setCwd] = useState(defaultCwd ?? '');
   const [participants, setParticipants] = useState<Participant[]>(
@@ -157,7 +160,7 @@ export function StartDiscussionDialog({ ws, defaultCwd, existingSessions, savedP
                     onClick={() => setVerdictIdx(idx)}
                     style={{ whiteSpace: 'nowrap', minWidth: 60, fontSize: 12 }}
                   >
-                    {verdictIdx === idx ? '⚖️ Arbiter' : 'Arbiter'}
+                    {verdictIdx === idx ? t('discussion.arbiter_active') : t('discussion.arbiter')}
                   </button>
 
                   {/* Role selector */}
@@ -209,7 +212,7 @@ export function StartDiscussionDialog({ ws, defaultCwd, existingSessions, savedP
                         }
                       }}
                     >
-                      <option value="_new">New session</option>
+                      <option value="_new">{t('session.new_btn')}</option>
                       {existingSessions.map((s) => (
                         <option key={s.sessionName} value={s.sessionName}>
                           {s.label || s.sessionName} ({s.type})
