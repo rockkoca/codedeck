@@ -218,6 +218,8 @@ jobs:
       IMAGE: rockkoca/codedeck
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for git rev-list --count
 
       - name: Get build timestamp
         id: ts
