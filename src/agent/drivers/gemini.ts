@@ -23,6 +23,9 @@ const OVERLAY_PATTERNS = [
   /Do you want to/i,
 ];
 
+// Serialize resolveSessionId calls — concurrent Gemini CLI spawns cause timeouts
+let _resolveQueue: Promise<void> = Promise.resolve();
+
 export class GeminiDriver implements AgentDriver {
   readonly type = 'gemini' as const;
   readonly promptChar = '>';
@@ -32,13 +35,24 @@ export class GeminiDriver implements AgentDriver {
    * Run gemini once in stream-json mode to obtain a fresh session UUID from
    * the `init` event, then kill the process.  The UUID can then be passed to
    * subsequent launches via `--resume <uuid>` so the session is deterministic.
+   *
+   * Calls are serialized: only one Gemini CLI process runs at a time to avoid
+   * contention/timeouts when starting multiple Gemini sub-sessions.
    */
   async resolveSessionId(cwd?: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      _resolveQueue = _resolveQueue
+        .then(() => this._doResolveSessionId(cwd))
+        .then(resolve, reject);
+    });
+  }
+
+  private _doResolveSessionId(cwd?: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         proc.kill();
         reject(new Error('Gemini session ID discovery timed out'));
-      }, 15_000);
+      }, 30_000);
 
       const proc = spawn('gemini', ['-y', '-p', 'hi', '-o', 'stream-json'], {
         cwd,

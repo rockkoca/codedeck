@@ -312,6 +312,7 @@ export interface DbSubSession {
   created_at: number;
   updated_at: number;
   cc_session_id: string | null;
+  gemini_session_id: string | null;
 }
 
 export async function getSubSessionsByServer(db: PgDatabase, serverId: string): Promise<DbSubSession[]> {
@@ -338,27 +339,29 @@ export async function createSubSession(
   cwd: string | null,
   label: string | null,
   ccSessionId: string | null,
+  geminiSessionId: string | null = null,
 ): Promise<DbSubSession> {
   const now = Date.now();
   await db
     .prepare(
-      'INSERT INTO sub_sessions (id, server_id, type, shell_bin, cwd, label, closed_at, cc_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)',
+      'INSERT INTO sub_sessions (id, server_id, type, shell_bin, cwd, label, closed_at, cc_session_id, gemini_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
     )
-    .bind(id, serverId, type, shellBin, cwd, label, ccSessionId, now, now)
+    .bind(id, serverId, type, shellBin, cwd, label, ccSessionId, geminiSessionId, now, now)
     .run();
-  return { id, server_id: serverId, type, shell_bin: shellBin, cwd, label, closed_at: null, cc_session_id: ccSessionId, created_at: now, updated_at: now };
+  return { id, server_id: serverId, type, shell_bin: shellBin, cwd, label, closed_at: null, cc_session_id: ccSessionId, gemini_session_id: geminiSessionId, created_at: now, updated_at: now };
 }
 
 export async function updateSubSession(
   db: PgDatabase,
   id: string,
   serverId: string,
-  fields: { label?: string | null; closed_at?: number | null },
+  fields: { label?: string | null; closed_at?: number | null; gemini_session_id?: string | null },
 ): Promise<void> {
   const parts: string[] = [];
   const vals: unknown[] = [];
   if ('label' in fields) { parts.push('label = ?'); vals.push(fields.label ?? null); }
   if ('closed_at' in fields) { parts.push('closed_at = ?'); vals.push(fields.closed_at ?? null); }
+  if ('gemini_session_id' in fields) { parts.push('gemini_session_id = ?'); vals.push(fields.gemini_session_id ?? null); }
   if (parts.length === 0) return;
   parts.push('updated_at = ?');
   vals.push(Date.now(), id, serverId);

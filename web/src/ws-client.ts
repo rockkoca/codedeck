@@ -192,7 +192,7 @@ export class WsClient {
     this.send({ type: 'subsession.stop', sessionName });
   }
 
-  subSessionRebuildAll(subSessions: Array<{ id: string; type: string; shellBin?: string | null; cwd?: string | null; ccSessionId?: string | null }>): void {
+  subSessionRebuildAll(subSessions: Array<{ id: string; type: string; shellBin?: string | null; cwd?: string | null; ccSessionId?: string | null; geminiSessionId?: string | null }>): void {
     this.send({ type: 'subsession.rebuild_all', subSessions });
   }
 

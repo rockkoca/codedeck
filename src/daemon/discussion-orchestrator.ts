@@ -11,7 +11,8 @@ import path from 'node:path';
 import logger from '../util/logger.js';
 import type { AgentType } from '../agent/detect.js';
 
-const IDLE_TIMEOUT = 120_000;
+const IDLE_TIMEOUT = 300_000;      // max total wall time per response
+const ACTIVE_TIMEOUT = 120_000;    // timeout only when agent is idle with no file growth
 const IDLE_POLL_INTERVAL = 3_000;
 
 // Model strength ranking (for auto-selecting the verdict participant)
@@ -177,6 +178,7 @@ async function waitForResponse(
   const { readSubSessionResponse } = await import('./subsession-manager.js');
   const start = Date.now();
   let fileGrew = false;
+  let lastActivityAt = Date.now(); // tracks when agent was last seen active
 
   while (Date.now() - start < timeoutMs) {
     // Check file growth
@@ -197,6 +199,15 @@ async function waitForResponse(
       await new Promise<void>((r) => setTimeout(r, 1000));
       const content = await readFile(filePath, 'utf8');
       return content.slice(previousSize).trim();
+    }
+
+    // Activity-based timeout: only count idle time with no file growth
+    if (!isIdle) {
+      lastActivityAt = Date.now();
+    }
+    const idleDuration = Date.now() - lastActivityAt;
+    if (idleDuration > ACTIVE_TIMEOUT && !fileGrew) {
+      break; // agent has been idle too long without producing output
     }
 
     await new Promise<void>((r) => setTimeout(r, IDLE_POLL_INTERVAL));
@@ -271,12 +282,30 @@ async function runDiscussion(
       logger.info({ sessionName: p.sessionName }, 'Reusing existing sub-session for discussion');
     } else {
       const ccSessionId = p.agentType === 'claude-code' ? crypto.randomUUID() : null;
+      // Resolve a unique Gemini session ID so multiple Gemini participants don't share sessions
+      let geminiSessionId: string | null = null;
+      let fileSnapshot: Set<string> | undefined;
+      if (p.agentType === 'gemini') {
+        const { snapshotSessionFiles } = await import('./gemini-watcher.js');
+        fileSnapshot = await snapshotSessionFiles();
+        try {
+          const { GeminiDriver } = await import('../agent/drivers/gemini.js');
+          geminiSessionId = await new GeminiDriver().resolveSessionId(d.cwd || undefined);
+          logger.info({ sessionName: p.sessionName, geminiSessionId }, 'Resolved Gemini session ID');
+          fileSnapshot = undefined;
+        } catch (e) {
+          logger.warn({ err: e, sessionName: p.sessionName }, 'Failed to resolve Gemini session ID — using snapshot-diff');
+        }
+      }
       await startSubSession({
         id: p.subSessionId,
         type: p.agentType,
         cwd: d.cwd || null,
         ccSessionId,
+        geminiSessionId,
         codexModel: p.agentType === 'codex' && p.model ? p.model : null,
+        fresh: !geminiSessionId,
+        _fileSnapshot: fileSnapshot,
       });
       // Sync to DB so frontend can see the sub-session
       onUpdate({

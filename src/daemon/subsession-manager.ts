@@ -19,6 +19,12 @@ export interface SubSessionRecord {
   cwd?: string | null;
   ccSessionId?: string | null;
   codexModel?: string | null;
+  geminiSessionId?: string | null;
+  fresh?: boolean;
+  /** Pre-launch file snapshot for snapshot-diff based file discovery (internal) */
+  _fileSnapshot?: Set<string>;
+  /** Callback when Gemini session ID is discovered from new file (internal) */
+  _onGeminiDiscovered?: (sessionId: string) => void;
 }
 
 export function subSessionName(id: string): string {
@@ -42,6 +48,8 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
     ...(sub.shellBin ? { shellBin: sub.shellBin } : {}),
     ...(sub.ccSessionId ? { ccSessionId: sub.ccSessionId } : {}),
     ...(sub.codexModel ? { codexModel: sub.codexModel } : {}),
+    ...(sub.geminiSessionId ? { geminiSessionId: sub.geminiSessionId } : {}),
+    ...(sub.fresh ? { fresh: true } : {}),
   } as Parameters<typeof driver.buildLaunchCommand>[1]);
 
   await newSession(sessionName, launchCmd, { cwd: sub.cwd ?? undefined });
@@ -66,10 +74,27 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
 
   // Start gemini watcher for gemini sub-sessions
   if (agentType === 'gemini') {
-    const { startWatchingLatest } = await import('./gemini-watcher.js');
-    startWatchingLatest(sessionName).catch((e: unknown) =>
-      logger.warn({ err: e, sessionName }, 'gemini-watcher startWatchingLatest failed'),
-    );
+    if (sub.geminiSessionId) {
+      const { startWatching } = await import('./gemini-watcher.js');
+      startWatching(sessionName, sub.geminiSessionId).catch((e: unknown) =>
+        logger.warn({ err: e, sessionName }, 'gemini-watcher startWatching failed'),
+      );
+    } else if (sub._fileSnapshot) {
+      // resolveSessionId failed — use snapshot diff to find the new file
+      const { startWatchingNew } = await import('./gemini-watcher.js');
+      startWatchingNew(sessionName, sub._fileSnapshot, (sessionId, _filePath) => {
+        logger.info({ sessionName, sessionId }, 'Discovered Gemini session ID from new file');
+        // Persist via onGeminiDiscovered callback if provided
+        sub._onGeminiDiscovered?.(sessionId);
+      }).catch((e: unknown) =>
+        logger.warn({ err: e, sessionName }, 'gemini-watcher startWatchingNew failed'),
+      );
+    } else {
+      const { startWatchingLatest } = await import('./gemini-watcher.js');
+      startWatchingLatest(sessionName).catch((e: unknown) =>
+        logger.warn({ err: e, sessionName }, 'gemini-watcher startWatchingLatest failed'),
+      );
+    }
   }
 
   // Start codex JSONL watcher for codex sub-sessions
@@ -106,7 +131,7 @@ export async function stopSubSession(sessionName: string): Promise<void> {
 export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promise<void> {
   const { startWatchingFile, claudeProjectDir, isWatching } = await import('./jsonl-watcher.js');
   const { startWatching: startCodexWatching, isWatching: isCodexWatching } = await import('./codex-watcher.js');
-  const { startWatchingLatest: startGeminiWatchingLatest, isWatching: isGeminiWatching } = await import('./gemini-watcher.js');
+  const { startWatching: startGeminiWatching, startWatchingLatest: startGeminiWatchingLatest, isWatching: isGeminiWatching } = await import('./gemini-watcher.js');
 
   for (const sub of subSessions) {
     const sessionName = subSessionName(sub.id);
@@ -131,10 +156,16 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
       logger.info({ sessionName }, 'Restored codex JSONL watcher for running sub-session');
     } else if (sub.type === 'gemini' && !isGeminiWatching(sessionName)) {
       // Already running — restore the gemini watcher (lost on daemon restart)
-      startGeminiWatchingLatest(sessionName).catch((e: unknown) =>
-        logger.warn({ err: e, sessionName }, 'Gemini watcher restore failed'),
-      );
-      logger.info({ sessionName }, 'Restored gemini watcher for running sub-session');
+      if (sub.geminiSessionId) {
+        startGeminiWatching(sessionName, sub.geminiSessionId).catch((e: unknown) =>
+          logger.warn({ err: e, sessionName }, 'Gemini watcher restore failed'),
+        );
+      } else {
+        startGeminiWatchingLatest(sessionName).catch((e: unknown) =>
+          logger.warn({ err: e, sessionName }, 'Gemini watcher restore failed'),
+        );
+      }
+      logger.info({ sessionName, geminiSessionId: sub.geminiSessionId }, 'Restored gemini watcher for running sub-session');
     }
     // Ensure agentType is in session-store for all running sub-sessions (needed by command-handler)
     if (exists) {

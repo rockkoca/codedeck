@@ -180,7 +180,7 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       handleTimelineHistory(cmd, serverLink);
       break;
     case 'subsession.start':
-      void handleSubSessionStart(cmd);
+      void handleSubSessionStart(cmd, serverLink);
       break;
     case 'subsession.stop':
       void handleSubSessionStop(cmd);
@@ -581,12 +581,32 @@ function handleTimelineHistory(cmd: Record<string, unknown>, serverLink: ServerL
 
 // ── Sub-session handlers ──────────────────────────────────────────────────
 
-async function handleSubSessionStart(cmd: Record<string, unknown>): Promise<void> {
+async function handleSubSessionStart(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
   const id = cmd.id as string | undefined;
   const type = cmd.sessionType as string | undefined;
   if (!id || !type) {
     logger.warn('subsession.start: missing id or type');
     return;
+  }
+  // Resolve a unique Gemini session ID so each sub-session gets its own conversation
+  let geminiSessionId: string | null = null;
+  let fileSnapshot: Set<string> | undefined;
+  if (type === 'gemini') {
+    // Snapshot existing files BEFORE resolving — used as fallback if resolve fails
+    const { snapshotSessionFiles } = await import('./gemini-watcher.js');
+    fileSnapshot = await snapshotSessionFiles();
+    try {
+      const { GeminiDriver } = await import('../agent/drivers/gemini.js');
+      geminiSessionId = await new GeminiDriver().resolveSessionId(
+        (cmd.cwd as string | undefined) ?? undefined,
+      );
+      logger.info({ id, geminiSessionId }, 'Resolved Gemini session ID for sub-session');
+      // Persist to DB so rebuild can use the exact UUID
+      serverLink.send({ type: 'subsession.update_gemini_id', id, geminiSessionId });
+      fileSnapshot = undefined; // no longer needed
+    } catch (e) {
+      logger.warn({ err: e, id }, 'Failed to resolve Gemini session ID — using snapshot-diff fallback');
+    }
   }
   await startSubSession({
     id,
@@ -594,6 +614,13 @@ async function handleSubSessionStart(cmd: Record<string, unknown>): Promise<void
     shellBin: cmd.shellBin as string | null | undefined,
     cwd: cmd.cwd as string | null | undefined,
     ccSessionId: cmd.ccSessionId as string | null | undefined,
+    geminiSessionId,
+    fresh: type === 'gemini' && !geminiSessionId,
+    _fileSnapshot: fileSnapshot,
+    _onGeminiDiscovered: fileSnapshot ? (sessionId: string) => {
+      logger.info({ id, sessionId }, 'Discovered Gemini session ID via snapshot-diff');
+      try { serverLink.send({ type: 'subsession.update_gemini_id', id, geminiSessionId: sessionId }); } catch { /* ignore */ }
+    } : undefined,
   }).catch((e: unknown) => logger.error({ err: e, id }, 'subsession.start failed'));
 }
 

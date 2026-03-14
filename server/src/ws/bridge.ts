@@ -449,7 +449,14 @@ export class WsBridge {
         (msg.cwd as string) || null,
         (msg.label as string) || null,
         (msg.ccSessionId as string) || null,
+        (msg.geminiSessionId as string) || null,
       ).catch((e) => logger.error({ err: e, id: msg.id }, 'Failed to sync sub-session to DB'));
+      return;
+    }
+    if (type === 'subsession.update_gemini_id' && this.db) {
+      void updateSubSession(this.db, msg.id as string, this.serverId, {
+        gemini_session_id: msg.geminiSessionId as string,
+      }).catch((e) => logger.error({ err: e, id: msg.id }, 'Failed to update gemini_session_id'));
       return;
     }
     if (type === 'subsession.close' && this.db) {

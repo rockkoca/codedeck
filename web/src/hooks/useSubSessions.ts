@@ -56,6 +56,7 @@ export function useSubSessions(
       shellBin: s.shellBin,
       cwd: s.cwd,
       ccSessionId: s.ccSessionId,
+      geminiSessionId: s.geminiSessionId,
     })));
   }, [connected, ws, subSessions]);
 

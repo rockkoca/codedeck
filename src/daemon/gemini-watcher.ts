@@ -59,8 +59,9 @@ async function findSessionFile(sessionUuid: string): Promise<string | null> {
 /**
  * Find the most recently modified Gemini session file across all project slugs.
  * Used when no UUID is known (e.g. sub-sessions launched with `--resume latest`).
+ * Excludes files already claimed by other watchers.
  */
-async function findLatestSessionFile(): Promise<string | null> {
+async function findLatestSessionFile(excludeClaimed = true): Promise<string | null> {
   let slugs: string[];
   try {
     slugs = await readdir(GEMINI_TMP_DIR);
@@ -82,6 +83,7 @@ async function findLatestSessionFile(): Promise<string | null> {
     for (const entry of entries) {
       if (!entry.startsWith('session-') || !entry.endsWith('.json')) continue;
       const fullPath = join(chatsDir, entry);
+      if (excludeClaimed && claimedFiles.has(fullPath)) continue;
       try {
         const s = await stat(fullPath);
         if (s.mtimeMs > bestMtime) {
@@ -94,6 +96,27 @@ async function findLatestSessionFile(): Promise<string | null> {
     }
   }
   return bestPath;
+}
+
+/**
+ * Snapshot all existing Gemini session files.
+ * Used before launching a new session so the watcher can detect which file is NEW.
+ */
+export async function snapshotSessionFiles(): Promise<Set<string>> {
+  const files = new Set<string>();
+  let slugs: string[];
+  try { slugs = await readdir(GEMINI_TMP_DIR); } catch { return files; }
+  for (const slug of slugs) {
+    const chatsDir = join(GEMINI_TMP_DIR, slug, 'chats');
+    let entries: string[];
+    try { entries = await readdir(chatsDir); } catch { continue; }
+    for (const entry of entries) {
+      if (entry.startsWith('session-') && entry.endsWith('.json')) {
+        files.add(join(chatsDir, entry));
+      }
+    }
+  }
+  return files;
 }
 
 // ── Message parsing ────────────────────────────────────────────────────────────
@@ -219,6 +242,8 @@ interface WatcherState {
 }
 
 const watchers = new Map<string, WatcherState>();
+/** Files already claimed by a watcher — prevents two watchers from tracking the same file */
+const claimedFiles = new Set<string>();
 
 // ── Core poll logic ────────────────────────────────────────────────────────────
 
@@ -240,6 +265,7 @@ async function pollTick(sessionName: string, state: WatcherState): Promise<void>
       : await findLatestSessionFile();
     if (found) {
       state.activeFile = found;
+      claimedFiles.add(found);
       logger.debug({ sessionName, file: found }, 'gemini-watcher: found session file');
     } else {
       return;
@@ -302,6 +328,7 @@ export async function startWatching(sessionName: string, sessionUuid: string): P
   const found = await findSessionFile(sessionUuid);
   if (found) {
     state.activeFile = found;
+    claimedFiles.add(found);
     const conv = await readConversation(found);
     if (conv) {
       // Start from end so we only emit new messages going forward
@@ -328,6 +355,93 @@ export async function startWatchingLatest(sessionName: string): Promise<void> {
   return startWatching(sessionName, '');
 }
 
+/**
+ * Start watching for a NEW Gemini session file that wasn't in the pre-launch snapshot.
+ * Used when resolveSessionId() failed and we launched fresh — detects the file by diffing
+ * against the snapshot taken before launch.
+ *
+ * @param onDiscovered  Called with (sessionId, filePath) when the new file is found.
+ *                      Callers can persist the sessionId for future daemon restarts.
+ */
+export async function startWatchingNew(
+  sessionName: string,
+  existingFiles: Set<string>,
+  onDiscovered?: (sessionId: string, filePath: string) => void,
+): Promise<void> {
+  if (watchers.has(sessionName)) {
+    stopWatching(sessionName);
+  }
+
+  const state: WatcherState = {
+    sessionUuid: '',
+    activeFile: null,
+    seenCount: 0,
+    lastUpdated: '',
+    abort: new AbortController(),
+    stopped: false,
+  };
+  watchers.set(sessionName, state);
+
+  // Poll for a new file that wasn't in the snapshot
+  const findNewFile = async (): Promise<string | null> => {
+    let slugs: string[];
+    try { slugs = await readdir(GEMINI_TMP_DIR); } catch { return null; }
+    let bestPath: string | null = null;
+    let bestMtime = 0;
+    for (const slug of slugs) {
+      const chatsDir = join(GEMINI_TMP_DIR, slug, 'chats');
+      let entries: string[];
+      try { entries = await readdir(chatsDir); } catch { continue; }
+      for (const entry of entries) {
+        if (!entry.startsWith('session-') || !entry.endsWith('.json')) continue;
+        const fullPath = join(chatsDir, entry);
+        if (existingFiles.has(fullPath)) continue; // existed before launch
+        if (claimedFiles.has(fullPath)) continue;  // claimed by another watcher
+        try {
+          const s = await stat(fullPath);
+          if (s.mtimeMs > bestMtime) {
+            bestMtime = s.mtimeMs;
+            bestPath = fullPath;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+    return bestPath;
+  };
+
+  // Try to find the new file (may take a few seconds for Gemini to create it)
+  for (let i = 0; i < 60 && !state.stopped; i++) {
+    const found = await findNewFile();
+    if (found) {
+      state.activeFile = found;
+      claimedFiles.add(found);
+      logger.info({ sessionName, file: found }, 'gemini-watcher: found new session file via snapshot diff');
+
+      // Read sessionId from JSON and notify caller
+      const conv = await readConversation(found);
+      if (conv) {
+        state.seenCount = conv.messages.length;
+        state.lastUpdated = conv.lastUpdated;
+        await emitRecentHistory(sessionName, found);
+        if (conv.sessionId && onDiscovered) {
+          onDiscovered(conv.sessionId, found);
+        }
+      }
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  // Start polling
+  state.pollTimer = setInterval(() => {
+    void pollTick(sessionName, state);
+  }, 2000);
+
+  if (state.activeFile) {
+    void watchGeminiDir(sessionName, state);
+  }
+}
+
 export function isWatching(sessionName: string): boolean {
   return watchers.has(sessionName);
 }
@@ -335,6 +449,7 @@ export function isWatching(sessionName: string): boolean {
 export function stopWatching(sessionName: string): void {
   const state = watchers.get(sessionName);
   if (!state) return;
+  if (state.activeFile) claimedFiles.delete(state.activeFile);
   state.stopped = true;
   state.abort.abort();
   if (state.pollTimer) clearInterval(state.pollTimer);
