@@ -177,13 +177,15 @@ function parseLine(sessionName: string, line: string): void {
         }, { source: 'daemon', confidence: 'high' });
       }
     }
-    // Emit token usage for context bar
+    // Emit token usage + model for context bar
     const usage = msg['usage'] as { input_tokens?: number; cache_read_input_tokens?: number } | undefined;
+    const model = msg['model'] as string | undefined;
     if (usage && typeof usage.input_tokens === 'number') {
       timelineEmitter.emit(sessionName, 'usage.update', {
         inputTokens: usage.input_tokens,
         cacheTokens: usage.cache_read_input_tokens ?? 0,
         contextWindow: 1_000_000,
+        ...(model ? { model } : {}),
       }, { source: 'daemon', confidence: 'high' });
     }
     return;

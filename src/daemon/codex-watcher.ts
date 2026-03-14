@@ -126,7 +126,7 @@ function flushFinalAnswer(sessionName: string): void {
 }
 
 /** Exported for testing. */
-export function parseLine(sessionName: string, line: string): void {
+export function parseLine(sessionName: string, line: string, model?: string): void {
   if (!line.trim()) return;
 
   let raw: Record<string, unknown>;
@@ -152,6 +152,7 @@ export function parseLine(sessionName: string, line: string): void {
         inputTokens: last['input_tokens'] as number,
         cacheTokens: (last['cached_input_tokens'] as number | undefined) ?? 0,
         contextWindow: ctxWin,
+        ...(model ? { model } : {}),
       }, { source: 'daemon', confidence: 'high' });
     }
     return;
@@ -257,6 +258,7 @@ interface WatcherState {
   abort: AbortController;
   stopped: boolean;
   pollTimer?: ReturnType<typeof setInterval>;
+  model?: string;
 }
 
 const watchers = new Map<string, WatcherState>();
@@ -332,7 +334,7 @@ export async function findRolloutPathByUuid(uuid: string): Promise<string | null
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-export async function startWatching(sessionName: string, workDir: string): Promise<void> {
+export async function startWatching(sessionName: string, workDir: string, model?: string): Promise<void> {
   if (watchers.has(sessionName)) {
     stopWatching(sessionName);
   }
@@ -343,6 +345,7 @@ export async function startWatching(sessionName: string, workDir: string): Promi
     fileOffset: 0,
     abort: new AbortController(),
     stopped: false,
+    ...(model ? { model } : {}),
   };
   watchers.set(sessionName, state);
 
@@ -389,7 +392,7 @@ export function isWatching(sessionName: string): boolean {
  * Watch a specific rollout file directly (used when UUID is already known).
  * The file is expected to already exist.
  */
-export async function startWatchingSpecificFile(sessionName: string, filePath: string): Promise<void> {
+export async function startWatchingSpecificFile(sessionName: string, filePath: string, model?: string): Promise<void> {
   if (watchers.has(sessionName)) {
     stopWatching(sessionName);
   }
@@ -409,6 +412,7 @@ export async function startWatchingSpecificFile(sessionName: string, filePath: s
     fileOffset: fileSize,
     abort: new AbortController(),
     stopped: false,
+    ...(model ? { model } : {}),
   };
   watchers.set(sessionName, state);
 
@@ -512,7 +516,7 @@ async function drainNewLines(sessionName: string, state: WatcherState): Promise<
     const chunk = buf.subarray(0, bytesRead).toString('utf8');
     for (const line of chunk.split('\n')) {
       if (state.stopped) break;
-      parseLine(sessionName, line);
+      parseLine(sessionName, line, state.model);
     }
   } catch (err) {
     if (!state.stopped) {

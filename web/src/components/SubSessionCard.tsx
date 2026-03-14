@@ -59,11 +59,30 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
   const lastUsage = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       if (events[i].type === 'usage.update' && events[i].payload.inputTokens) {
-        return events[i].payload as { inputTokens: number; cacheTokens: number; contextWindow: number };
+        return events[i].payload as { inputTokens: number; cacheTokens: number; contextWindow: number; model?: string };
       }
     }
     return null;
   }, [events]);
+
+  // Short model label for display (e.g. "claude-opus-4-6" → "opus", "gemini-3-flash-preview" → "flash")
+  const modelLabel = useMemo(() => {
+    const m = lastUsage?.model;
+    if (!m) return null;
+    const lower = m.toLowerCase();
+    if (lower.includes('opus')) return 'opus';
+    if (lower.includes('sonnet')) return 'sonnet';
+    if (lower.includes('haiku')) return 'haiku';
+    if (lower.includes('flash')) return 'flash';
+    if (lower.includes('pro')) return 'pro';
+    if (lower.includes('o4-mini') || lower.includes('o4mini')) return 'o4-mini';
+    if (lower.includes('o3')) return 'o3';
+    if (lower.includes('gpt-4o')) return 'gpt-4o';
+    if (lower.includes('gpt-4.1')) return 'gpt-4.1';
+    // fallback: last segment after dash
+    const parts = m.split('-');
+    return parts[parts.length - 1] ?? m;
+  }, [lastUsage]);
 
   // Per-card width override (persisted in localStorage)
   const [localW, setLocalW] = useState(() => loadCardW(sub.id, cardW));
@@ -129,11 +148,12 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
         <span class="subcard-label">{label}</span>
         {badge && <span class="subcard-badge">{badge}</span>}
         {sub.state === 'running' && <span class="subcard-running">●</span>}
+        {modelLabel && <span class="subcard-model">{modelLabel}</span>}
         {lastUsage && (() => {
           const ctx = lastUsage.contextWindow || 1_000_000;
           const inputPct = Math.min(100, lastUsage.inputTokens / ctx * 100);
           const cachePct = Math.min(inputPct, lastUsage.cacheTokens / ctx * 100);
-          const tip = `${lastUsage.inputTokens.toLocaleString()} / ${ctx.toLocaleString()} tokens · ${lastUsage.cacheTokens.toLocaleString()} cached`;
+          const tip = `${lastUsage.model ? lastUsage.model + ' · ' : ''}${lastUsage.inputTokens.toLocaleString()} / ${ctx.toLocaleString()} tokens · ${lastUsage.cacheTokens.toLocaleString()} cached`;
           return (
             <div class="subcard-ctx-bar" title={tip}>
               <div class="subcard-ctx-input" style={{ width: `${inputPct}%` }} />

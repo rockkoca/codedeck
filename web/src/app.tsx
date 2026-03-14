@@ -335,9 +335,9 @@ export function App() {
       if (msg.type === 'terminal.diff') {
         const apply = diffApplyersRef.current.get(msg.diff.sessionName);
         apply?.(msg.diff);
-        // Scan lines for model keywords to detect active model
+        // Scan terminal lines for model keywords (catches Codex footer, fallback for all agents)
         const sessionName = msg.diff.sessionName;
-        const stripped = msg.diff.lines.map(([, l]) => l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')).join(' ').toLowerCase();
+        const stripped = msg.diff.lines.map(([, l]: [unknown, string]) => l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')).join(' ').toLowerCase();
         const detected: 'opus' | 'sonnet' | 'haiku' | null =
           stripped.includes('opus') ? 'opus' :
           stripped.includes('sonnet') ? 'sonnet' :
@@ -349,6 +349,25 @@ export function App() {
             next.set(sessionName, detected);
             return next;
           });
+        }
+      }
+      // Detect model from JSONL usage.update events (authoritative, overrides terminal scan)
+      if (msg.type === 'timeline.event') {
+        const event = msg.event;
+        if (event.type === 'usage.update' && event.payload.model) {
+          const modelStr = String(event.payload.model).toLowerCase();
+          const detected: 'opus' | 'sonnet' | 'haiku' | null =
+            modelStr.includes('opus') ? 'opus' :
+            modelStr.includes('sonnet') ? 'sonnet' :
+            modelStr.includes('haiku') ? 'haiku' : null;
+          if (detected) {
+            setDetectedModels((prev) => {
+              if (prev.get(event.sessionId) === detected) return prev;
+              const next = new Map(prev);
+              next.set(event.sessionId, detected);
+              return next;
+            });
+          }
         }
       }
       if (msg.type === 'terminal.history') {

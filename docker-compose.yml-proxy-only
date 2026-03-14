@@ -1,0 +1,18 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    network_mode: host
+    environment:
+      PROXY_DOMAIN: "${PROXY_DOMAIN:-codedeck.cc}"
+      UPSTREAM_URL: "${UPSTREAM_URL:-https://app.codedeck.org}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-admin@codedeck.cc}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./china_ips.caddy:/etc/caddy/china_ips.caddy
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

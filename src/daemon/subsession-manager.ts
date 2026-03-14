@@ -100,7 +100,7 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
   // Start codex JSONL watcher for codex sub-sessions
   if (agentType === 'codex' && sub.cwd) {
     const { startWatching: startCodexWatching } = await import('./codex-watcher.js');
-    startCodexWatching(sessionName, sub.cwd).catch((e: unknown) =>
+    startCodexWatching(sessionName, sub.cwd, sub.codexModel ?? undefined).catch((e: unknown) =>
       logger.warn({ err: e, sessionName }, 'codex-watcher startWatching failed'),
     );
   }
@@ -150,7 +150,7 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
       logger.info({ sessionName, jsonlPath }, 'Restored JSONL watcher for running sub-session');
     } else if (sub.type === 'codex' && sub.cwd && !isCodexWatching(sessionName)) {
       // Already running — restore the codex JSONL watcher (lost on daemon restart)
-      startCodexWatching(sessionName, sub.cwd).catch((e: unknown) =>
+      startCodexWatching(sessionName, sub.cwd, sub.codexModel ?? undefined).catch((e: unknown) =>
         logger.warn({ err: e, sessionName }, 'Codex watcher restore failed'),
       );
       logger.info({ sessionName }, 'Restored codex JSONL watcher for running sub-session');

@@ -149,6 +149,7 @@ interface GeminiMessage {
   content: string | Array<{ text?: string }>;
   thoughts?: GeminiThought[];
   toolCalls?: GeminiToolCall[];
+  model?: string;
   tokens?: {
     input?: number;
     output?: number;
@@ -218,12 +219,13 @@ function parseMessage(sessionName: string, msg: GeminiMessage): void {
         { source: 'daemon', confidence: 'high' });
     }
 
-    // Emit token usage for context bar
+    // Emit token usage + model for context bar
     if (msg.tokens && typeof msg.tokens.input === 'number') {
       timelineEmitter.emit(sessionName, 'usage.update', {
         inputTokens: msg.tokens.input,
         cacheTokens: msg.tokens.cached ?? 0,
         contextWindow: 1_000_000,
+        ...(msg.model ? { model: msg.model } : {}),
       }, { source: 'daemon', confidence: 'high' });
     }
   }
