@@ -150,14 +150,15 @@ export function StartDiscussionDialog({ ws, defaultCwd, existingSessions, savedP
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {participants.map((p, idx) => (
                 <div key={idx} class="discussion-participant-row">
-                  {/* Verdict radio */}
-                  <input
-                    type="radio"
-                    name="verdict"
-                    checked={verdictIdx === idx}
-                    onChange={() => setVerdictIdx(idx)}
-                    title="裁决者 (Verdict judge)"
-                  />
+                  {/* Verdict selector */}
+                  <button
+                    type="button"
+                    class={`btn btn-sm${verdictIdx === idx ? ' btn-primary' : ''}`}
+                    onClick={() => setVerdictIdx(idx)}
+                    style={{ whiteSpace: 'nowrap', minWidth: 60, fontSize: 12 }}
+                  >
+                    {verdictIdx === idx ? '⚖️ 裁决者' : '裁决者'}
+                  </button>
 
                   {/* Role selector */}
                   <select
@@ -254,10 +255,6 @@ export function StartDiscussionDialog({ ws, defaultCwd, existingSessions, savedP
                     <button class="btn btn-sm btn-danger" onClick={() => removeParticipant(idx)}>✕</button>
                   )}
 
-                  {/* Verdict indicator */}
-                  {verdictIdx === idx && (
-                    <span class="discussion-verdict-badge" title="Verdict judge">⚖️</span>
-                  )}
                 </div>
               ))}
             </div>
