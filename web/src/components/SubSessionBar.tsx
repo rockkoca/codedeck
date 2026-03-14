@@ -94,6 +94,48 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
   const [stats, setStats] = useState<DaemonStats | null>(null);
   const [orderedIds, setOrderedIds] = useState<string[]>(() => load('rcc_subcard_order', []));
   const dragIdRef = useRef<string | null>(null);
+  const orderedIdsRef = useRef(orderedIds);
+  orderedIdsRef.current = orderedIds;
+  const prevSubIdsRef = useRef<string[]>([]);
+  const removedPositionsRef = useRef<Map<string, number>>(new Map());
+
+  // Preserve ordering across restart: track removed session positions, place new sessions there
+  useEffect(() => {
+    const prevIds = prevSubIdsRef.current;
+    const currIds = subSessions.map((s) => s.id);
+
+    // Save positions of sessions that disappeared
+    const disappeared = prevIds.filter((id) => !currIds.includes(id));
+    for (const id of disappeared) {
+      const pos = orderedIdsRef.current.indexOf(id);
+      if (pos !== -1) removedPositionsRef.current.set(id, pos);
+    }
+
+    // Place newly appeared sessions at saved positions (restart case)
+    const appeared = currIds.filter((id) => !prevIds.includes(id));
+    if (appeared.length > 0 && removedPositionsRef.current.size > 0) {
+      setOrderedIds((prev) => {
+        const next = [...prev];
+        for (const newId of appeared) {
+          const entries = [...removedPositionsRef.current.entries()];
+          if (entries.length > 0) {
+            const [oldId, pos] = entries[0];
+            removedPositionsRef.current.delete(oldId);
+            const idx = next.indexOf(oldId);
+            if (idx !== -1) {
+              next[idx] = newId;
+            } else {
+              next.splice(Math.min(pos, next.length), 0, newId);
+            }
+          }
+        }
+        save('rcc_subcard_order', next);
+        return next;
+      });
+    }
+
+    prevSubIdsRef.current = currIds;
+  }, [subSessions]); // orderedIds deliberately omitted to avoid loops
 
   // Merge server order with persisted order: keep known positions, append new sessions at end
   const orderedSessions = useMemo(() => {

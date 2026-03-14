@@ -71,6 +71,8 @@ export function SubSessionWindow({
   viewModeRef.current = viewMode;
   const termScrollRef = useRef<(() => void) | null>(null);
   const chatScrollRef = useRef<(() => void) | null>(null);
+  const onTermScrollBottomFn = useCallback((fn: () => void) => { termScrollRef.current = fn; }, []);
+  const onChatScrollBottomFn = useCallback((fn: () => void) => { chatScrollRef.current = fn; }, []);
 
   // SessionInfo shape for SessionControls
   const sessionInfo: SessionInfo = {
@@ -210,8 +212,7 @@ export function SubSessionWindow({
         <span class="subsession-drag-icon">⠿</span>
         <span class="subsession-title">{typeLabel}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-          <button class={`subsession-mode-btn${viewMode === 'chat' ? ' active' : ''}`} onClick={() => { setViewMode('chat'); requestAnimationFrame(() => chatScrollRef.current?.()); }} title="Chat view">💬</button>
-          <button class={`subsession-mode-btn${viewMode === 'terminal' ? ' active' : ''}`} onClick={() => setViewMode('terminal')} title="Terminal view">⌨</button>
+          <button class="subsession-mode-btn" onClick={() => { const next = viewMode === 'chat' ? 'terminal' : 'chat'; setViewMode(next); if (next === 'chat') requestAnimationFrame(() => chatScrollRef.current?.()); }} title={viewMode === 'chat' ? 'Switch to terminal' : 'Switch to chat'}>{viewMode === 'chat' ? '⌨' : '💬'}</button>
           <button class="subsession-minimize-btn" onClick={onMinimize} title="Minimize">─</button>
           {confirmClose ? (
             <>
@@ -234,7 +235,7 @@ export function SubSessionWindow({
             connected={connected}
             onDiff={(apply) => onDiff(sub.sessionName, apply)}
             onHistory={(apply) => onHistory(sub.sessionName, apply)}
-            onScrollBottomFn={(fn) => { termScrollRef.current = fn; }}
+            onScrollBottomFn={onTermScrollBottomFn}
           />
         </div>
         {viewMode === 'chat' && (
@@ -243,7 +244,7 @@ export function SubSessionWindow({
             loading={false}
             refreshing={refreshing}
             sessionId={sub.sessionName}
-            onScrollBottomFn={(fn) => { chatScrollRef.current = fn; }}
+            onScrollBottomFn={onChatScrollBottomFn}
           />
         )}
       </div>
