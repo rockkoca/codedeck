@@ -69,6 +69,7 @@ const BROWSER_WHITELIST = new Set([
   'discussion.start',
   'discussion.status',
   'discussion.stop',
+  'discussion.list',
 ]);
 
 // ── Terminal forwarding queue (per (session, browser)) ────────────────────────
@@ -442,7 +443,8 @@ export class WsBridge {
       type === 'discussion.started' ||
       type === 'discussion.update' ||
       type === 'discussion.done' ||
-      type === 'discussion.error'
+      type === 'discussion.error' ||
+      type === 'discussion.list'
     ) {
       this.broadcastToBrowsers(JSON.stringify(msg));
       return;

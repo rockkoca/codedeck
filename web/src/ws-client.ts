@@ -42,7 +42,8 @@ export type ServerMessage =
   | { type: 'discussion.started'; requestId?: string; discussionId: string; topic: string; maxRounds: number; filePath: string; participants: Array<{ sessionName: string; roleLabel: string; agentType: string; model?: string }> }
   | { type: 'discussion.update'; discussionId: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; lastResponse?: string }
   | { type: 'discussion.done'; discussionId: string; filePath: string; conclusion: string }
-  | { type: 'discussion.error'; discussionId?: string; requestId?: string; error: string };
+  | { type: 'discussion.error'; discussionId?: string; requestId?: string; error: string }
+  | { type: 'discussion.list'; discussions: Array<{ id: string; topic: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; conclusion?: string; filePath?: string }> };
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
@@ -234,6 +235,10 @@ export class WsClient {
 
   discussionStop(discussionId: string): void {
     this.send({ type: 'discussion.stop', discussionId });
+  }
+
+  discussionList(): void {
+    this.send({ type: 'discussion.list' });
   }
 
   /** Request timeline event replay from the daemon for reconnection gap-fill. */

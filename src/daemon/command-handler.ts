@@ -206,6 +206,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
     case 'discussion.stop':
       void handleDiscussionStop(cmd);
       break;
+    case 'discussion.list':
+      handleDiscussionList(serverLink);
+      break;
     case 'auth_ok':
     case 'heartbeat':
     case 'heartbeat_ack':
@@ -736,6 +739,14 @@ function handleDiscussionStatus(cmd: Record<string, unknown>, serverLink: Server
         maxRounds: d.maxRounds,
         currentSpeaker: d.participants[d.currentSpeakerIdx]?.roleLabel,
       });
+    } catch { /* not connected */ }
+  }).catch(() => {});
+}
+
+function handleDiscussionList(serverLink: ServerLink): void {
+  import('./discussion-orchestrator.js').then(({ listDiscussions }) => {
+    try {
+      serverLink.send({ type: 'discussion.list', discussions: listDiscussions() });
     } catch { /* not connected */ }
   }).catch(() => {});
 }

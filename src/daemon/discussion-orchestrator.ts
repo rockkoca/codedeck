@@ -69,6 +69,7 @@ interface Discussion {
   startedAt: number;
   updatedAt: number;
   error?: string;
+  conclusion?: string;
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -313,6 +314,7 @@ async function runDiscussion(
 
   // 4. Done
   d.state = 'done';
+  d.conclusion = verdict.slice(0, 500);
   d.updatedAt = Date.now();
 
   onUpdate({
@@ -419,6 +421,28 @@ export function getDiscussion(id: string): Discussion | undefined {
   return discussions.get(id);
 }
 
+export function listDiscussions(): Array<{
+  id: string;
+  topic: string;
+  state: string;
+  currentRound: number;
+  maxRounds: number;
+  currentSpeaker?: string;
+  conclusion?: string;
+  filePath?: string;
+}> {
+  return [...discussions.values()].map((d) => ({
+    id: d.id,
+    topic: d.topic,
+    state: d.state,
+    currentRound: d.currentRound,
+    maxRounds: d.maxRounds,
+    currentSpeaker: d.participants[d.currentSpeakerIdx]?.roleLabel,
+    conclusion: d.conclusion,
+    filePath: d.filePath || undefined,
+  }));
+}
+
 export async function stopDiscussion(id: string): Promise<void> {
   const d = discussions.get(id);
   if (!d) return;
@@ -427,5 +451,4 @@ export async function stopDiscussion(id: string): Promise<void> {
   for (const p of d.participants) {
     await stopSubSession(p.sessionName).catch(() => {});
   }
-  discussions.delete(id);
 }

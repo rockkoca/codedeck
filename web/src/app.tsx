@@ -302,6 +302,7 @@ export function App() {
         if (msg.event === 'connected') {
           setConnected(true);
           ws.requestSessionList();
+          ws.discussionList();
         }
         if (msg.event === 'disconnected') setConnected(false);
         if (msg.session && !msg.session.startsWith('deck_sub_')) {
@@ -408,6 +409,9 @@ export function App() {
           ));
         }
       }
+      if (msg.type === 'discussion.list') {
+        setDiscussions(msg.discussions);
+      }
       if (msg.type === 'daemon.reconnected') {
         // Daemon process (re)started — all its subscriptions are gone.
         // Re-subscribe all sessions immediately so terminals resume without a page refresh.
@@ -422,6 +426,8 @@ export function App() {
         for (const sub of subSessionsRef.current) {
           ws.subscribeTerminal(sub.sessionName);
         }
+        // Refresh discussion list
+        ws.discussionList();
       }
     });
 
