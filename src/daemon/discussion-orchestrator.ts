@@ -7,11 +7,9 @@ import { sessionExists, sendKeys } from '../agent/tmux.js';
 import { startSubSession, stopSubSession, readSubSessionResponse } from './subsession-manager.js';
 import { writeFile, readFile, mkdir, appendFile } from 'node:fs/promises';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
 import logger from '../util/logger.js';
 import type { AgentType } from '../agent/detect.js';
 
-const DISCUSS_DIR = path.join(tmpdir(), 'codedeck-discuss');
 const IDLE_TIMEOUT = 120_000;
 const IDLE_POLL_INTERVAL = 3_000;
 
@@ -330,9 +328,16 @@ export async function startDiscussion(
   },
   onUpdate: (msg: Record<string, unknown>) => void,
 ): Promise<Discussion> {
-  await mkdir(DISCUSS_DIR, { recursive: true });
+  const planDir = path.join(opts.cwd, 'docs', 'plan');
+  await mkdir(planDir, { recursive: true });
 
-  const filePath = path.join(DISCUSS_DIR, `${opts.id}.md`);
+  // Derive a short slug from the topic for a readable filename
+  const slug = opts.topic
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60) || opts.id.slice(0, 8);
+  const filePath = path.join(planDir, `discussion-${slug}.md`);
   const participants: DiscussionParticipant[] = opts.participants.map((p, i) => {
     const reused = !!p.sessionName;
     const subId = reused
