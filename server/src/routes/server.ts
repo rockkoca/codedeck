@@ -52,6 +52,20 @@ serverRoutes.delete('/:id', requireAuth(), async (c) => {
   return c.json({ ok: true });
 });
 
+// POST /api/server/:id/upgrade — tell daemon to upgrade itself and restart
+serverRoutes.post('/:id/upgrade', requireAuth(), async (c) => {
+  const userId = c.get('userId' as never) as string;
+  const serverId = c.req.param('id') ?? '';
+  const dbServers = await getServersByUserId(c.env.DB, userId);
+  if (!dbServers.find((s) => s.id === serverId)) return c.json({ error: 'not_found' }, 404);
+  try {
+    WsBridge.get(serverId).sendToDaemon(JSON.stringify({ type: 'daemon.upgrade' }));
+    return c.json({ ok: true });
+  } catch {
+    return c.json({ error: 'daemon_offline' }, 503);
+  }
+});
+
 // POST /api/server/:id/heartbeat — authenticated via Bearer server token
 serverRoutes.post('/:id/heartbeat', async (c) => {
   const auth = c.req.header('Authorization');

@@ -4,11 +4,12 @@ interface Props {
   x: number;
   y: number;
   onRename: () => void;
+  onUpgrade: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
 
-export function ServerContextMenu({ x, y, onRename, onDelete, onClose }: Props) {
+export function ServerContextMenu({ x, y, onRename, onUpgrade, onDelete, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,12 +28,15 @@ export function ServerContextMenu({ x, y, onRename, onDelete, onClose }: Props) 
   // Clamp menu to viewport
   const style: Record<string, string | number> = { position: 'fixed', left: x, top: y };
   if (x + 160 > window.innerWidth) style.left = window.innerWidth - 164;
-  if (y + 80 > window.innerHeight) style.top = y - 80;
+  if (y + 100 > window.innerHeight) style.top = y - 100;
 
   return (
     <div ref={ref} class="server-ctx-menu" style={style}>
       <button class="server-ctx-item" onClick={() => { onClose(); onRename(); }}>
         ✎ Rename
+      </button>
+      <button class="server-ctx-item" onClick={() => { onClose(); onUpgrade(); }}>
+        ↑ 升级 Daemon
       </button>
       <div class="menu-divider" />
       <button class="server-ctx-item server-ctx-item-danger" onClick={() => { onClose(); onDelete(); }}>

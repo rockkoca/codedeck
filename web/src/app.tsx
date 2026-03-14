@@ -122,6 +122,15 @@ export function App() {
     } catch { /* ignore */ }
   }, [selectedServerId]);
 
+  const handleUpgradeDaemon = useCallback(async (server: ServerInfo) => {
+    try {
+      await apiFetch(`/api/server/${server.id}/upgrade`, { method: 'POST' });
+      alert(`升级命令已发送到 "${server.name}"，daemon 将自动安装最新版并重启。`);
+    } catch {
+      alert('发送失败，daemon 可能不在线。');
+    }
+  }, []);
+
   const handleDeleteServer = useCallback(async (server: ServerInfo) => {
     try {
       await apiFetch(`/api/server/${server.id}`, { method: 'DELETE' });
@@ -412,6 +421,15 @@ export function App() {
             toolUseId: String(event.payload.toolUseId ?? ''),
             questions: (event.payload.questions as PendingQuestion['questions']) ?? [],
           });
+        }
+        // Sync session state from live timeline events (running/idle)
+        if (event.type === 'session.state' && !event.sessionId.startsWith('deck_sub_')) {
+          const liveState = String(event.payload.state ?? '');
+          if (liveState === 'running' || liveState === 'idle') {
+            setSessions((prev) => prev.map((s) =>
+              s.name === event.sessionId ? { ...s, state: liveState as SessionInfo['state'] } : s,
+            ));
+          }
         }
         if (event.type === 'usage.update' && event.payload.model) {
           const modelStr = String(event.payload.model).toLowerCase();
@@ -1043,6 +1061,7 @@ export function App() {
           x={serverCtxMenu.x}
           y={serverCtxMenu.y}
           onRename={() => handleRenameServer(serverCtxMenu.server)}
+          onUpgrade={() => handleUpgradeDaemon(serverCtxMenu.server)}
           onDelete={() => setDeleteTarget(serverCtxMenu.server)}
           onClose={() => setServerCtxMenu(null)}
         />

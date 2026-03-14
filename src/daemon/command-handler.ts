@@ -215,6 +215,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
     case 'server.delete':
       void handleServerDelete();
       break;
+    case 'daemon.upgrade':
+      void handleDaemonUpgrade();
+      break;
     case 'auth_ok':
     case 'heartbeat':
     case 'heartbeat_ack':
@@ -802,6 +805,50 @@ async function handleDiscussionStop(cmd: Record<string, unknown>): Promise<void>
   await stopDiscussion(discussionId).catch((e: unknown) =>
     logger.error({ err: e, discussionId }, 'discussion.stop failed'),
   );
+}
+
+/** daemon.upgrade — npm install latest, then restart service */
+async function handleDaemonUpgrade(): Promise<void> {
+  const { spawn } = await import('child_process');
+  logger.info('daemon.upgrade received — installing latest @codedeck/codedeck');
+
+  const npm = spawn('npm', ['install', '-g', '@codedeck/codedeck@latest'], {
+    stdio: 'pipe',
+    shell: false,
+  });
+
+  npm.stdout?.on('data', (d: Buffer) => logger.info({ out: d.toString().trim() }, 'upgrade'));
+  npm.stderr?.on('data', (d: Buffer) => logger.warn({ err: d.toString().trim() }, 'upgrade'));
+
+  npm.on('close', (code) => {
+    if (code !== 0) {
+      logger.error({ code }, 'daemon.upgrade: npm install failed');
+      return;
+    }
+    logger.info('daemon.upgrade: install done, restarting service');
+    // Restart via systemd/launchctl — the service will pick up the new binary
+    try {
+      const { execSync } = require('child_process') as typeof import('child_process');
+      if (process.platform === 'linux') {
+        const { join } = require('path') as typeof import('path');
+        const { homedir } = require('os') as typeof import('os');
+        const { existsSync } = require('fs') as typeof import('fs');
+        const userSvc = join(homedir(), '.config/systemd/user/codedeck.service');
+        if (existsSync(userSvc)) {
+          execSync('systemctl --user restart codedeck', { stdio: 'ignore' });
+        } else {
+          execSync('sudo systemctl restart codedeck', { stdio: 'ignore' });
+        }
+      } else if (process.platform === 'darwin') {
+        const { join } = require('path') as typeof import('path');
+        const { homedir } = require('os') as typeof import('os');
+        const plist = join(homedir(), 'Library/LaunchAgents/codedeck.daemon.plist');
+        execSync(`launchctl unload "${plist}" && launchctl load -w "${plist}"`, { stdio: 'ignore' });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'daemon.upgrade: restart failed');
+    }
+  });
 }
 
 /** server.delete — remove credentials + service, then exit */
