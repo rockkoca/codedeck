@@ -322,13 +322,18 @@ body {
 .discussion-verdict-badge { font-size: 14px; margin-left: 2px; flex-shrink: 0; }
 .discussion-panel { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 .discussion-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; }
-.discussion-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.discussion-card.running { border-color: #22c55e40; }
+.discussion-card.verdict { border-color: #f59e0b40; }
+.discussion-card.done { border-color: #3b82f640; }
+.discussion-card.failed { border-color: #ef444440; }
+.discussion-card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .discussion-card-title { font-size: 13px; font-weight: 500; color: #e2e8f0; flex: 1; }
-.discussion-card-state { font-size: 11px; color: #64748b; }
-.discussion-card-state.running { color: #22c55e; }
-.discussion-card-state.verdict { color: #f59e0b; }
-.discussion-card-state.done { color: #3b82f6; }
-.discussion-card-state.failed { color: #ef4444; }
-.discussion-progress { font-size: 11px; color: #64748b; margin-top: 4px; }
-.discussion-speaker { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-.discussion-conclusion { font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.5; border-top: 1px solid #1e293b; padding-top: 6px; }
+.discussion-card-actions { flex-shrink: 0; }
+.discussion-card-body { margin-top: 8px; }
+.discussion-status { font-size: 12px; color: #94a3b8; }
+.discussion-status.done { color: #22c55e; }
+.discussion-status.failed { color: #ef4444; }
+.discussion-progress-bar { height: 4px; background: #1e293b; border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
+.discussion-progress-fill { height: 100%; background: #22c55e; border-radius: 2px; transition: width 0.3s ease; }
+.discussion-conclusion { font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.5; border-top: 1px solid #1e293b; padding-top: 6px; max-height: 100px; overflow-y: auto; }
+.discussion-filepath { font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; }

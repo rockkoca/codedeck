@@ -16,6 +16,7 @@ interface DiscussionSummary {
   maxRounds: number;
   currentSpeaker?: string;
   conclusion?: string;
+  filePath?: string;
 }
 
 interface Props {
@@ -178,31 +179,60 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
         </div>
       )}
 
-      {/* Discussions panel */}
-      {!collapsed && discussions.length > 0 && (
+      {/* Discussions panel — always visible when discussions exist */}
+      {discussions.length > 0 && (
         <div class="discussion-panel">
-          {discussions.map((d) => (
-            <div key={d.id} class="discussion-card">
-              <div class="discussion-card-header">
-                <div class="discussion-card-title">{d.topic || 'Discussion'}</div>
-                <div class={`discussion-card-state ${d.state}`}>
-                  {d.state === 'setup' ? 'Setting up...' :
-                   d.state === 'running' ? `Round ${d.currentRound}/${d.maxRounds}` :
-                   d.state === 'verdict' ? 'Verdict...' :
-                   d.state === 'done' ? 'Done' : 'Failed'}
+          {discussions.map((d) => {
+            const isActive = d.state !== 'done' && d.state !== 'failed';
+            const progress = d.maxRounds > 0
+              ? Math.round(((d.currentRound - 1) * 100) / d.maxRounds)
+              : 0;
+            return (
+              <div key={d.id} class={`discussion-card ${d.state}`}>
+                <div class="discussion-card-header">
+                  <div class="discussion-card-title">⚖️ {d.topic || 'Discussion'}</div>
+                  <div class="discussion-card-actions">
+                    {isActive && onStopDiscussion && (
+                      <button class="btn btn-sm btn-danger" onClick={() => onStopDiscussion(d.id)}>Stop</button>
+                    )}
+                  </div>
                 </div>
-                {d.state !== 'done' && d.state !== 'failed' && onStopDiscussion && (
-                  <button class="btn btn-sm btn-danger" onClick={() => onStopDiscussion(d.id)}>Stop</button>
-                )}
+                <div class="discussion-card-body">
+                  {d.state === 'setup' && (
+                    <div class="discussion-status">Setting up agents...</div>
+                  )}
+                  {d.state === 'running' && (
+                    <>
+                      <div class="discussion-progress-bar">
+                        <div class="discussion-progress-fill" style={{ width: `${progress}%` }} />
+                      </div>
+                      <div class="discussion-status">
+                        Round {d.currentRound}/{d.maxRounds}
+                        {d.currentSpeaker && <> — <strong>{d.currentSpeaker}</strong> speaking...</>}
+                      </div>
+                    </>
+                  )}
+                  {d.state === 'verdict' && (
+                    <div class="discussion-status">⚖️ Generating verdict...</div>
+                  )}
+                  {d.state === 'done' && (
+                    <>
+                      <div class="discussion-status done">✓ Complete</div>
+                      {d.conclusion && (
+                        <div class="discussion-conclusion">{d.conclusion}</div>
+                      )}
+                      {d.filePath && (
+                        <div class="discussion-filepath">{d.filePath}</div>
+                      )}
+                    </>
+                  )}
+                  {d.state === 'failed' && (
+                    <div class="discussion-status failed">✕ Failed</div>
+                  )}
+                </div>
               </div>
-              {d.currentSpeaker && d.state === 'running' && (
-                <div class="discussion-speaker">{d.currentSpeaker} speaking...</div>
-              )}
-              {d.conclusion && (
-                <div class="discussion-conclusion">{d.conclusion}</div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

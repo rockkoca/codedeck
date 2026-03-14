@@ -384,7 +384,7 @@ export function App() {
       if (msg.type === 'discussion.started') {
         setDiscussions((prev) => [
           ...prev,
-          { id: msg.discussionId, topic: '', state: 'setup', currentRound: 0, maxRounds: 3 },
+          { id: msg.discussionId, topic: msg.topic, state: 'setup', currentRound: 0, maxRounds: msg.maxRounds },
         ]);
       }
       if (msg.type === 'discussion.update') {

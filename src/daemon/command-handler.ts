@@ -699,6 +699,8 @@ async function handleDiscussionStart(cmd: Record<string, unknown>, serverLink: S
         type: 'discussion.started',
         requestId,
         discussionId: d.id,
+        topic: d.topic,
+        maxRounds: d.maxRounds,
         filePath: d.filePath,
         participants: d.participants.map((p) => ({
           sessionName: p.sessionName,
