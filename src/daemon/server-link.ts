@@ -14,6 +14,7 @@ function collectSystemStats(): { cpu: number; memUsed: number; memTotal: number;
 }
 
 const HEARTBEAT_MS = 30_000;
+const STATS_MS = 5_000; // daemon.stats update interval (separate from heartbeat)
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
 const WATCHDOG_MS = 15_000;           // check connection health every 15s
@@ -31,6 +32,7 @@ export class ServerLink {
   private ws: WebSocket | null = null;
   private handlers: MessageHandler[] = [];
   private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private statsTimer?: ReturnType<typeof setInterval>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private watchdogTimer?: ReturnType<typeof setInterval>;
   private pongTimer?: ReturnType<typeof setTimeout>;
@@ -151,10 +153,17 @@ export class ServerLink {
         this.send({ type: 'heartbeat', ...collectSystemStats() });
       }
     }, HEARTBEAT_MS);
+    // Stats updates more frequently than heartbeat
+    this.statsTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.send({ type: 'daemon.stats', ...collectSystemStats() });
+      }
+    }, STATS_MS);
   }
 
   private stopHeartbeat(): void {
     if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = undefined; }
+    if (this.statsTimer) { clearInterval(this.statsTimer); this.statsTimer = undefined; }
   }
 
   /** Watchdog: periodically verifies the connection is truly alive.
