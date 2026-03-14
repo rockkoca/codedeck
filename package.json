@@ -1,7 +1,7 @@
 {
   "name": "@codedeck/codedeck",
   "version": "0.1.0",
-  "description": "Remote control AI coding agents (Claude Code, Codex, OpenCode) via chat platforms and web terminal",
+  "description": "Open-source remote command center for AI coding agents — control Claude Code, Codex, Gemini CLI, OpenCode from browser and mobile",
   "license": "MIT",
   "repository": {
     "type": "git",
