@@ -98,34 +98,30 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
   }
 
   // Start codex JSONL watcher for codex sub-sessions.
-  // Wait for the specific rollout file that Codex creates for this launch so that
-  // multiple sub-sessions with the same cwd don't all watch the same (newest existing) file.
+  // Start dir-scan watcher immediately (for history), then async-capture the UUID
+  // of the specific rollout file Codex creates for this launch and switch to it,
+  // so that multiple sub-sessions with the same cwd don't permanently share the same file.
   if (agentType === 'codex' && sub.cwd) {
     const cwd = sub.cwd;
     const model = sub.codexModel ?? undefined;
     const launchTime = Date.now();
+    const { startWatching: startCodexWatching } = await import('./codex-watcher.js');
+    startCodexWatching(sessionName, cwd, model).catch((e: unknown) =>
+      logger.warn({ err: e, sessionName }, 'codex-watcher startWatching failed'),
+    );
+    // Async: wait for the specific rollout file and switch to it
     void (async () => {
       try {
-        const { extractNewRolloutUuid, findRolloutPathByUuid, startWatchingSpecificFile, startWatching: startCodexWatching } = await import('./codex-watcher.js');
+        const { extractNewRolloutUuid, findRolloutPathByUuid, startWatchingSpecificFile, stopWatching } = await import('./codex-watcher.js');
         const uuid = await extractNewRolloutUuid(cwd, launchTime);
-        if (!uuid) {
-          // Timed out — fall back to dir scan (may cross-contaminate if multiple same-cwd sub-sessions)
-          startCodexWatching(sessionName, cwd, model).catch((e: unknown) =>
-            logger.warn({ err: e, sessionName }, 'codex-watcher fallback start failed'),
-          );
-          return;
-        }
+        if (!uuid) return; // timed out — keep dir-scan watcher
         const rolloutPath = await findRolloutPathByUuid(uuid);
-        if (rolloutPath) {
-          await startWatchingSpecificFile(sessionName, rolloutPath, model);
-          logger.info({ sessionName, uuid, rolloutPath }, 'Codex sub-session JSONL file identified');
-        } else {
-          startCodexWatching(sessionName, cwd, model).catch((e: unknown) =>
-            logger.warn({ err: e, sessionName }, 'codex-watcher fallback dir start failed'),
-          );
-        }
+        if (!rolloutPath) return;
+        stopWatching(sessionName);
+        await startWatchingSpecificFile(sessionName, rolloutPath, model);
+        logger.info({ sessionName, uuid, rolloutPath }, 'Codex sub-session switched to specific rollout file');
       } catch (e) {
-        logger.warn({ err: e, sessionName }, 'codex-watcher UUID extraction failed for sub-session');
+        logger.warn({ err: e, sessionName }, 'Codex sub-session UUID capture failed');
       }
     })();
   }
