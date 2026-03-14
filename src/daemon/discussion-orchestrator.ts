@@ -4,8 +4,8 @@
  */
 
 import { sessionExists, sendKeysDelayedEnter } from '../agent/tmux.js';
-import { startSubSession, stopSubSession, readSubSessionResponse } from './subsession-manager.js';
-import { writeFile, readFile, mkdir, appendFile } from 'node:fs/promises';
+import { startSubSession, stopSubSession } from './subsession-manager.js';
+import { writeFile, readFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import logger from '../util/logger.js';
@@ -103,6 +103,7 @@ function buildRoundPrompt(
   participant: DiscussionParticipant,
   round: number,
   maxRounds: number,
+  sectionHeader: string,
 ): string {
   const roleBlock = [`Your role: ${participant.roleLabel}`, participant.rolePrompt].join('\n');
 
@@ -116,6 +117,10 @@ function buildRoundPrompt(
       'It contains the topic and context for this discussion.',
       '',
       'Give your perspective based on your role. Be specific, constructive, under 500 words.',
+      '',
+      `IMPORTANT: Append your response to the SAME file: ${discussionFilePath}`,
+      `Start with this exact header line: ${sectionHeader}`,
+      'Then write your response below it. Keep it concise.',
     ].join('\n');
   }
 
@@ -130,10 +135,14 @@ function buildRoundPrompt(
     '- What do you agree/disagree with and why?',
     '- New insights or concerns?',
     'Under 500 words.',
+    '',
+    `IMPORTANT: Append your response to the SAME file: ${discussionFilePath}`,
+    `Start with this exact header line: ${sectionHeader}`,
+    'Then write your response below it. Keep it concise.',
   ].join('\n');
 }
 
-function buildVerdictPrompt(discussionFilePath: string, judge: DiscussionParticipant): string {
+function buildVerdictPrompt(discussionFilePath: string, judge: DiscussionParticipant, sectionHeader: string): string {
   return [
     'You are the final arbiter of this multi-agent discussion.',
     `Your perspective: ${judge.roleLabel} — ${judge.rolePrompt}`,
@@ -146,39 +155,64 @@ function buildVerdictPrompt(discussionFilePath: string, judge: DiscussionPartici
     '3. Make a clear, actionable final decision or recommendation',
     '',
     'Be decisive. This is the final word.',
+    '',
+    `IMPORTANT: Append your verdict to the SAME file: ${discussionFilePath}`,
+    `Start with this exact header line: ${sectionHeader}`,
+    'Then write your verdict below it.',
   ].join('\n');
 }
 
-async function waitForIdle(sessionName: string, timeoutMs: number): Promise<void> {
+/**
+ * Wait for agent to finish writing to the discussion file.
+ * Dual confirmation: file must have grown AND agent must be idle.
+ * Either condition alone is not sufficient — prevents false positives from both sides.
+ */
+async function waitForResponse(
+  filePath: string,
+  previousSize: number,
+  sessionName: string,
+  timeoutMs: number,
+): Promise<string> {
+  const { stat } = await import('node:fs/promises');
+  const { readSubSessionResponse } = await import('./subsession-manager.js');
   const start = Date.now();
-  let sawWorking = false;
+  let fileGrew = false;
 
-  // Phase 1: Wait for agent to start working (acknowledge the prompt).
-  // Without this, we'd return immediately if the agent is still idle
-  // from before the prompt was sent.
   while (Date.now() - start < timeoutMs) {
-    const result = await readSubSessionResponse(sessionName).catch(() => ({ status: 'working' as const }));
-    if (result.status === 'working') {
-      sawWorking = true;
-      break;
+    // Check file growth
+    try {
+      const s = await stat(filePath);
+      if (s.size > previousSize) fileGrew = true;
+    } catch {
+      // File may not exist yet
     }
-    // If still idle after 2s, assume prompt was acknowledged (some agents process very fast)
-    if (Date.now() - start > 2000) {
-      sawWorking = true;
-      break;
-    }
-    await new Promise<void>((r) => setTimeout(r, 500));
-  }
 
-  if (!sawWorking) throw new Error(`Timed out waiting for ${sessionName} to start working`);
-
-  // Phase 2: Wait for agent to become idle again (finished processing).
-  while (Date.now() - start < timeoutMs) {
+    // Check agent idle
     const result = await readSubSessionResponse(sessionName).catch(() => ({ status: 'working' as const }));
-    if (result.status === 'idle') return;
+    const isIdle = result.status === 'idle';
+
+    // Both conditions met → done
+    if (fileGrew && isIdle) {
+      // Small grace period to ensure file write is fully flushed
+      await new Promise<void>((r) => setTimeout(r, 1000));
+      const content = await readFile(filePath, 'utf8');
+      return content.slice(previousSize).trim();
+    }
+
     await new Promise<void>((r) => setTimeout(r, IDLE_POLL_INTERVAL));
   }
-  throw new Error(`Timed out waiting for ${sessionName} to become idle`);
+
+  // Timeout — if file grew, return what we have even if agent isn't idle
+  if (fileGrew) {
+    const content = await readFile(filePath, 'utf8');
+    const newContent = content.slice(previousSize).trim();
+    if (newContent.length > 0) {
+      logger.warn({ sessionName, filePath }, 'Agent not idle at timeout but file has content, using it');
+      return newContent;
+    }
+  }
+
+  throw new Error(`Timed out waiting for response (file grew: ${fileGrew}, session: ${sessionName})`);
 }
 
 async function waitAllReady(d: Discussion, timeoutMs: number): Promise<void> {
@@ -196,22 +230,24 @@ async function waitAllReady(d: Discussion, timeoutMs: number): Promise<void> {
 
 // ── Title generation ──────────────────────────────────────────────────────
 
-async function generateTitle(sessionName: string, topic: string): Promise<string> {
+async function generateTitle(sessionName: string, topic: string, titleFile: string): Promise<string> {
+  await import('node:fs/promises').then((fs) => fs.writeFile(titleFile, '', 'utf8'));
+
   const prompt = [
     'Generate a short filename title (max 20 characters) for a discussion document.',
     'Use the SAME LANGUAGE as the topic below. Output ONLY the title text, nothing else.',
     'No quotes, no file extension, no explanation.',
     '',
     `Topic: ${topic}`,
+    '',
+    `Write the title to this file: ${titleFile}`,
   ].join('\n');
 
   await sendKeysDelayedEnter(sessionName, prompt);
-  await waitForIdle(sessionName, 30_000);
-
-  const result = await readSubSessionResponse(sessionName);
-  const raw = (result.response ?? '').trim().split('\n')[0]; // first line only
+  const raw = await waitForResponse(titleFile, 0, sessionName, 30_000).catch(() => '');
 
   const cleaned = raw
+    .split('\n')[0] // first line only
     .replace(/['""`「」『』]/g, '')
     .replace(/\.md$/i, '')
     .replace(/[\\/:*?"<>|]/g, '')
@@ -260,18 +296,18 @@ async function runDiscussion(
   for (const p of d.participants) {
     if (p.agentType === 'claude-code' && p.model) {
       await sendKeysDelayedEnter(p.sessionName, `/model ${p.model}`);
-      await waitForIdle(p.sessionName, 15_000).catch(() => {
-        logger.warn({ sessionName: p.sessionName, model: p.model }, 'Model switch idle timeout, continuing anyway');
-      });
+      // Simple wait for model switch to take effect
+      await new Promise<void>((r) => setTimeout(r, 3000));
       logger.info({ sessionName: p.sessionName, model: p.model }, 'Switched CC model');
     }
   }
 
   // 2. Generate semantic title via LLM, then create discussion file
-  const titleAgent = d.participants[d.verdictParticipantIdx];
-  const title = await generateTitle(titleAgent.sessionName, d.topic);
   const discussDir = path.join(os.tmpdir(), 'codedeck-discussions');
   await mkdir(discussDir, { recursive: true });
+  const titleAgent = d.participants[d.verdictParticipantIdx];
+  const titleFile = path.join(discussDir, `title-${d.id.slice(0, 8)}.txt`);
+  const title = await generateTitle(titleAgent.sessionName, d.topic, titleFile);
   d.filePath = path.join(discussDir, `${d.id.slice(0, 8)}-${title}.md`);
   await writeFile(d.filePath, buildFileHeader(d), 'utf8');
   logger.info({ discussionId: d.id, filePath: d.filePath, title }, 'Discussion file created');
@@ -290,13 +326,12 @@ async function runDiscussion(
   });
 
   const isStopped = () => (d.state as string) === 'failed';
+  const { stat } = await import('node:fs/promises');
 
   // 2. Multi-round discussion
   for (let round = 1; round <= d.maxRounds; round++) {
     if (isStopped()) return;
     d.currentRound = round;
-
-    await appendFile(d.filePath, `\n---\n\n## Round ${round}\n`);
 
     for (let i = 0; i < d.participants.length; i++) {
       if (isStopped()) return;
@@ -313,19 +348,18 @@ async function runDiscussion(
         currentSpeaker: participant.roleLabel,
       });
 
-      const prompt = buildRoundPrompt(d.filePath, participant, round, d.maxRounds);
-
-      await sendKeysDelayedEnter(participant.sessionName, prompt);
-      await waitForIdle(participant.sessionName, IDLE_TIMEOUT);
-
-      const result = await readSubSessionResponse(participant.sessionName);
-      const response = result.response ?? '(no response)';
+      // Record file size before agent writes
+      const sizeBefore = (await stat(d.filePath)).size;
 
       const modelTag = participant.model ? ` / ${participant.model}` : '';
-      await appendFile(
-        d.filePath,
-        `\n### ${participant.roleLabel} (${participant.agentType}${modelTag})\n\n${response}\n`,
-      );
+      const sectionHeader = `### Round ${round} — ${participant.roleLabel} (${participant.agentType}${modelTag})`;
+      const prompt = buildRoundPrompt(d.filePath, participant, round, d.maxRounds, sectionHeader);
+
+      await sendKeysDelayedEnter(participant.sessionName, prompt);
+      const newContent = await waitForResponse(d.filePath, sizeBefore, participant.sessionName, IDLE_TIMEOUT);
+
+      // Extract just the response text (strip the header the agent wrote)
+      const response = newContent.replace(/^###[^\n]*\n*/m, '').trim() || newContent;
 
       // Persist round to DB
       onUpdate({
@@ -338,7 +372,6 @@ async function runDiscussion(
         speakerModel: participant.model,
         response,
       });
-      // Update discussion progress in DB
       onUpdate({
         type: 'discussion.save',
         id: d.id, topic: d.topic, state: d.state, maxRounds: d.maxRounds,
@@ -361,19 +394,15 @@ async function runDiscussion(
   // 3. Verdict
   d.state = 'verdict';
   const judge = d.participants[d.verdictParticipantIdx];
-  const modelTag = judge.model ? ` / ${judge.model}` : '';
+  const judgeModelTag = judge.model ? ` / ${judge.model}` : '';
 
-  await appendFile(d.filePath, `\n---\n\n## Verdict (by ${judge.roleLabel}${modelTag})\n`);
-
-  const verdictPrompt = buildVerdictPrompt(d.filePath, judge);
+  const verdictSizeBefore = (await stat(d.filePath)).size;
+  const verdictHeader = `## Verdict (by ${judge.roleLabel}${judgeModelTag})`;
+  const verdictPrompt = buildVerdictPrompt(d.filePath, judge, verdictHeader);
 
   await sendKeysDelayedEnter(judge.sessionName, verdictPrompt);
-  await waitForIdle(judge.sessionName, IDLE_TIMEOUT);
-
-  const verdictResult = await readSubSessionResponse(judge.sessionName);
-  const verdict = verdictResult.response ?? '(no verdict)';
-
-  await appendFile(d.filePath, `\n${verdict}\n`);
+  const verdictContent = await waitForResponse(d.filePath, verdictSizeBefore, judge.sessionName, IDLE_TIMEOUT);
+  const verdict = verdictContent.replace(/^##[^\n]*\n*/m, '').trim() || verdictContent;
 
   // 4. Done
   d.state = 'done';

@@ -178,16 +178,16 @@ export async function readSubSessionResponse(
   const { capturePane } = await import('../agent/tmux.js');
   const { detectStatus } = await import('../agent/detect.js');
 
-  // Detect session type from session name (deck_sub_{id})
-  // For status check, we use a simple approach: check if the last line looks idle
   const lines = await capturePane(sessionName).catch(() => [] as string[]);
 
-  // Check status with a generic approach (take the most conservative check)
-  // We detect using 'shell' type as a fallback for all sub-session types
   const exists = await sessionExists(sessionName);
   if (!exists) return { status: 'idle', response: '' };
 
-  const status = detectStatus(lines, 'shell');
+  // Look up actual agent type from session store (set by startSubSession/rebuildSubSessions)
+  const { getSession } = await import('../store/session-store.js');
+  const sessionRecord = getSession(sessionName);
+  const agentType = (sessionRecord?.agentType ?? 'shell') as import('../agent/detect.js').AgentType;
+  const status = detectStatus(lines, agentType);
   if (status !== 'idle') return { status: 'working' };
 
   // Read from timeline store: find events after last user.message
