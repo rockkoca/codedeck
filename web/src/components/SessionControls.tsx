@@ -23,8 +23,6 @@ interface Props {
   detectedModel?: ModelChoice;
   /** Hide the shortcuts row (e.g. in chat mode). */
   hideShortcuts?: boolean;
-  /** Latest usage stats from JSONL for the active session. */
-  lastUsage?: { inputTokens: number; cacheTokens: number; contextWindow: number; model?: string } | null;
   /** Called after a message is sent — for local UX only (e.g. optimistic display). Does not emit timeline events. */
   onSend?: (sessionName: string, text: string) => void;
   /** Sub-session overrides — when set, menu actions use these instead of main session commands. */
@@ -70,7 +68,7 @@ function loadCodexModel(): CodexModelChoice | null {
   return null;
 }
 
-export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, lastUsage, onSend, onSubRestart, onSubNew, onSubStop }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop }: Props) {
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -349,30 +347,6 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
             )}
           </div>
         )}
-        {/* Context usage bar */}
-        {lastUsage && (() => {
-          const ctx = lastUsage.contextWindow || 1_000_000;
-          const total = lastUsage.inputTokens + lastUsage.cacheTokens;
-          const totalPct = Math.min(100, total / ctx * 100);
-          const cachePct = Math.min(totalPct, lastUsage.cacheTokens / ctx * 100);
-          const newPct = totalPct - cachePct;
-          const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
-          const pctStr = totalPct < 1 ? totalPct.toFixed(1) : totalPct.toFixed(0);
-          const tip = [
-            lastUsage.model ?? '',
-            `Context: ${fmt(total)} / ${fmt(ctx)} (${pctStr}%)`,
-            `  New: ${fmt(lastUsage.inputTokens)}  Cache: ${fmt(lastUsage.cacheTokens)}`,
-          ].filter(Boolean).join('\n');
-          return (
-            <div class="session-ctx-wrap" title={tip}>
-              <span class="session-ctx-label">{fmt(total)}</span>
-              <div class="session-ctx-bar">
-                <div class="session-ctx-cache" style={{ width: `${cachePct}%` }} />
-                <div class="session-ctx-input" style={{ width: `${newPct}%`, left: `${cachePct}%` }} />
-              </div>
-            </div>
-          );
-        })()}
       </div>}
 
       {/* Main input row */}

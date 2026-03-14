@@ -172,7 +172,7 @@ export function SubSessionWindow({
   const lastUsage = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       if (events[i].type === 'usage.update' && events[i].payload.inputTokens) {
-        return events[i].payload as { inputTokens: number; cacheTokens: number; contextWindow: number };
+        return events[i].payload as { inputTokens: number; cacheTokens: number; contextWindow: number; model?: string };
       }
     }
     return null;
@@ -251,20 +251,28 @@ export function SubSessionWindow({
       {/* Usage footer — context bar + cost */}
       {lastUsage && (() => {
         const ctx = lastUsage.contextWindow || 1_000_000;
-        const inputPct = Math.min(100, lastUsage.inputTokens / ctx * 100);
-        const cachePct = Math.min(inputPct, lastUsage.cacheTokens / ctx * 100);
+        const total = lastUsage.inputTokens + lastUsage.cacheTokens;
+        const totalPct = Math.min(100, total / ctx * 100);
+        const cachePct = Math.min(totalPct, lastUsage.cacheTokens / ctx * 100);
+        const newPct = totalPct - cachePct;
+        const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
+        const pctStr = totalPct < 1 ? totalPct.toFixed(1) : totalPct.toFixed(0);
         const sessionCost = lastCostEvent ? getSessionCost(sub.sessionName) : 0;
         const weeklyCost = sessionCost > 0 ? getWeeklyCost() : 0;
         const monthlyCost = sessionCost > 0 ? getMonthlyCost() : 0;
-        const tip = `${lastUsage.inputTokens.toLocaleString()} / ${ctx.toLocaleString()} tokens · ${lastUsage.cacheTokens.toLocaleString()} cached`;
+        const tip = [
+          lastUsage.model ?? '',
+          `Context: ${fmt(total)} / ${fmt(ctx)} (${pctStr}%)`,
+          `  New: ${fmt(lastUsage.inputTokens)}  Cache: ${fmt(lastUsage.cacheTokens)}`,
+        ].filter(Boolean).join('\n');
         return (
-          <div class="session-usage-footer">
-            <div class="session-ctx-bar" title={tip}>
-              <div class="session-ctx-input" style={{ width: `${inputPct}%` }} />
+          <div class="session-usage-footer" title={tip}>
+            <div class="session-ctx-bar">
               <div class="session-ctx-cache" style={{ width: `${cachePct}%` }} />
+              <div class="session-ctx-input" style={{ width: `${newPct}%`, left: `${cachePct}%` }} />
             </div>
             <div class="session-usage-stats">
-              <span class="session-usage-tokens">{(lastUsage.inputTokens / 1000).toFixed(1)}k / {(ctx / 1000).toFixed(0)}k ctx</span>
+              <span class="session-usage-tokens">{fmt(total)} / {fmt(ctx)} ({pctStr}%)</span>
               {sessionCost > 0 && (
                 <span class="session-usage-cost">
                   {formatCost(sessionCost)} · wk {formatCost(weeklyCost)} · mo {formatCost(monthlyCost)}
