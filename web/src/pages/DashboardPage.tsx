@@ -2,6 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { ApiKeyManager } from '../components/ApiKeyManager.js';
 import { ServerList } from '../components/ServerList.js';
 import { GettingStarted } from '../components/GettingStarted.js';
+import { LanguageSwitcher } from '../components/LanguageSwitcher.js';
 import { apiFetch } from '../api.js';
 
 interface Props {
@@ -54,7 +55,10 @@ export function DashboardPage({ onSelectServer, onLogout, onServersLoaded }: Pro
     <div style={{ maxWidth: 800, margin: '0 auto', padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h1 style={{ margin: 0, fontSize: 24 }}>Codedeck</h1>
-        <button class="btn btn-secondary" style={{ fontSize: 12 }} onClick={onLogout}>Log Out</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <LanguageSwitcher />
+          <button class="btn btn-secondary" style={{ fontSize: 12 }} onClick={onLogout}>Log Out</button>
+        </div>
       </div>
 
       {loading ? (

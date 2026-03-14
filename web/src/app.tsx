@@ -826,7 +826,9 @@ export function App() {
       {/* Main */}
       <main class="main">
         {!selectedServerId ? (
-          <DashboardPage onSelectServer={handleSelectServer} onLogout={handleLogout} onServersLoaded={setServers} />
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <DashboardPage onSelectServer={handleSelectServer} onLogout={handleLogout} onServersLoaded={setServers} />
+          </div>
         ) : (
           <>
             {/* Mobile-only server switcher */}
@@ -856,6 +858,9 @@ export function App() {
                         </button>
                       );
                     })}
+                    <div style={{ padding: '6px 12px', borderTop: '1px solid #334155' }}>
+                      <LanguageSwitcher />
+                    </div>
                   </div>
                 )}
               </div>
