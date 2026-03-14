@@ -14,7 +14,7 @@ import type { WsClient } from '../ws-client.js';
 export interface SubSession extends SubSessionData {
   sessionName: string;
   /** runtime state from daemon */
-  state: 'running' | 'stopped' | 'starting' | 'unknown';
+  state: 'running' | 'idle' | 'stopped' | 'starting' | 'unknown';
 }
 
 function toSessionName(id: string): string {
@@ -64,6 +64,28 @@ export function useSubSessions(
   useEffect(() => {
     if (!connected) rebuiltRef.current = false;
   }, [connected]);
+
+  // Listen for session.state timeline events to update sub-session state
+  useEffect(() => {
+    if (!ws) return;
+    return ws.onMessage((msg) => {
+      if (msg.type !== 'timeline.event') return;
+      const ev = msg.event;
+      if (ev.type !== 'session.state') return;
+      const state = String(ev.payload.state ?? '');
+      if (state !== 'idle' && state !== 'running') return;
+      const sessionName = ev.sessionId;
+      if (!sessionName.startsWith('deck_sub_')) return;
+      setSubSessions((prev) => {
+        const idx = prev.findIndex((s) => s.sessionName === sessionName);
+        if (idx === -1) return prev;
+        if (prev[idx].state === state) return prev;
+        const next = [...prev];
+        next[idx] = { ...next[idx], state };
+        return next;
+      });
+    });
+  }, [ws]);
 
   const create = useCallback(async (
     type: string,

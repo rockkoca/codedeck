@@ -22,6 +22,7 @@ const STATE_BADGE: Record<string, string> = {
   starting: '…',
   unknown: '?',
   stopped: '■',
+  idle: '●',
 };
 
 interface Props {
