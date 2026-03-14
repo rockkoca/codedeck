@@ -82,6 +82,28 @@ bindRoutes.post('/direct', requireAuth(), async (c) => {
   return c.json({ serverId, token: rawToken, serverName }, 201);
 });
 
+// POST /api/bind/rebind — replace token for an existing server (--force re-bind)
+// Authenticated via Bearer API key (same as /direct). Requires serverId to match the caller's user.
+bindRoutes.post('/rebind', requireAuth(), async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = z.object({ serverId: z.string(), serverName: z.string().min(1).max(64) }).safeParse(body);
+  if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
+
+  const userId = c.get('userId' as never) as string;
+  const { serverId, serverName } = parsed.data;
+
+  const rawToken = randomHex(32);
+  const tokenHash = sha256Hex(rawToken);
+
+  const updated = await updateServerToken(c.env.DB, serverId, userId, tokenHash, serverName);
+  if (!updated) return c.json({ error: 'not_found' }, 404);
+
+  const ip = c.get('clientIp' as never) as string ?? 'unknown';
+  await logAudit({ userId, action: 'bind.rebind', ip, details: { serverId } }, c.env.DB);
+
+  return c.json({ token: rawToken });
+});
+
 // POST /api/bind/verify — verify a daemon auth token
 bindRoutes.post('/verify', async (c) => {
   const body = await c.req.json().catch(() => null);
