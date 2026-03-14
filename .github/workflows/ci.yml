@@ -263,12 +263,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git fetch --tags
-          DATE_TAG="${{ steps.tags.outputs.date_tag }}"
-          EXISTING=$(git tag -l "${DATE_TAG}*" | wc -l)
-          if [ "$EXISTING" -gt 0 ]; then
-            NEXT=$((EXISTING + 1))
-            DATE_TAG="${DATE_TAG}.${NEXT}"
+          # Use YYYY.M as major.minor and total commit count as patch — always valid semver
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          NPM_VERSION="$(date -u +%Y.%-m).${COMMIT_COUNT}"
+          GIT_TAG="v${NPM_VERSION}"
+          # Skip if this exact tag already exists (idempotent)
+          if ! git rev-parse "$GIT_TAG" >/dev/null 2>&1; then
+            git tag "$GIT_TAG"
+            git push origin "$GIT_TAG"
           fi
-          git tag "$DATE_TAG"
-          git push origin "$DATE_TAG"
-          echo "npm_version=${DATE_TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "npm_version=${NPM_VERSION}" >> "$GITHUB_OUTPUT"
