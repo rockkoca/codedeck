@@ -83,6 +83,7 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
       return c.json({ error: 'invalid_relay_token' }, 401);
     }
     userId = payload.sub as string;
+    targetOrigin = payload.origin as string ?? null;
   } else {
     // --- Standard Flow: Handling code/state from GitHub ---
     if (!code || !state) {
@@ -146,10 +147,11 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
     }
     userId = user.id;
 
-    // If targetOrigin is different from current domain, relay back to it
-    const currentHost = c.req.header('host');
-    if (targetOrigin && new URL(targetOrigin).host !== currentHost) {
-      const relay = signJwt({ sub: userId, type: 'auth-relay' }, c.env.JWT_SIGNING_KEY, 30);
+    // If targetOrigin is different from current domain, relay back to it.
+    // Use X-Forwarded-Host to get the ACTUAL domain user is visiting (behind proxies).
+    const actualHost = c.req.header('x-forwarded-host') ?? c.req.header('host');
+    if (targetOrigin && actualHost && new URL(targetOrigin).host !== actualHost) {
+      const relay = signJwt({ sub: userId, type: 'auth-relay', origin: targetOrigin }, c.env.JWT_SIGNING_KEY, 30);
       return c.redirect(`${targetOrigin}/api/auth/github/callback?relay_token=${relay}`);
     }
   }
