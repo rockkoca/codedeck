@@ -99,11 +99,8 @@ export class GeminiDriver implements AgentDriver {
     if (opts?.geminiSessionId) {
       return `${cwd}gemini --yolo --resume ${opts.geminiSessionId}`;
     }
-    if (opts?.fresh) {
-      return `${cwd}gemini --yolo`;
-    }
-    // Default: resume last session; fall back to fresh if no history
-    return `${cwd}gemini --yolo --resume latest || gemini --yolo`;
+    // Always launch fresh when no UUID — never use --resume latest
+    return `${cwd}gemini --yolo`;
   }
 
   buildResumeCommand(_sessionName: string, opts?: LaunchOptions): string {

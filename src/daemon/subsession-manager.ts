@@ -156,8 +156,16 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
       logger.info({ sessionName }, 'Restored codex JSONL watcher for running sub-session');
     } else if (sub.type === 'gemini' && !isGeminiWatching(sessionName)) {
       // Already running — restore the gemini watcher (lost on daemon restart)
-      if (sub.geminiSessionId) {
-        startGeminiWatching(sessionName, sub.geminiSessionId).catch((e: unknown) =>
+      // Try stored UUID first, then extract from process args, then fall back to latest
+      let uuid = sub.geminiSessionId ?? null;
+      if (!uuid) {
+        uuid = await extractGeminiUuidFromProcess(sessionName);
+        if (uuid) {
+          logger.info({ sessionName, geminiSessionId: uuid }, 'Extracted Gemini UUID from process args');
+        }
+      }
+      if (uuid) {
+        startGeminiWatching(sessionName, uuid).catch((e: unknown) =>
           logger.warn({ err: e, sessionName }, 'Gemini watcher restore failed'),
         );
       } else {
@@ -165,13 +173,63 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
           logger.warn({ err: e, sessionName }, 'Gemini watcher restore failed'),
         );
       }
-      logger.info({ sessionName, geminiSessionId: sub.geminiSessionId }, 'Restored gemini watcher for running sub-session');
+      logger.info({ sessionName, geminiSessionId: uuid }, 'Restored gemini watcher for running sub-session');
     }
     // Ensure agentType is in session-store for all running sub-sessions (needed by command-handler)
     if (exists) {
       upsertSession({ name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running', projectDir: sub.cwd ?? '', ccSessionId: sub.ccSessionId ?? undefined, restarts: 0, restartTimestamps: [], createdAt: Date.now(), updatedAt: Date.now() });
     }
   }
+}
+
+/**
+ * Extract the Gemini --resume UUID from a running tmux session's process tree.
+ * Returns the UUID string, or null if not found or if it's 'latest'.
+ */
+async function extractGeminiUuidFromProcess(sessionName: string): Promise<string | null> {
+  try {
+    const { execFile: execFileCb } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const execFileAsync = promisify(execFileCb);
+
+    // Get pane PID from tmux
+    const { stdout: panePid } = await execFileAsync(
+      'tmux', ['display', '-t', sessionName, '-p', '#{pane_pid}'],
+    );
+    const pid = panePid.trim();
+    if (!pid) return null;
+
+    // Find gemini process in the process tree (child or grandchild)
+    // Use ps to get all descendants and their command lines
+    const { stdout: psOut } = await execFileAsync(
+      'ps', ['--ppid', pid, '-o', 'pid=,args=', '--no-headers'],
+    ).catch(() => ({ stdout: '' }));
+
+    const checkLine = (line: string): string | null => {
+      if (!line.includes('gemini')) return null;
+      const match = line.match(/--resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      return match ? match[1] : null;
+    };
+
+    for (const line of psOut.split('\n')) {
+      const uuid = checkLine(line);
+      if (uuid) return uuid;
+
+      // Check grandchildren
+      const childPid = line.trim().split(/\s+/)[0];
+      if (!childPid) continue;
+      const { stdout: grandPs } = await execFileAsync(
+        'ps', ['--ppid', childPid, '-o', 'pid=,args=', '--no-headers'],
+      ).catch(() => ({ stdout: '' }));
+      for (const gline of grandPs.split('\n')) {
+        const guuid = checkLine(gline);
+        if (guuid) return guuid;
+      }
+    }
+  } catch {
+    // best-effort
+  }
+  return null;
 }
 
 /** Detect available shell binaries. */
