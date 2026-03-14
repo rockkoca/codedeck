@@ -145,6 +145,11 @@ export async function updateServerName(db: PgDatabase, id: string, userId: strin
   return (result.changes ?? 0) > 0;
 }
 
+export async function updateServerToken(db: PgDatabase, id: string, userId: string, tokenHash: string, name: string): Promise<boolean> {
+  const result = await db.prepare('UPDATE servers SET token_hash = ?, name = ? WHERE id = ? AND user_id = ?').bind(tokenHash, name, id, userId).run();
+  return (result.changes ?? 0) > 0;
+}
+
 export async function deleteServer(db: PgDatabase, id: string, userId: string): Promise<boolean> {
   // Delete dependent rows first, then the server row (no FK cascade in SQLite)
   await db.prepare('DELETE FROM channel_bindings WHERE server_id = ?').bind(id).run();

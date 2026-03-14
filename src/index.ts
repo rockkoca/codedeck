@@ -97,8 +97,9 @@ program
   .description('Bind this machine to Codedeck')
   .argument('<url>', 'Bind URL from the Codedeck dashboard (https://app.codedeck.cc/bind/<api-key>)')
   .argument('[device-name]', 'Friendly name for this device (default: hostname)')
-  .action(async (url: string, deviceName?: string) => {
-    await bindFlow(url, deviceName);
+  .option('--force', 'Re-bind even if already bound (replaces existing server entry)')
+  .action(async (url: string, deviceName?: string, opts?: { force?: boolean }) => {
+    await bindFlow(url, deviceName, { force: opts?.force });
   });
 
 program

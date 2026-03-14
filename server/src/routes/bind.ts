@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
 import { randomHex, sha256Hex } from '../security/crypto.js';
-import { createServer, getServerById } from '../db/queries.js';
+import { createServer, getServerById, updateServerToken } from '../db/queries.js';
 import { logAudit } from '../security/audit.js';
 import { requireAuth } from '../security/authorization.js';
 import { z } from 'zod';
