@@ -97,12 +97,37 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
     }
   }
 
-  // Start codex JSONL watcher for codex sub-sessions
+  // Start codex JSONL watcher for codex sub-sessions.
+  // Wait for the specific rollout file that Codex creates for this launch so that
+  // multiple sub-sessions with the same cwd don't all watch the same (newest existing) file.
   if (agentType === 'codex' && sub.cwd) {
-    const { startWatching: startCodexWatching } = await import('./codex-watcher.js');
-    startCodexWatching(sessionName, sub.cwd, sub.codexModel ?? undefined).catch((e: unknown) =>
-      logger.warn({ err: e, sessionName }, 'codex-watcher startWatching failed'),
-    );
+    const cwd = sub.cwd;
+    const model = sub.codexModel ?? undefined;
+    const launchTime = Date.now();
+    void (async () => {
+      try {
+        const { extractNewRolloutUuid, findRolloutPathByUuid, startWatchingSpecificFile, startWatching: startCodexWatching } = await import('./codex-watcher.js');
+        const uuid = await extractNewRolloutUuid(cwd, launchTime);
+        if (!uuid) {
+          // Timed out — fall back to dir scan (may cross-contaminate if multiple same-cwd sub-sessions)
+          startCodexWatching(sessionName, cwd, model).catch((e: unknown) =>
+            logger.warn({ err: e, sessionName }, 'codex-watcher fallback start failed'),
+          );
+          return;
+        }
+        const rolloutPath = await findRolloutPathByUuid(uuid);
+        if (rolloutPath) {
+          await startWatchingSpecificFile(sessionName, rolloutPath, model);
+          logger.info({ sessionName, uuid, rolloutPath }, 'Codex sub-session JSONL file identified');
+        } else {
+          startCodexWatching(sessionName, cwd, model).catch((e: unknown) =>
+            logger.warn({ err: e, sessionName }, 'codex-watcher fallback dir start failed'),
+          );
+        }
+      } catch (e) {
+        logger.warn({ err: e, sessionName }, 'codex-watcher UUID extraction failed for sub-session');
+      }
+    })();
   }
 
   if (driver.postLaunch) {
