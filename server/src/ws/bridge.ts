@@ -417,6 +417,12 @@ export class WsBridge {
       return;
     }
 
+    // subsession.shells — broadcast to all browsers (response to detect_shells)
+    if (type === 'subsession.shells') {
+      this.broadcastToBrowsers(JSON.stringify(msg));
+      return;
+    }
+
     if (type === 'subsession.response') {
       const sessionName = msg.sessionName as string | undefined;
       if (!sessionName) {
@@ -507,6 +513,16 @@ export class WsBridge {
       type === 'discussion.list'
     ) {
       this.broadcastToBrowsers(JSON.stringify(msg));
+      return;
+    }
+
+    // ── Daemon stats: extract from heartbeat or standalone, broadcast to browsers ─
+    if (type === 'daemon.stats' || (type === 'heartbeat' && msg.cpu !== undefined)) {
+      this.broadcastToBrowsers(JSON.stringify({
+        type: 'daemon.stats',
+        cpu: msg.cpu, memUsed: msg.memUsed, memTotal: msg.memTotal,
+        load1: msg.load1, load5: msg.load5, load15: msg.load15, uptime: msg.uptime,
+      }));
       return;
     }
 

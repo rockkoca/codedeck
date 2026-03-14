@@ -43,7 +43,8 @@ export type ServerMessage =
   | { type: 'discussion.update'; discussionId: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; lastResponse?: string }
   | { type: 'discussion.done'; discussionId: string; filePath: string; conclusion: string }
   | { type: 'discussion.error'; discussionId?: string; requestId?: string; error: string }
-  | { type: 'discussion.list'; discussions: Array<{ id: string; topic: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; conclusion?: string; filePath?: string }> };
+  | { type: 'discussion.list'; discussions: Array<{ id: string; topic: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; conclusion?: string; filePath?: string }> }
+  | { type: 'daemon.stats'; cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number };
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;

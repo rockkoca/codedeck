@@ -17,6 +17,7 @@ const AGENT_TYPES = [
   { id: 'opencode', label: 'OpenCode', icon: '🔆' },
   { id: 'gemini', label: 'Gemini CLI', icon: '♊' },
   { id: 'shell', label: 'Shell', icon: '🐚' },
+  { id: 'script', label: 'Script', icon: '🔄' },
 ];
 
 const DEFAULT_SHELL_KEY = 'rcc_default_shell';
@@ -27,6 +28,8 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
   const [shellBin, setShellBin] = useState<string>(() => localStorage.getItem(DEFAULT_SHELL_KEY) ?? '');
   const [cwd, setCwd] = useState(defaultCwd ?? '');
   const [label, setLabel] = useState('');
+  const [scriptCmd, setScriptCmd] = useState('');
+  const [scriptInterval, setScriptInterval] = useState('5');
   const [detectingShells, setDetectingShells] = useState(false);
 
   // Request shell detection from daemon
@@ -54,6 +57,14 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
   }, [ws]);
 
   const handleStart = () => {
+    if (type === 'script') {
+      if (!scriptCmd.trim()) return;
+      const interval = Math.max(1, parseInt(scriptInterval, 10) || 5);
+      const escaped = scriptCmd.trim().replace(/'/g, "'\\''");
+      const wrapper = `bash -c 'while true; do clear; ${escaped}; sleep ${interval}; done'`;
+      onStart('shell', wrapper, cwd || undefined, label || scriptCmd.trim().slice(0, 30));
+      return;
+    }
     const selectedShell = type === 'shell' ? (shellBin || undefined) : undefined;
     if (type === 'shell' && selectedShell) {
       localStorage.setItem(DEFAULT_SHELL_KEY, selectedShell);
@@ -85,6 +96,30 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
               ))}
             </div>
           </div>
+
+          {/* Script command (only for script type) */}
+          {type === 'script' && (
+            <div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Command</div>
+              <input
+                class="input"
+                placeholder="e.g. df -h, kubectl get pods, htop -t"
+                value={scriptCmd}
+                onInput={(e) => setScriptCmd((e.target as HTMLInputElement).value)}
+                style={{ width: '100%' }}
+                autoFocus
+              />
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 12, marginBottom: 8 }}>Interval (seconds)</div>
+              <input
+                class="input"
+                type="number"
+                min="1"
+                value={scriptInterval}
+                onInput={(e) => setScriptInterval((e.target as HTMLInputElement).value)}
+                style={{ width: 80 }}
+              />
+            </div>
+          )}
 
           {/* Shell binary picker (only for shell type) */}
           {type === 'shell' && (

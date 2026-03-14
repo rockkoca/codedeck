@@ -2,11 +2,21 @@
  * SubSessionBar — bottom panel showing sub-session preview cards.
  * Cards show live chat/terminal previews. Single or double row layout.
  */
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { SubSessionCard } from './SubSessionCard.js';
 import type { SubSession } from '../hooks/useSubSessions.js';
 import type { WsClient } from '../ws-client.js';
 import type { TerminalDiff } from '../types.js';
+
+interface DaemonStats {
+  cpu: number;
+  memUsed: number;
+  memTotal: number;
+  load1: number;
+  load5: number;
+  load15: number;
+  uptime: number;
+}
 
 interface DiscussionSummary {
   id: string;
@@ -61,6 +71,17 @@ function save(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
 }
 
+function formatBytes(bytes: number): string {
+  const gb = bytes / (1024 ** 3);
+  return gb >= 1 ? `${gb.toFixed(1)}G` : `${(bytes / (1024 ** 2)).toFixed(0)}M`;
+}
+
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  return d > 0 ? `${d}d ${h}h` : `${h}h`;
+}
+
 export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscussion, onViewDiscussions, discussions = [], onStopDiscussion, ws, connected, onDiff, onHistory }: Props) {
   const [layout, setLayout] = useState<Layout>(() => load('rcc_subcard_layout', 'single'));
   const [collapsed, setCollapsed] = useState(isMobile);
@@ -68,6 +89,16 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
   const [cardSize, setCardSize] = useState<CardSize>(() => load('rcc_subcard_size', DEFAULT_SIZE));
   const [draftW, setDraftW] = useState(String(cardSize.w));
   const [draftH, setDraftH] = useState(String(cardSize.h));
+  const [stats, setStats] = useState<DaemonStats | null>(null);
+
+  useEffect(() => {
+    if (!ws) return;
+    return ws.onMessage((msg) => {
+      if (msg.type === 'daemon.stats') {
+        setStats({ cpu: msg.cpu, memUsed: msg.memUsed, memTotal: msg.memTotal, load1: msg.load1, load5: msg.load5, load15: msg.load15, uptime: msg.uptime });
+      }
+    });
+  }, [ws]);
 
   const toggleLayout = () => {
     const next: Layout = layout === 'single' ? 'double' : 'single';
@@ -116,6 +147,21 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
               ⚙
             </button>
             <span class="subcard-toolbar-label">Sub-sessions ({subSessions.length})</span>
+            {stats && (
+              <span class="daemon-stats-inline" title={`Load: ${stats.load1} / ${stats.load5} / ${stats.load15} | Uptime: ${formatUptime(stats.uptime)}`}>
+                <span style={{ color: stats.cpu > 80 ? '#f87171' : stats.cpu > 50 ? '#fbbf24' : '#4ade80' }}>
+                  CPU {stats.cpu}%
+                </span>
+                <span style={{ color: '#94a3b8' }}> · </span>
+                <span style={{ color: '#60a5fa' }}>
+                  Mem {formatBytes(stats.memUsed)}/{formatBytes(stats.memTotal)}
+                </span>
+                <span style={{ color: '#94a3b8' }}> · </span>
+                <span style={{ color: '#a78bfa' }}>
+                  Load {stats.load1}
+                </span>
+              </span>
+            )}
           </>
         )}
         <button class="subcard-toolbar-add" onClick={onNew} title="New sub-session">+</button>

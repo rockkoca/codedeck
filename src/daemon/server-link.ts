@@ -1,5 +1,17 @@
+import os from 'node:os';
 import type { TimelineEvent } from './timeline-event.js';
 import logger from '../util/logger.js';
+
+/** Collect lightweight system stats for daemon.stats messages. */
+function collectSystemStats(): { cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number } {
+  const memTotal = os.totalmem();
+  const memFree = os.freemem();
+  const [load1, load5, load15] = os.loadavg();
+  // CPU usage: approximate from load average vs CPU count
+  const cpuCount = os.cpus().length;
+  const cpu = Math.min(100, Math.round((load1 / cpuCount) * 100));
+  return { cpu, memUsed: memTotal - memFree, memTotal, load1: +load1.toFixed(2), load5: +load5.toFixed(2), load15: +load15.toFixed(2), uptime: os.uptime() };
+}
 
 const HEARTBEAT_MS = 30_000;
 const INITIAL_BACKOFF_MS = 1_000;
@@ -136,7 +148,7 @@ export class ServerLink {
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.send({ type: 'heartbeat' });
+        this.send({ type: 'heartbeat', ...collectSystemStats() });
       }
     }, HEARTBEAT_MS);
   }
