@@ -39,7 +39,7 @@ function makeMemDb(): PgDatabase {
           }
           if (s.includes('from api_keys where key_hash')) {
             for (const k of apiKeys.values()) {
-              if (k.key_hash === args[0]) return { user_id: k.user_id } as T;
+              if (k.key_hash === args[0]) return { id: k.id, user_id: k.user_id } as T;
             }
             return null;
           }
@@ -87,8 +87,8 @@ function makeMemDb(): PgDatabase {
             return { changes: 1 };
           }
           if (s.includes('update servers set token_hash')) {
-            // args: tokenHash, name, id, userId
-            const [tokenHash, name, id, userId] = args as string[];
+            // args: tokenHash, name, bound_with_key_id, id, userId
+            const [tokenHash, name, , id, userId] = args as string[];
             const sv = servers.get(id);
             if (sv && sv.user_id === userId) {
               sv.token_hash = tokenHash;
