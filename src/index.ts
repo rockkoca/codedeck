@@ -151,6 +151,32 @@ program
       }),
   );
 
+program
+  .command('restart')
+  .description('Restart the codedeck daemon service')
+  .action(() => {
+    const platform = process.platform;
+    if (platform === 'darwin') {
+      const plist = resolve(homedir(), 'Library/LaunchAgents/codedeck.daemon.plist');
+      if (!existsSync(plist)) { console.error(`Plist not found: ${plist}`); process.exit(1); }
+      console.log('Restarting via launchctl...');
+      execSync(`launchctl unload "${plist}"`, { stdio: 'inherit' });
+      execSync(`launchctl load "${plist}"`, { stdio: 'inherit' });
+    } else if (platform === 'linux') {
+      const userService = resolve(homedir(), '.config/systemd/user/codedeck.service');
+      const isUserService = existsSync(userService);
+      console.log('Restarting via systemd...');
+      if (isUserService) {
+        execSync('systemctl --user restart codedeck', { stdio: 'inherit' });
+      } else {
+        execSync('sudo systemctl restart codedeck', { stdio: 'inherit' });
+      }
+    } else {
+      console.error(`Unsupported platform: ${platform}`); process.exit(1);
+    }
+    console.log('Done.');
+  });
+
 program.parseAsync(process.argv).catch((err) => {
   logger.error({ err }, 'Fatal error');
   process.exit(1);

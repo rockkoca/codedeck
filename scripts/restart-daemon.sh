@@ -8,4 +8,4 @@ cd "$(dirname "$0")/.."
 npm run build
 npm link --force
 
-codedeck service restart --no-build
+codedeck restart
