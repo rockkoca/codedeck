@@ -151,6 +151,28 @@ function buildVerdictPrompt(discussionFilePath: string, judge: DiscussionPartici
 
 async function waitForIdle(sessionName: string, timeoutMs: number): Promise<void> {
   const start = Date.now();
+  let sawWorking = false;
+
+  // Phase 1: Wait for agent to start working (acknowledge the prompt).
+  // Without this, we'd return immediately if the agent is still idle
+  // from before the prompt was sent.
+  while (Date.now() - start < timeoutMs) {
+    const result = await readSubSessionResponse(sessionName).catch(() => ({ status: 'working' as const }));
+    if (result.status === 'working') {
+      sawWorking = true;
+      break;
+    }
+    // If still idle after 2s, assume prompt was acknowledged (some agents process very fast)
+    if (Date.now() - start > 2000) {
+      sawWorking = true;
+      break;
+    }
+    await new Promise<void>((r) => setTimeout(r, 500));
+  }
+
+  if (!sawWorking) throw new Error(`Timed out waiting for ${sessionName} to start working`);
+
+  // Phase 2: Wait for agent to become idle again (finished processing).
   while (Date.now() - start < timeoutMs) {
     const result = await readSubSessionResponse(sessionName).catch(() => ({ status: 'working' as const }));
     if (result.status === 'idle') return;
@@ -212,12 +234,22 @@ async function runDiscussion(
     if (p.reused) {
       logger.info({ sessionName: p.sessionName }, 'Reusing existing sub-session for discussion');
     } else {
+      const ccSessionId = p.agentType === 'claude-code' ? crypto.randomUUID() : null;
       await startSubSession({
         id: p.subSessionId,
         type: p.agentType,
         cwd: d.cwd || null,
-        ccSessionId: p.agentType === 'claude-code' ? crypto.randomUUID() : null,
+        ccSessionId,
         codexModel: p.agentType === 'codex' && p.model ? p.model : null,
+      });
+      // Sync to DB so frontend can see the sub-session
+      onUpdate({
+        type: 'subsession.sync',
+        id: p.subSessionId,
+        sessionType: p.agentType,
+        cwd: d.cwd || null,
+        label: `Discussion: ${p.roleLabel}`,
+        ccSessionId,
       });
     }
   }
@@ -381,6 +413,7 @@ async function runDiscussion(
   for (const p of d.participants) {
     if (!p.reused) {
       await stopSubSession(p.sessionName).catch(() => {});
+      onUpdate({ type: 'subsession.close', id: p.subSessionId });
     }
   }
 

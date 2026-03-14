@@ -16,7 +16,7 @@ import type { PgDatabase } from '../db/client.js';
 import type { Env } from '../env.js';
 import { MemoryRateLimiter } from './rate-limiter.js';
 import { sha256Hex } from '../security/crypto.js';
-import { updateServerHeartbeat, updateServerStatus, upsertDiscussion, insertDiscussionRound } from '../db/queries.js';
+import { updateServerHeartbeat, updateServerStatus, upsertDiscussion, insertDiscussionRound, createSubSession, updateSubSession } from '../db/queries.js';
 import logger from '../util/logger.js';
 
 const AUTH_TIMEOUT_MS = 5000;
@@ -435,6 +435,26 @@ export class WsBridge {
         return;
       }
       this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      return;
+    }
+
+    // ── Sub-session sync: daemon creates sub-sessions → persist to DB ────────
+    if (type === 'subsession.sync' && this.db) {
+      void createSubSession(
+        this.db,
+        msg.id as string,
+        this.serverId,
+        msg.sessionType as string,
+        (msg.shellBin as string) || null,
+        (msg.cwd as string) || null,
+        (msg.label as string) || null,
+        (msg.ccSessionId as string) || null,
+      ).catch((e) => logger.error({ err: e, id: msg.id }, 'Failed to sync sub-session to DB'));
+      return;
+    }
+    if (type === 'subsession.close' && this.db) {
+      void updateSubSession(this.db, msg.id as string, this.serverId, { closed_at: Date.now() })
+        .catch((e) => logger.error({ err: e, id: msg.id }, 'Failed to close sub-session in DB'));
       return;
     }
 
