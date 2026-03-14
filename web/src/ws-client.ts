@@ -209,6 +209,10 @@ export class WsClient {
     this.send({ type: 'subsession.set_model', sessionName, model, cwd });
   }
 
+  askAnswer(sessionName: string, answer: string): void {
+    this.send({ type: 'ask.answer', sessionName, answer });
+  }
+
   // ── Discussion commands ────────────────────────────────────────────────────
 
   discussionStart(

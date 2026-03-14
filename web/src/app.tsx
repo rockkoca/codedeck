@@ -11,6 +11,7 @@ import { SubSessionBar } from './components/SubSessionBar.js';
 import { SubSessionWindow } from './components/SubSessionWindow.js';
 import { StartSubSessionDialog } from './components/StartSubSessionDialog.js';
 import { StartDiscussionDialog, type DiscussionPrefs, type SubSessionOption } from './components/StartDiscussionDialog.js';
+import { AskQuestionDialog, type PendingQuestion } from './components/AskQuestionDialog.js';
 import { DiscussionsPage } from './pages/DiscussionsPage.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
@@ -189,6 +190,7 @@ export function App() {
   const [showDiscussionsPage, setShowDiscussionsPage] = useState(false);
   const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
   const [discussionPrefs, setDiscussionPrefs] = useState<DiscussionPrefs | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
   const [discussions, setDiscussions] = useState<Array<{
     id: string;
     topic: string;
@@ -367,6 +369,13 @@ export function App() {
       // Detect model from JSONL usage.update events (authoritative, overrides terminal scan)
       if (msg.type === 'timeline.event') {
         const event = msg.event;
+        if (event.type === 'ask.question') {
+          setPendingQuestion({
+            sessionName: event.sessionId,
+            toolUseId: String(event.payload.toolUseId ?? ''),
+            questions: (event.payload.questions as PendingQuestion['questions']) ?? [],
+          });
+        }
         if (event.type === 'usage.update' && event.payload.model) {
           const modelStr = String(event.payload.model).toLowerCase();
           const detected: 'opus' | 'sonnet' | 'haiku' | null =
@@ -973,6 +982,17 @@ export function App() {
           }))}
           savedPrefs={discussionPrefs}
           onClose={() => setShowDiscussionDialog(false)}
+        />
+      )}
+
+      {pendingQuestion && wsRef.current && (
+        <AskQuestionDialog
+          pending={pendingQuestion}
+          onSubmit={(answer) => {
+            wsRef.current?.askAnswer(pendingQuestion.sessionName, answer);
+            setPendingQuestion(null);
+          }}
+          onDismiss={() => setPendingQuestion(null)}
         />
       )}
 

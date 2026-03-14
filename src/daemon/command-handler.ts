@@ -3,7 +3,7 @@
  * Commands arrive as JSON objects with a `type` field.
  */
 import { startProject, stopProject, type ProjectConfig } from '../agent/session-manager.js';
-import { sendKeys, sendKeysDelayedEnter, sendRawInput, resizeSession } from '../agent/tmux.js';
+import { sendKeys, sendKeysDelayedEnter, sendRawInput, resizeSession, sendKey } from '../agent/tmux.js';
 import { listSessions, getSession } from '../store/session-store.js';
 import { routeMessage, type InboundMessage, type RouterContext } from '../router/message-router.js';
 import { terminalStreamer, type StreamSubscriber } from './terminal-streamer.js';
@@ -196,6 +196,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       break;
     case 'subsession.set_model':
       void handleSubSessionSetModel(cmd);
+      break;
+    case 'ask.answer':
+      void handleAskAnswer(cmd);
       break;
     case 'discussion.start':
       void handleDiscussionStart(cmd, serverLink);
@@ -677,6 +680,19 @@ async function handleSubSessionReadResponse(cmd: Record<string, unknown>, server
   try {
     serverLink.send({ type: 'subsession.response', sessionName: sName, ...result });
   } catch { /* not connected */ }
+}
+
+async function handleAskAnswer(cmd: Record<string, unknown>): Promise<void> {
+  const sessionName = cmd.sessionName as string | undefined;
+  const answer = cmd.answer as string | undefined;
+  if (!sessionName || answer === undefined) {
+    logger.warn('ask.answer: missing sessionName or answer');
+    return;
+  }
+  // ESC to dismiss the TUI dialog, then send the answer text + Enter
+  await sendKey(sessionName, 'Escape');
+  await new Promise<void>((r) => setTimeout(r, 150));
+  await sendKeys(sessionName, answer);
 }
 
 // ── Discussion handlers ────────────────────────────────────────────────────

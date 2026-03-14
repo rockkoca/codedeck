@@ -412,3 +412,22 @@ body {
   .discussions-layout { flex-direction: column; }
   .discussions-list { width: 100%; max-height: 40vh; border-right: none; border-bottom: 1px solid #1e293b; }
 }
+
+/* AskQuestionDialog */
+.ask-dialog-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 16px; }
+.ask-dialog { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; width: 100%; max-width: 480px; max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.ask-question-block { display: flex; flex-direction: column; gap: 8px; }
+.ask-header { font-size: 11px; font-weight: 600; color: #818cf8; text-transform: uppercase; letter-spacing: 0.05em; }
+.ask-question { font-size: 14px; color: #e2e8f0; line-height: 1.5; }
+.ask-options { display: flex; flex-direction: column; gap: 6px; }
+.ask-option { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; border: 1px solid #334155; cursor: pointer; transition: border-color 0.15s; }
+.ask-option input { display: none; }
+.ask-option-selected { border-color: #818cf8; background: #818cf810; }
+.ask-option-label { font-size: 13px; color: #e2e8f0; }
+.ask-option-desc { font-size: 11px; color: #64748b; }
+.ask-custom-input { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; color: #e2e8f0; font-size: 13px; outline: none; }
+.ask-custom-input:focus { border-color: #818cf8; }
+.ask-actions { display: flex; gap: 8px; justify-content: flex-end; padding-top: 4px; }
+.ask-btn-cancel { background: transparent; border: 1px solid #334155; border-radius: 8px; padding: 8px 16px; color: #64748b; font-size: 13px; cursor: pointer; }
+.ask-btn-submit { background: #818cf8; border: none; border-radius: 8px; padding: 8px 16px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.ask-btn-submit:hover { background: #6366f1; }

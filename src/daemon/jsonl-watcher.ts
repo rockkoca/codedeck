@@ -62,6 +62,7 @@ async function findLatestJsonl(dir: string): Promise<string | null> {
 
 interface ContentBlock {
   type: string;
+  id?: string;
   text?: string;
   thinking?: string;
   name?: string;
@@ -170,11 +171,19 @@ function parseLine(sessionName: string, line: string): void {
           text: block.thinking,
         }, { source: 'daemon', confidence: 'high' });
       } else if (block.type === 'tool_use' && block.name) {
-        const input = extractToolInput(block.name, block.input);
-        timelineEmitter.emit(sessionName, 'tool.call', {
-          tool: block.name,
-          ...(input ? { input } : {}),
-        }, { source: 'daemon', confidence: 'high' });
+        if (block.name === 'AskUserQuestion') {
+          const inp = block.input as Record<string, unknown> | undefined;
+          timelineEmitter.emit(sessionName, 'ask.question', {
+            toolUseId: block.id,
+            questions: inp?.['questions'] ?? [],
+          }, { source: 'daemon', confidence: 'high' });
+        } else {
+          const input = extractToolInput(block.name, block.input);
+          timelineEmitter.emit(sessionName, 'tool.call', {
+            tool: block.name,
+            ...(input ? { input } : {}),
+          }, { source: 'daemon', confidence: 'high' });
+        }
       }
     }
     // Emit token usage + model for context bar

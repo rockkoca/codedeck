@@ -14,7 +14,8 @@ export type TimelineEventType =
   | 'terminal.snapshot'
   | 'command.ack'
   | 'agent.status'
-  | 'usage.update';
+  | 'usage.update'
+  | 'ask.question';
 
 export type TimelineSource = 'daemon' | 'hook' | 'terminal-parse';
 export type TimelineConfidence = 'high' | 'medium' | 'low';
