@@ -323,7 +323,11 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
                 e.dataTransfer!.dropEffect = 'move';
                 if (!dragIdRef.current || dragIdRef.current === sub.id) return;
                 setOrderedIds((prev) => {
-                  const ids = prev.length ? prev : orderedSessions.map((s) => s.id);
+                  // Always build a complete list: persisted order + any new sessions appended
+                  const allIds = orderedSessions.map((s) => s.id);
+                  const known = prev.filter((id) => allIds.includes(id));
+                  const newOnes = allIds.filter((id) => !known.includes(id));
+                  const ids = [...known, ...newOnes];
                   const from = ids.indexOf(dragIdRef.current!);
                   const to = ids.indexOf(sub.id);
                   if (from === -1 || to === -1) return prev;
