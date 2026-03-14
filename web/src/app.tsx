@@ -231,7 +231,7 @@ export function App() {
   const wsRef = useRef<WsClient | null>(null);
 
   // ── Sub-sessions ───────────────────────────────────────────────────────────
-  const { subSessions, create: createSubSession, close: closeSubSession } = useSubSessions(
+  const { subSessions, create: createSubSession, close: closeSubSession, restart: restartSubSession, rename: renameSubSession } = useSubSessions(
     selectedServerId,
     wsRef.current,
     connected,
@@ -866,6 +866,11 @@ export function App() {
           onHistory={registerHistoryApplyer}
           onMinimize={() => setOpenSubIds((prev) => { const s = new Set(prev); s.delete(sub.id); return s; })}
           onClose={() => closeSubSession(sub.id)}
+          onRestart={() => restartSubSession(sub.id)}
+          onRename={() => {
+            const label = prompt('Rename sub-session:', sub.label ?? '');
+            if (label !== null) renameSubSession(sub.id, label);
+          }}
           zIndex={subZIndexes.get(sub.id) ?? 1000}
           onFocus={() => bringSubToFront(sub.id)}
         />

@@ -101,5 +101,27 @@ export function useSubSessions(
     setSubSessions((prev) => prev.filter((s) => s.id !== id));
   }, [serverId, ws, subSessions]);
 
-  return { subSessions, loadedServerId, create, close };
+  const restart = useCallback(async (id: string) => {
+    if (!serverId || !ws) return;
+    const sub = subSessions.find((s) => s.id === id);
+    if (!sub) return;
+    // Stop old session
+    ws.subSessionStop(sub.sessionName);
+    // Close old in PG
+    await patchSubSession(serverId, id, { closedAt: Date.now() }).catch(() => {});
+    // Remove from state
+    setSubSessions((prev) => prev.filter((s) => s.id !== id));
+    // Create new with same params
+    await create(sub.type, sub.shellBin ?? undefined, sub.cwd ?? undefined, sub.label ?? undefined);
+  }, [serverId, ws, subSessions, create]);
+
+  const rename = useCallback(async (id: string, label: string) => {
+    if (!serverId) return;
+    await patchSubSession(serverId, id, { label }).catch(() => {});
+    setSubSessions((prev) => prev.map((s) =>
+      s.id === id ? { ...s, label } : s,
+    ));
+  }, [serverId]);
+
+  return { subSessions, loadedServerId, create, close, restart, rename };
 }

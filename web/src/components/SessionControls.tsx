@@ -25,6 +25,10 @@ interface Props {
   hideShortcuts?: boolean;
   /** Called after a message is sent — for local UX only (e.g. optimistic display). Does not emit timeline events. */
   onSend?: (sessionName: string, text: string) => void;
+  /** Sub-session overrides — when set, menu actions use these instead of main session commands. */
+  onSubRestart?: () => void;
+  onSubNew?: () => void;
+  onSubStop?: () => void;
 }
 
 type MenuAction = 'restart' | 'new' | 'stop';
@@ -64,7 +68,7 @@ function loadCodexModel(): CodexModelChoice | null {
   return null;
 }
 
-export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop }: Props) {
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -229,13 +233,19 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     if (!ws || !activeSession) return;
     if (confirm === action) {
       if (action === 'restart') {
-        ws.sendSessionCommand('restart', { project: activeSession.project });
+        onSubRestart
+          ? onSubRestart()
+          : ws.sendSessionCommand('restart', { project: activeSession.project });
       } else if (action === 'new') {
-        ws.sendSessionCommand('restart', { project: activeSession.project, fresh: true });
+        onSubNew
+          ? onSubNew()
+          : ws.sendSessionCommand('restart', { project: activeSession.project, fresh: true });
       } else {
-        onStopProject
-          ? onStopProject(activeSession.project)
-          : ws.sendSessionCommand('stop', { project: activeSession.project });
+        onSubStop
+          ? onSubStop()
+          : onStopProject
+            ? onStopProject(activeSession.project)
+            : ws.sendSessionCommand('stop', { project: activeSession.project });
       }
       setMenuOpen(false);
       setConfirm(null);

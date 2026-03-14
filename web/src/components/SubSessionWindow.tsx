@@ -22,6 +22,8 @@ interface Props {
   onHistory: (sessionName: string, apply: (c: string) => void) => void;
   onMinimize: () => void;
   onClose: () => void;
+  onRestart: () => void;
+  onRename: () => void;
   zIndex: number;
   onFocus: () => void;
 }
@@ -51,7 +53,7 @@ function saveLocal(id: string, geom: WindowGeometry, viewMode: ViewMode) {
 }
 
 export function SubSessionWindow({
-  sub, ws, connected, onDiff, onHistory, onMinimize, onClose, zIndex, onFocus,
+  sub, ws, connected, onDiff, onHistory, onMinimize, onClose, onRestart, onRename, zIndex, onFocus,
 }: Props) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -218,7 +220,7 @@ export function SubSessionWindow({
         )}
       </div>
 
-      {/* Full SessionControls — identical to main session */}
+      {/* Full SessionControls — with sub-session action overrides */}
       <div onMouseDown={startDrag} style={{ cursor: 'grab' }}>
         <SessionControls
           ws={ws}
@@ -227,6 +229,10 @@ export function SubSessionWindow({
           quickData={quickData}
           hideShortcuts={false}
           onSend={scrollToBottom}
+          onSubRestart={onRestart}
+          onSubNew={onRestart}
+          onSubStop={onClose}
+          onRenameSession={onRename}
         />
       </div>
     </div>
