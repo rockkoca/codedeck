@@ -12,7 +12,7 @@ export const githubAuthRoutes = new Hono<{ Bindings: Env; Variables: { userId: s
 githubAuthRoutes.get('/', async (c): Promise<Response> => {
   // Detect the origin the user's browser is actually on (proxy-aware).
   // X-Forwarded-Host is set by the Caddy proxy on codedeck.cc.
-  const host = c.req.header('x-forwarded-host') ?? c.req.header('host');
+  const host = c.req.header('x-original-host') ?? c.req.header('x-forwarded-host') ?? c.req.header('host');
   const protocol = c.env.NODE_ENV === 'production' ? 'https' : (c.req.header('x-forwarded-proto') ?? 'http');
   const currentOrigin = host ? `${protocol}://${host}` : c.env.SERVER_URL;
 
@@ -82,12 +82,12 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
     // Cross-domain relay: if the OAuth was initiated on a proxy domain (e.g. codedeck.cc),
     // the oauth_state cookie lives on that domain, not here (app.codedeck.org).
     // Forward code+state to the proxy domain where the cookie can be verified.
-    const actualHost = c.req.header('x-forwarded-host') ?? c.req.header('host');
+    const actualHost = c.req.header('x-original-host') ?? c.req.header('x-forwarded-host') ?? c.req.header('host');
     const actualOrigin = actualHost
       ? `${c.env.NODE_ENV === 'production' ? 'https' : 'http'}://${actualHost}`
       : c.env.SERVER_URL;
 
-    logger.info({ targetOrigin, actualOrigin, actualHost, xfh: c.req.header('x-forwarded-host'), host: c.req.header('host') }, 'oauth callback: origin detection');
+    logger.info({ targetOrigin, actualOrigin, actualHost, xoh: c.req.header('x-original-host'), xfh: c.req.header('x-forwarded-host'), host: c.req.header('host') }, 'oauth callback: origin detection');
 
     if (targetOrigin && targetOrigin !== actualOrigin) {
       const allowed = (c.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim());
