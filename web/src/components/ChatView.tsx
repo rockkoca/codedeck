@@ -227,20 +227,29 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onScrollBottomFn]);
 
-  // Auto-scroll on new events — track the last event timestamp to avoid
-  // re-scrolling when viewItems regroup without new content arriving.
-  const lastEventTs = events.length > 0 ? events[events.length - 1].ts : 0;
-  const prevEventTsRef = useRef(lastEventTs);
+  // Auto-scroll only on visible new events — agent.status / assistant.thinking / usage.update
+  // events are filtered from the chat view but still part of `events`, so using the raw last ts
+  // would trigger spurious scrolls while the agent is running without any new visible content.
+  const lastVisibleTs = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      if (!e.hidden && e.type !== 'assistant.thinking' && e.type !== 'agent.status' && e.type !== 'usage.update') {
+        return e.ts;
+      }
+    }
+    return 0;
+  }, [events]);
+  const prevVisibleTsRef = useRef(lastVisibleTs);
   useEffect(() => {
-    const changed = lastEventTs !== prevEventTsRef.current;
-    prevEventTsRef.current = lastEventTs;
+    const changed = lastVisibleTs !== prevVisibleTsRef.current;
+    prevVisibleTsRef.current = lastVisibleTs;
     if (!changed && !preview) return;
     if (preview || autoScrollRef.current) {
       requestAnimationFrame(() => {
         scrollToBottom();
       });
     }
-  }, [lastEventTs, preview]);
+  }, [lastVisibleTs, preview]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
