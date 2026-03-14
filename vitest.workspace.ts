@@ -30,6 +30,7 @@ export default defineWorkspace([
         'server/test/**/*.integration.test.ts',
         'server/test/auth-flow.test.ts',
         'server/test/bind-rebind.test.ts',
+        'server/test/auth-security.test.ts',
         'server/test/proxy-addr.test.ts',
         '**/node_modules/**',
       ],
