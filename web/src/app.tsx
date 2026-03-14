@@ -167,6 +167,13 @@ export function App() {
 
   useEffect(() => { loadServers(); }, [loadServers]);
 
+  // Periodically refresh server list so lastHeartbeatAt stays current
+  useEffect(() => {
+    if (!auth) return;
+    const id = setInterval(() => { loadServers(); }, 90_000);
+    return () => clearInterval(id);
+  }, [auth, loadServers]);
+
   // Rename = update project_name in D1 + local sessions state
   const handleRenameSession = useCallback(async (sessionName: string, newProjectName: string) => {
     if (!selectedServerId || !newProjectName) return;
@@ -383,6 +390,10 @@ export function App() {
         }
       }
       if (msg.type === 'session_list') {
+        // Daemon is connected — mark this server as online now
+        setServers((prev) => prev.map((s) =>
+          s.id === selectedServerId ? { ...s, lastHeartbeatAt: Date.now() } : s,
+        ));
         setSessions((prev) => msg.sessions.filter((s) => !s.name.startsWith('deck_sub_')).map((s) => {
           const existing = prev.find((p) => p.name === s.name);
           return {
@@ -816,6 +827,14 @@ export function App() {
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             <LanguageSwitcher />
+            <button
+              class="btn btn-secondary"
+              style={{ fontSize: 11, flex: 1 }}
+              onClick={() => setSelectedServerId(null)}
+              title="API Keys & Settings"
+            >
+              ⚙
+            </button>
           </div>
           <button class="btn btn-secondary" style={{ width: '100%', fontSize: 11 }} onClick={handleLogout}>
             Log Out
