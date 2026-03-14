@@ -49,7 +49,8 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
   const isShell = sub.type === 'shell';
   const { events, refreshing } = isShell ? { events: [], refreshing: false } : useTimeline(sub.sessionName, ws);
   const termScrollRef = useRef<(() => void) | null>(null);
-  const label = sub.label ?? (isShell ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type);
+  const agentTag = isShell ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type;
+  const label = sub.label ? `${sub.label} · ${agentTag}` : agentTag;
   const icon = TYPE_ICON[sub.type] ?? '⚡';
   const badge = STATE_BADGE[sub.state];
 

@@ -164,7 +164,8 @@ export function SubSessionWindow({
     document.addEventListener('mouseup', onUp);
   }, [onFocus]);
 
-  const typeLabel = sub.label ?? (sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type);
+  const agentTag = sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type;
+  const typeLabel = sub.label ? `${sub.label} · ${agentTag}` : agentTag;
 
   const style: Record<string, string | number> = isMobile
     ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex }

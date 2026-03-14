@@ -2,7 +2,7 @@
  * SubSessionBar — bottom panel showing sub-session preview cards.
  * Cards show live chat/terminal previews. Single or double row layout.
  */
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { SubSessionCard } from './SubSessionCard.js';
 import type { SubSession } from '../hooks/useSubSessions.js';
 import type { WsClient } from '../ws-client.js';
@@ -90,6 +90,17 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
   const [draftW, setDraftW] = useState(String(cardSize.w));
   const [draftH, setDraftH] = useState(String(cardSize.h));
   const [stats, setStats] = useState<DaemonStats | null>(null);
+  const [orderedIds, setOrderedIds] = useState<string[]>(() => load('rcc_subcard_order', []));
+  const dragIdRef = useRef<string | null>(null);
+
+  // Merge server order with persisted order: keep known positions, append new sessions at end
+  const orderedSessions = useMemo(() => {
+    const known = orderedIds.filter((id) => subSessions.some((s) => s.id === id));
+    const newOnes = subSessions.filter((s) => !known.includes(s.id)).map((s) => s.id);
+    const merged = [...known, ...newOnes];
+    const map = new Map(subSessions.map((s) => [s.id, s]));
+    return merged.map((id) => map.get(id)!).filter(Boolean);
+  }, [subSessions, orderedIds]);
 
   useEffect(() => {
     if (!ws) return;
@@ -211,8 +222,9 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
       {/* Collapsed: compact buttons (all platforms) */}
       {collapsed && subSessions.length > 0 && (
         <div class="subsession-bar" style={{ borderTop: 'none' }}>
-          {subSessions.map((sub) => {
-            const label = sub.label ?? (sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type);
+          {orderedSessions.map((sub) => {
+            const agentTag = sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type;
+            const label = sub.label ? `${sub.label} · ${agentTag}` : agentTag;
             const icon = TYPE_ICON[sub.type] ?? '⚡';
             const isOpen = openIds.has(sub.id);
             return (
@@ -289,24 +301,55 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
       )}
 
       {/* Expanded: preview cards (all platforms) */}
-      {!collapsed && subSessions.length > 0 && (
+      {!collapsed && orderedSessions.length > 0 && (
         <div
           class={`subcard-scroll ${layout === 'double' ? 'subcard-double' : 'subcard-single'}`}
           style={layout === 'double' ? { gridAutoColumns: 'max-content' } : undefined}
         >
-          {subSessions.map((sub) => (
-            <SubSessionCard
+          {orderedSessions.map((sub) => (
+            <div
               key={sub.id}
-              sub={sub}
-              ws={ws}
-              connected={connected}
-              isOpen={openIds.has(sub.id)}
-              onOpen={() => onOpen(sub.id)}
-              onDiff={onDiff}
-              onHistory={onHistory}
-              cardW={cardSize.w}
-              cardH={cardSize.h}
-            />
+              draggable
+              onDragStart={(e) => {
+                dragIdRef.current = sub.id;
+                e.dataTransfer!.effectAllowed = 'move';
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer!.dropEffect = 'move';
+                if (!dragIdRef.current || dragIdRef.current === sub.id) return;
+                setOrderedIds((prev) => {
+                  const ids = prev.length ? prev : orderedSessions.map((s) => s.id);
+                  const from = ids.indexOf(dragIdRef.current!);
+                  const to = ids.indexOf(sub.id);
+                  if (from === -1 || to === -1) return prev;
+                  const next = [...ids];
+                  next.splice(from, 1);
+                  next.splice(to, 0, dragIdRef.current!);
+                  return next;
+                });
+              }}
+              onDragEnd={() => {
+                dragIdRef.current = null;
+                setOrderedIds((current) => {
+                  save('rcc_subcard_order', current);
+                  return current;
+                });
+              }}
+              style={{ display: 'contents' }}
+            >
+              <SubSessionCard
+                sub={sub}
+                ws={ws}
+                connected={connected}
+                isOpen={openIds.has(sub.id)}
+                onOpen={() => onOpen(sub.id)}
+                onDiff={onDiff}
+                onHistory={onHistory}
+                cardW={cardSize.w}
+                cardH={cardSize.h}
+              />
+            </div>
           ))}
         </div>
       )}
