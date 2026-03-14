@@ -337,3 +337,46 @@ body {
 .discussion-progress-fill { height: 100%; background: #22c55e; border-radius: 2px; transition: width 0.3s ease; }
 .discussion-conclusion { font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.5; border-top: 1px solid #1e293b; padding-top: 6px; max-height: 100px; overflow-y: auto; }
 .discussion-filepath { font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; }
+
+/* ── Discussions Page ──────────────────────────────────────────────────── */
+.discussions-page { display: flex; flex-direction: column; height: 100%; background: #0a0e1a; color: #e2e8f0; }
+.discussions-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #1e293b; }
+.discussions-header h2 { margin: 0; font-size: 16px; flex: 1; }
+.discussions-layout { display: flex; flex: 1; overflow: hidden; }
+.discussions-list { width: 320px; min-width: 280px; border-right: 1px solid #1e293b; overflow-y: auto; }
+.discussions-list-item { padding: 12px 16px; border-bottom: 1px solid #1e293b10; cursor: pointer; transition: background 0.15s; }
+.discussions-list-item:hover { background: #1e293b60; }
+.discussions-list-item.active { background: #1e293b; border-left: 3px solid #3b82f6; }
+.discussions-list-item.live { border-left: 3px solid #22c55e; }
+.discussions-list-item.active.live { border-left: 3px solid #22c55e; }
+.discussions-list-topic { font-size: 14px; font-weight: 500; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.discussions-list-meta { font-size: 12px; color: #64748b; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.discussions-list-state { font-weight: 500; display: flex; align-items: center; gap: 4px; }
+.discussions-list-time { margin-left: auto; }
+.discussions-pulse { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse-glow 1.5s ease-in-out infinite; }
+@keyframes pulse-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.discussions-empty { padding: 40px 20px; text-align: center; color: #64748b; font-size: 14px; }
+.discussions-detail { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.discussions-detail-header { padding: 16px; border-bottom: 1px solid #1e293b; }
+.discussions-detail-header h3 { margin: 0 0 8px; font-size: 16px; }
+.discussions-detail-meta { font-size: 13px; color: #94a3b8; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.discussions-detail-participants { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.discussions-participant-tag { background: #1e293b; padding: 2px 8px; border-radius: 4px; font-size: 11px; color: #94a3b8; }
+.discussions-progress-bar { height: 4px; background: #1e293b; border-radius: 2px; overflow: hidden; margin-top: 10px; }
+.discussions-progress-fill { height: 100%; background: #22c55e; border-radius: 2px; transition: width 0.5s ease; }
+.discussions-rounds { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.discussions-round { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 14px; }
+.discussions-round-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+.discussions-round-agent { color: #64748b; font-size: 11px; }
+.discussions-round-num { margin-left: auto; color: #475569; font-size: 11px; }
+.discussions-round-body { font-size: 13px; line-height: 1.6; color: #cbd5e1; white-space: pre-wrap; word-break: break-word; }
+.discussions-conclusion { margin: 0 16px 16px; background: #172337; border: 1px solid #22c55e40; border-radius: 8px; padding: 14px; }
+.discussions-conclusion-label { font-size: 13px; font-weight: 600; color: #22c55e; margin-bottom: 8px; }
+.discussions-conclusion-text { font-size: 13px; line-height: 1.6; color: #e2e8f0; white-space: pre-wrap; }
+.discussions-file-content { margin: 0 16px 16px; }
+.discussions-file-content summary { font-size: 13px; color: #94a3b8; cursor: pointer; padding: 8px; }
+.discussions-file-content pre { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 12px; font-size: 12px; color: #94a3b8; overflow-x: auto; white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+@media (max-width: 768px) {
+  .discussions-layout { flex-direction: column; }
+  .discussions-list { width: 100%; max-height: 40vh; border-right: none; border-bottom: 1px solid #1e293b; }
+}

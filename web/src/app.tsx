@@ -11,6 +11,7 @@ import { SubSessionBar } from './components/SubSessionBar.js';
 import { SubSessionWindow } from './components/SubSessionWindow.js';
 import { StartSubSessionDialog } from './components/StartSubSessionDialog.js';
 import { StartDiscussionDialog, type DiscussionPrefs, type SubSessionOption } from './components/StartDiscussionDialog.js';
+import { DiscussionsPage } from './pages/DiscussionsPage.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
 import { WsClient } from './ws-client.js';
@@ -183,6 +184,7 @@ export function App() {
   const [showSubDialog, setShowSubDialog] = useState(false);
 
   // ── Discussions ─────────────────────────────────────────────────────────────
+  const [showDiscussionsPage, setShowDiscussionsPage] = useState(false);
   const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
   const [discussionPrefs, setDiscussionPrefs] = useState<DiscussionPrefs | null>(null);
   const [discussions, setDiscussions] = useState<Array<{
@@ -410,7 +412,12 @@ export function App() {
         }
       }
       if (msg.type === 'discussion.list') {
-        setDiscussions(msg.discussions);
+        // Merge live discussions from daemon with existing DB history
+        setDiscussions((prev) => {
+          const liveIds = new Set(msg.discussions.map((d: { id: string }) => d.id));
+          const dbHistory = prev.filter((d) => !liveIds.has(d.id) && (d.state === 'done' || d.state === 'failed'));
+          return [...msg.discussions, ...dbHistory];
+        });
       }
       if (msg.type === 'daemon.reconnected') {
         // Daemon process (re)started — all its subscriptions are gone.
@@ -588,14 +595,23 @@ export function App() {
     } catch {
       // fallback: WS will populate sessions on connect
     }
-    // Load discussion history from DB
+    // Load completed discussion history from DB (live ones come via WS)
     try {
       const dData = await apiFetch<{ discussions: Array<{ id: string; topic: string; state: string; max_rounds: number; file_path: string | null; conclusion: string | null; started_at: number; finished_at: number | null }> }>(`/api/server/${serverId}/discussions`);
-      setDiscussions(dData.discussions.map((d) => ({
-        id: d.id, topic: d.topic, state: d.state,
-        currentRound: d.max_rounds, maxRounds: d.max_rounds,
-        conclusion: d.conclusion ?? undefined, filePath: d.file_path ?? undefined,
-      })));
+      const dbDiscussions = dData.discussions
+        .filter((d) => d.state === 'done' || d.state === 'failed')
+        .map((d) => ({
+          id: d.id, topic: d.topic, state: d.state,
+          currentRound: d.max_rounds, maxRounds: d.max_rounds,
+          conclusion: d.conclusion ?? undefined, filePath: d.file_path ?? undefined,
+        }));
+      setDiscussions((prev) => {
+        // Merge: keep live WS discussions, add DB history without duplicates
+        const liveIds = new Set(prev.filter((d) => d.state !== 'done' && d.state !== 'failed').map((d) => d.id));
+        const live = prev.filter((d) => liveIds.has(d.id));
+        const history = dbDiscussions.filter((d) => !liveIds.has(d.id));
+        return [...live, ...history];
+      });
     } catch { /* ignore */ }
   }, [setActiveSession]);
 
@@ -808,6 +824,7 @@ export function App() {
                     setShowDiscussionDialog(true);
                   });
                 }}
+                onViewDiscussions={() => setShowDiscussionsPage(true)}
                 discussions={discussions}
                 onStopDiscussion={(id) => wsRef.current?.discussionStop(id)}
                 ws={wsRef.current}
@@ -819,6 +836,16 @@ export function App() {
           </>
         )}
       </main>
+
+      {showDiscussionsPage && selectedServerId && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#0a0e1a' }}>
+          <DiscussionsPage
+            serverId={selectedServerId}
+            ws={wsRef.current}
+            onBack={() => setShowDiscussionsPage(false)}
+          />
+        </div>
+      )}
 
       {showNewSession && (
         <NewSessionDialog

@@ -25,6 +25,7 @@ interface Props {
   onOpen: (id: string) => void;
   onNew: () => void;
   onNewDiscussion?: () => void;
+  onViewDiscussions?: () => void;
   discussions?: DiscussionSummary[];
   onStopDiscussion?: (id: string) => void;
   ws: WsClient | null;
@@ -60,7 +61,7 @@ function save(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
 }
 
-export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscussion, discussions = [], onStopDiscussion, ws, connected, onDiff, onHistory }: Props) {
+export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscussion, onViewDiscussions, discussions = [], onStopDiscussion, ws, connected, onDiff, onHistory }: Props) {
   const [layout, setLayout] = useState<Layout>(() => load('rcc_subcard_layout', 'single'));
   const [collapsed, setCollapsed] = useState(isMobile);
   const [showSizePanel, setShowSizePanel] = useState(false);
@@ -121,6 +122,11 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
         {onNewDiscussion && (
           <button class="subcard-toolbar-btn" onClick={onNewDiscussion} title="Start discussion" style={{ marginLeft: 4, fontSize: 13 }}>
             ⚖️
+          </button>
+        )}
+        {onViewDiscussions && (
+          <button class="subcard-toolbar-btn" onClick={onViewDiscussions} title="View discussions" style={{ marginLeft: 2, fontSize: 11 }}>
+            History
           </button>
         )}
       </div>

@@ -6,6 +6,7 @@
 import { sessionExists, sendKeysDelayedEnter } from '../agent/tmux.js';
 import { startSubSession, stopSubSession, readSubSessionResponse } from './subsession-manager.js';
 import { writeFile, readFile, mkdir, appendFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import logger from '../util/logger.js';
 import type { AgentType } from '../agent/detect.js';
@@ -237,18 +238,22 @@ async function runDiscussion(
   // 2. Generate semantic title via LLM, then create discussion file
   const titleAgent = d.participants[d.verdictParticipantIdx];
   const title = await generateTitle(titleAgent.sessionName, d.topic);
-  const planDir = path.join(d.cwd, 'docs', 'plan');
-  await mkdir(planDir, { recursive: true });
-  d.filePath = path.join(planDir, `${title}.md`);
+  const discussDir = path.join(os.tmpdir(), 'codedeck-discussions');
+  await mkdir(discussDir, { recursive: true });
+  d.filePath = path.join(discussDir, `${d.id.slice(0, 8)}-${title}.md`);
   await writeFile(d.filePath, buildFileHeader(d), 'utf8');
   logger.info({ discussionId: d.id, filePath: d.filePath, title }, 'Discussion file created');
 
   d.state = 'running';
 
   // Persist initial discussion state to DB
+  const participantsJson = JSON.stringify(d.participants.map((p) => ({
+    roleLabel: p.roleLabel, agentType: p.agentType, model: p.model,
+  })));
   onUpdate({
     type: 'discussion.save',
     id: d.id, topic: d.topic, state: d.state, maxRounds: d.maxRounds,
+    currentRound: 0, participants: participantsJson,
     filePath: d.filePath, startedAt: d.startedAt,
   });
 
@@ -300,6 +305,13 @@ async function runDiscussion(
         speakerAgent: participant.agentType,
         speakerModel: participant.model,
         response,
+      });
+      // Update discussion progress in DB
+      onUpdate({
+        type: 'discussion.save',
+        id: d.id, topic: d.topic, state: d.state, maxRounds: d.maxRounds,
+        currentRound: round, currentSpeaker: participant.roleLabel,
+        participants: participantsJson, filePath: d.filePath, startedAt: d.startedAt,
       });
 
       onUpdate({
@@ -353,6 +365,7 @@ async function runDiscussion(
   onUpdate({
     type: 'discussion.save',
     id: d.id, topic: d.topic, state: 'done', maxRounds: d.maxRounds,
+    currentRound: d.maxRounds, participants: participantsJson,
     filePath: d.filePath, conclusion: d.conclusion, fileContent,
     startedAt: d.startedAt, finishedAt: Date.now(),
   });

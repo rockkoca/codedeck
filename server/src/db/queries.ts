@@ -403,6 +403,9 @@ export interface DbDiscussion {
   topic: string;
   state: string;
   max_rounds: number;
+  current_round: number;
+  current_speaker: string | null;
+  participants: string | null;
   file_path: string | null;
   conclusion: string | null;
   file_content: string | null;
@@ -444,6 +447,9 @@ export async function upsertDiscussion(
     topic: string;
     state: string;
     maxRounds: number;
+    currentRound?: number;
+    currentSpeaker?: string | null;
+    participants?: string | null;
     filePath?: string | null;
     conclusion?: string | null;
     fileContent?: string | null;
@@ -455,10 +461,13 @@ export async function upsertDiscussion(
   const now = Date.now();
   await db
     .prepare(
-      `INSERT INTO discussions (id, server_id, topic, state, max_rounds, file_path, conclusion, file_content, error, started_at, finished_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO discussions (id, server_id, topic, state, max_rounds, current_round, current_speaker, participants, file_path, conclusion, file_content, error, started_at, finished_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          state = excluded.state,
+         current_round = excluded.current_round,
+         current_speaker = excluded.current_speaker,
+         participants = excluded.participants,
          file_path = excluded.file_path,
          conclusion = excluded.conclusion,
          file_content = excluded.file_content,
@@ -468,6 +477,7 @@ export async function upsertDiscussion(
     )
     .bind(
       d.id, d.serverId, d.topic, d.state, d.maxRounds,
+      d.currentRound ?? 0, d.currentSpeaker ?? null, d.participants ?? null,
       d.filePath ?? null, d.conclusion ?? null, d.fileContent ?? null, d.error ?? null,
       d.startedAt, d.finishedAt ?? null, now, now,
     )
