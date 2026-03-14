@@ -85,8 +85,8 @@ const OC_TOOL_PATTERNS = [
 // ─── Gemini CLI patterns ───────────────────────────────────────────────────────
 
 const GEMINI_IDLE_PATTERNS = [
-  />\s*$/m,                            // > prompt (primary — confirmed from TUI)
-  /❯\s*$/m,                            // ❯ prompt (fallback)
+  /^\s*>\s*$/m,                        // line that is ONLY ">" — the REPL prompt
+  /^\s*❯\s*$/m,                        // line that is ONLY "❯" — alternate prompt
 ];
 
 const GEMINI_SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -211,9 +211,9 @@ export async function detectStatusMulti(
   const freq = new Map<AgentStatus, number>();
   for (const s of results) freq.set(s, (freq.get(s) ?? 0) + 1);
 
-  // Most common wins; ties broken by priority: idle > streaming > thinking > tool_running > permission > unknown
+  // Most common wins; ties broken by priority: active states beat idle (conservative — don't declare idle unless certain)
   const priority: AgentStatus[] = [
-    'idle', 'streaming', 'thinking', 'tool_running', 'permission', 'unknown',
+    'permission', 'tool_running', 'thinking', 'streaming', 'idle', 'unknown',
   ];
 
   let best: AgentStatus = 'unknown';
