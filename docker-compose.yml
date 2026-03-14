@@ -1,21 +1,36 @@
 services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PROXY_DOMAIN: "${PROXY_DOMAIN}"
+      UPSTREAM_URL: "${UPSTREAM_URL}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+
   server:
     build:
       context: .
       dockerfile: server/Dockerfile
-    ports:
-      - "${BIND_HOST:-0.0.0.0}:${PORT:-3000}:3000"
     environment:
       DATABASE_URL: "postgresql://codedeck:${POSTGRES_PASSWORD}@postgres:5432/codedeck"
       JWT_SIGNING_KEY: "${JWT_SIGNING_KEY}"
       BOT_ENCRYPTION_KEY: "${BOT_ENCRYPTION_KEY}"
-      SERVER_URL: "${SERVER_URL:-http://localhost:3000}"
-      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
-      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
-      BIND_HOST: "${BIND_HOST:-0.0.0.0}"
-      PORT: "${PORT:-3000}"
-      NODE_ENV: "${NODE_ENV:-production}"
-      # Optional
+      SERVER_URL: "${SERVER_URL}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS}"
+      TRUSTED_PROXIES: "127.0.0.1,172.16.0.0/12,10.0.0.0/8,192.168.0.0/16"
+      BIND_HOST: "0.0.0.0"
+      PORT: "3000"
+      NODE_ENV: "production"
       GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID:-}"
       GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET:-}"
     depends_on:
@@ -25,8 +40,6 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    # NOTE: No 'ports:' directive — postgres is only accessible within the Docker network.
-    # To connect from your host for debugging: use 'docker compose exec postgres psql ...'
     environment:
       POSTGRES_DB: codedeck
       POSTGRES_USER: codedeck
@@ -42,3 +55,5 @@ services:
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
