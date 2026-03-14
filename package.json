@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "Remote control AI coding agents (Claude Code, Codex, OpenCode) via chat platforms and web terminal",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rockkoca/codedeck"
+  },
   "bin": {
     "codedeck": "./dist/index.js"
   },
