@@ -9,27 +9,16 @@ export const githubAuthRoutes = new Hono<{ Bindings: Env; Variables: { userId: s
 // GET /api/auth/github — redirect to GitHub OAuth
 // ?reauth=1 → forces GitHub login page (prevents auto-login after logout)
 githubAuthRoutes.get('/', async (c): Promise<Response> => {
+  // Detect the origin the user's browser is actually on (proxy-aware).
+  // X-Forwarded-Host is set by the Caddy proxy on codedeck.cc.
   const host = c.req.header('x-forwarded-host') ?? c.req.header('host');
   const protocol = c.env.NODE_ENV === 'production' ? 'https' : (c.req.header('x-forwarded-proto') ?? 'http');
   const currentOrigin = host ? `${protocol}://${host}` : c.env.SERVER_URL;
-  
-  // Use the origin from query param if provided (from a relay), otherwise detect it.
-  const targetOrigin = c.req.query('origin') ?? currentOrigin;
 
-  // --- Login Start Relay ---
-  // If we are NOT on the main SERVER_URL domain, we must redirect to the main domain
-  // so that the 'oauth_state' cookie is set on the correct domain for the callback.
-  const serverUrlObj = new URL(c.env.SERVER_URL);
-  if (host && host !== serverUrlObj.host && !c.req.query('origin')) {
-    const relayUrl = new URL(`${c.env.SERVER_URL}/api/auth/github`);
-    relayUrl.searchParams.set('origin', targetOrigin);
-    if (c.req.query('reauth') === '1') relayUrl.searchParams.set('reauth', '1');
-    return c.redirect(relayUrl.toString());
-  }
-
-  // Task 3: state = JWT containing nonce; nonce also stored in HttpOnly cookie for binding
+  // State JWT embeds the origin so we know where to redirect after OAuth.
+  // Cookie is set on the user's actual domain (e.g. codedeck.cc via proxy).
   const stateValue = randomHex(32);
-  const stateJwt = signJwt({ nonce: stateValue, origin: targetOrigin }, c.env.JWT_SIGNING_KEY, 600);
+  const stateJwt = signJwt({ nonce: stateValue, origin: currentOrigin }, c.env.JWT_SIGNING_KEY, 600);
 
   const isSecure = c.env.NODE_ENV === 'production' || protocol === 'https';
   setCookie(c, 'oauth_state', stateValue, {
@@ -40,6 +29,7 @@ githubAuthRoutes.get('/', async (c): Promise<Response> => {
     maxAge: 600,
   });
 
+  // redirect_uri always points to SERVER_URL — that's what GitHub has registered.
   const oauthParams = new URLSearchParams({
     client_id: c.env.GITHUB_CLIENT_ID ?? '',
     redirect_uri: `${c.env.SERVER_URL}/api/auth/github/callback`,
@@ -68,7 +58,7 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
   let targetOrigin: string | null = null;
 
   if (relayToken) {
-    // --- Relay Flow: We are on the target domain, finishing auth started elsewhere ---
+    // --- Relay Flow: We are on the proxy domain, finishing auth via relay_token ---
     const payload = verifyJwt(relayToken, c.env.JWT_SIGNING_KEY);
     if (!payload || payload.type !== 'auth-relay' || !payload.sub) {
       return c.json({ error: 'invalid_relay_token' }, 401);
@@ -81,16 +71,39 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
       return c.json({ error: 'missing_params' }, 400);
     }
 
-    // Task 3: verify state JWT + cookie binding (one-time use)
-    const cookieState = getCookie(c, 'oauth_state');
     const statePayload = verifyJwt(state, c.env.JWT_SIGNING_KEY) as { nonce: string; origin?: string } | null;
-    if (!cookieState || !statePayload || statePayload.nonce !== cookieState) {
+    if (!statePayload) {
+      return c.json({ error: 'invalid_state' }, 400);
+    }
+
+    targetOrigin = statePayload.origin ?? null;
+
+    // Cross-domain relay: if the OAuth was initiated on a proxy domain (e.g. codedeck.cc),
+    // the oauth_state cookie lives on that domain, not here (app.codedeck.org).
+    // Forward code+state to the proxy domain where the cookie can be verified.
+    const actualHost = c.req.header('x-forwarded-host') ?? c.req.header('host');
+    const actualOrigin = actualHost
+      ? `${c.env.NODE_ENV === 'production' ? 'https' : 'http'}://${actualHost}`
+      : c.env.SERVER_URL;
+    if (targetOrigin && targetOrigin !== actualOrigin) {
+      const allowed = (c.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim());
+      if (allowed.includes(targetOrigin)) {
+        // Redirect to proxy domain — Caddy will proxy back to us, but now with
+        // X-Forwarded-Host matching targetOrigin, so the cookie will be present.
+        const relayUrl = new URL(`${targetOrigin}/api/auth/github/callback`);
+        relayUrl.searchParams.set('code', code);
+        relayUrl.searchParams.set('state', state);
+        return c.redirect(relayUrl.toString());
+      }
+    }
+
+    // Verify state JWT + cookie binding (same-domain or proxied-back request)
+    const cookieState = getCookie(c, 'oauth_state');
+    if (!cookieState || statePayload.nonce !== cookieState) {
       return c.json({ error: 'state_mismatch' }, 400);
     }
     // Consume the state cookie immediately (one-time use)
     deleteCookie(c, 'oauth_state', { path: '/api/auth/github/callback' });
-
-    targetOrigin = statePayload.origin ?? null;
 
     // Exchange code for GitHub access token
     const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
@@ -137,14 +150,6 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
       await upsertPlatformIdentity(c.env.DB, randomHex(16), user.id, 'github', String(githubUser.id));
     }
     userId = user.id;
-
-    // If targetOrigin is different from current domain, relay back to it.
-    // Use X-Forwarded-Host to get the ACTUAL domain user is visiting (behind proxies).
-    const actualHost = c.req.header('x-forwarded-host') ?? c.req.header('host');
-    if (targetOrigin && actualHost && new URL(targetOrigin).host !== actualHost) {
-      const relay = signJwt({ sub: userId, type: 'auth-relay', origin: targetOrigin }, c.env.JWT_SIGNING_KEY, 30);
-      return c.redirect(`${targetOrigin}/api/auth/github/callback?relay_token=${relay}`);
-    }
   }
 
   const protocol = c.env.NODE_ENV === 'production' ? 'https' : (c.req.header('x-forwarded-proto') ?? 'http');
