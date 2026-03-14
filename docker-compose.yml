@@ -1,0 +1,44 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "${BIND_HOST:-0.0.0.0}:${PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: "postgresql://codedeck:${POSTGRES_PASSWORD}@postgres:5432/codedeck"
+      JWT_SIGNING_KEY: "${JWT_SIGNING_KEY}"
+      BOT_ENCRYPTION_KEY: "${BOT_ENCRYPTION_KEY}"
+      SERVER_URL: "${SERVER_URL:-http://localhost:3000}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
+      BIND_HOST: "${BIND_HOST:-0.0.0.0}"
+      PORT: "${PORT:-3000}"
+      NODE_ENV: "${NODE_ENV:-production}"
+      # Optional
+      GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID:-}"
+      GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    # NOTE: No 'ports:' directive — postgres is only accessible within the Docker network.
+    # To connect from your host for debugging: use 'docker compose exec postgres psql ...'
+    environment:
+      POSTGRES_DB: codedeck
+      POSTGRES_USER: codedeck
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codedeck -d codedeck"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
