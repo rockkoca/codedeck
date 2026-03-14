@@ -304,23 +304,23 @@ function ToolCallGroup({ events }: { events: TimelineEvent[] }) {
   return (
     <div class="chat-tool-group">
       <ChatEvent event={first} />
-      {middle.length > 0 && (
-        expanded ? (
-          <>
-            {middle.map((ev) => <ChatEvent key={ev.eventId} event={ev} />)}
-          </>
-        ) : (
-          <button class="chat-tool-fold-btn" onClick={() => setExpanded(true)}>
-            ··· {middle.length} more
+      <div class="chat-tool-group-indent">
+        {middle.length > 0 && (
+          expanded ? (
+            middle.map((ev) => <ChatEvent key={ev.eventId} event={ev} />)
+          ) : (
+            <button class="chat-tool-fold-btn" onClick={() => setExpanded(true)}>
+              ··· {middle.length} more
+            </button>
+          )
+        )}
+        {last && <ChatEvent event={last} />}
+        {expanded && middle.length > 0 && (
+          <button class="chat-tool-fold-btn" onClick={() => setExpanded(false)}>
+            ▲ collapse
           </button>
-        )
-      )}
-      {last && <ChatEvent event={last} />}
-      {expanded && middle.length > 0 && (
-        <button class="chat-tool-fold-btn" onClick={() => setExpanded(false)}>
-          ▲ collapse
-        </button>
-      )}
+        )}
+      </div>
     </div>
   );
 }
