@@ -179,7 +179,9 @@ export function App() {
         project: s.project_name,
         role: s.role as SessionInfo['role'],
         agentType: s.agent_type,
-        state: s.state as SessionInfo['state'],
+        // Start as 'unknown' — DB state may be stale (idle not persisted back to DB).
+        // Daemon will send live state via WebSocket shortly after connecting.
+        state: 'unknown' as SessionInfo['state'],
         projectDir: s.project_dir,
       }));
       setSessions(mapped);
