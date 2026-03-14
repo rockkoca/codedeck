@@ -18,13 +18,14 @@ function allowedOrigins(env: { SERVER_URL: string; ALLOWED_ORIGINS?: string }): 
   return list;
 }
 
-// Resolves the current origin from proxy headers, validated against the allowlist.
-// Falls back to SERVER_URL when the header value is not in the allowlist.
+// Resolves the current origin using the proxy-aware resolvedHost set by the
+// middleware in index.ts (which only trusts x-forwarded-host through TRUSTED_PROXIES).
+// Falls back to SERVER_URL when the host is unknown or not in the allowlist.
 function resolveCurrentOrigin(
-  c: { req: { header(name: string): string | undefined }; env: { SERVER_URL: string; ALLOWED_ORIGINS?: string; NODE_ENV?: string } },
+  c: { get(key: string): unknown; env: { SERVER_URL: string; ALLOWED_ORIGINS?: string; NODE_ENV?: string } },
 ): string {
-  const protocol = c.env.NODE_ENV === 'production' ? 'https' : (c.req.header('x-forwarded-proto') ?? 'http');
-  const host = c.req.header('x-forwarded-host') ?? c.req.header('host');
+  const protocol = c.env.NODE_ENV === 'production' ? 'https' : 'http';
+  const host = c.get('resolvedHost') as string | null;
   const candidate = host ? `${protocol}://${host}` : null;
   if (candidate && allowedOrigins(c.env).has(candidate)) return candidate;
   return c.env.SERVER_URL;

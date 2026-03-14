@@ -78,6 +78,14 @@ export function buildApp(env: Env) {
     const fakeReq = { socket: { remoteAddress: socketIp }, headers: { 'x-forwarded-for': xff } };
     const clientIp = proxyAddr(fakeReq as never, trust);
     c.set('clientIp' as never, clientIp);
+
+    // Resolve trusted host: only honour x-forwarded-host when the request
+    // arrived through a trusted proxy (clientIp differs from socketIp).
+    const fromTrustedProxy = clientIp !== socketIp;
+    const fwdHost = c.req.header('x-forwarded-host');
+    const resolvedHost = (fromTrustedProxy && fwdHost) ? fwdHost : (c.req.header('host') ?? null);
+    c.set('resolvedHost' as never, resolvedHost);
+
     await next();
   });
 
