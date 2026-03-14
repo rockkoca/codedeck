@@ -42,24 +42,20 @@ export async function capturePaneHistory(session: string, lines = 1000): Promise
 }
 
 /** Send a string of keys to a tmux pane (newline = Enter). */
-export async function sendKeys(session: string, keys: string): Promise<void> {
-  const escaped = keys.replace(/'/g, "'\\''");
-  await tmuxExec(`send-keys -t ${session} -- '${escaped}' Enter`);
-}
-
 /**
- * Send text then Enter as two separate tmux commands with a short delay.
- * Use for agents (e.g. Codex TUI) that have "paste burst" detection:
- * when characters arrive in rapid succession, the TUI treats the whole
- * stream as a paste — including the trailing \r — and doesn't submit.
- * Separating the Enter keystroke lets it land outside the paste window.
+ * Send text then Enter to a tmux session.
+ * Text and Enter are sent separately with a short delay to avoid
+ * paste-burst detection in TUI agents (Codex, Gemini, etc.).
  */
-export async function sendKeysDelayedEnter(session: string, keys: string): Promise<void> {
+export async function sendKeys(session: string, keys: string): Promise<void> {
   const escaped = keys.replace(/'/g, "'\\''");
   await tmuxExec(`send-keys -t ${session} -- '${escaped}'`);
   await new Promise<void>((r) => setTimeout(r, 80));
   await tmuxExec(`send-keys -t ${session} Enter`);
 }
+
+/** @deprecated Use sendKeys — kept as alias for backward compat. */
+export const sendKeysDelayedEnter = sendKeys;
 
 /** Send raw keys without appending Enter (e.g. for Ctrl-C). */
 export async function sendKey(session: string, key: string): Promise<void> {
