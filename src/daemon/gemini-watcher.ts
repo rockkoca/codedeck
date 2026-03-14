@@ -239,12 +239,8 @@ interface WatcherState {
   abort: AbortController;
   stopped: boolean;
   pollTimer?: ReturnType<typeof setInterval>;
-  /** Last message type seen — used for idle detection */
-  lastMsgType?: string;
   /** Whether we emitted 'running' and haven't emitted 'idle' yet */
   emittedRunning?: boolean;
-  /** Consecutive idle polls (no new messages after assistant response) */
-  idlePolls: number;
 }
 
 const watchers = new Map<string, WatcherState>();
@@ -262,9 +258,6 @@ async function readConversation(filePath: string): Promise<GeminiConversation | 
     return null;
   }
 }
-
-/** Number of consecutive no-change polls before we consider the agent idle */
-const IDLE_POLL_THRESHOLD = 2; // 2 × 2s = ~4s of no file changes
 
 async function pollTick(sessionName: string, state: WatcherState): Promise<void> {
   // Try to find the file if we don't have it yet
@@ -285,18 +278,7 @@ async function pollTick(sessionName: string, state: WatcherState): Promise<void>
   if (!conv) return;
 
   // No new messages
-  if (conv.messages.length <= state.seenCount) {
-    // Idle detection: if last message was from gemini (assistant finished),
-    // count consecutive idle polls and emit idle after threshold
-    if (state.emittedRunning && state.lastMsgType === 'gemini') {
-      state.idlePolls++;
-      if (state.idlePolls >= IDLE_POLL_THRESHOLD) {
-        state.emittedRunning = false;
-        timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
-      }
-    }
-    return;
-  }
+  if (conv.messages.length <= state.seenCount) return;
   // No change in lastUpdated for same count (shouldn't happen but be safe)
   if (conv.lastUpdated === state.lastUpdated && conv.messages.length === state.seenCount) return;
 
@@ -304,18 +286,22 @@ async function pollTick(sessionName: string, state: WatcherState): Promise<void>
   state.seenCount = conv.messages.length;
   state.lastUpdated = conv.lastUpdated;
 
-  // Emit running state when new activity detected
+  // Emit running when new activity starts
   if (!state.emittedRunning) {
     state.emittedRunning = true;
-    state.idlePolls = 0;
     timelineEmitter.emit(sessionName, 'session.state', { state: 'running' });
   }
-  state.idlePolls = 0;
 
   for (const msg of newMessages) {
     if (state.stopped) break;
-    state.lastMsgType = msg.type;
     parseMessage(sessionName, msg);
+
+    // Idle detection: a gemini message WITHOUT toolCalls is the final response
+    // in a turn — the agent is done and waiting for user input.
+    if (msg.type === 'gemini' && !msg.toolCalls?.length) {
+      state.emittedRunning = false;
+      timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
+    }
   }
 }
 
@@ -350,7 +336,6 @@ export async function startWatching(sessionName: string, sessionUuid: string): P
     lastUpdated: '',
     abort: new AbortController(),
     stopped: false,
-    idlePolls: 0,
   };
   watchers.set(sessionName, state);
 
@@ -409,7 +394,6 @@ export async function startWatchingNew(
     lastUpdated: '',
     abort: new AbortController(),
     stopped: false,
-    idlePolls: 0,
   };
   watchers.set(sessionName, state);
 
