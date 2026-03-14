@@ -181,6 +181,35 @@ async function waitAllReady(d: Discussion, timeoutMs: number): Promise<void> {
   }
 }
 
+// ── Title generation ──────────────────────────────────────────────────────
+
+async function generateTitle(sessionName: string, topic: string): Promise<string> {
+  const prompt = [
+    'Generate a short filename title (max 20 characters) for a discussion document.',
+    'Use the SAME LANGUAGE as the topic below. Output ONLY the title text, nothing else.',
+    'No quotes, no file extension, no explanation.',
+    '',
+    `Topic: ${topic}`,
+  ].join('\n');
+
+  await sendKeys(sessionName, prompt);
+  await waitForIdle(sessionName, 30_000);
+
+  const result = await readSubSessionResponse(sessionName);
+  const raw = (result.response ?? '').trim().split('\n')[0]; // first line only
+
+  const cleaned = raw
+    .replace(/['""`「」『』]/g, '')
+    .replace(/\.md$/i, '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 20)
+    .replace(/-$/g, '')
+    .trim();
+
+  return cleaned || topic.slice(0, 20).replace(/[\\/:*?"<>|\s]+/g, '-');
+}
+
 // ── Discussion runner ──────────────────────────────────────────────────────
 
 async function runDiscussion(
@@ -214,6 +243,15 @@ async function runDiscussion(
       logger.info({ sessionName: p.sessionName, model: p.model }, 'Switched CC model');
     }
   }
+
+  // 2. Generate semantic title via LLM, then create discussion file
+  const titleAgent = d.participants[d.verdictParticipantIdx];
+  const title = await generateTitle(titleAgent.sessionName, d.topic);
+  const planDir = path.join(d.cwd, 'docs', 'plan');
+  await mkdir(planDir, { recursive: true });
+  d.filePath = path.join(planDir, `${title}.md`);
+  await writeFile(d.filePath, buildFileHeader(d), 'utf8');
+  logger.info({ discussionId: d.id, filePath: d.filePath, title }, 'Discussion file created');
 
   d.state = 'running';
 
@@ -328,16 +366,8 @@ export async function startDiscussion(
   },
   onUpdate: (msg: Record<string, unknown>) => void,
 ): Promise<Discussion> {
-  const planDir = path.join(opts.cwd, 'docs', 'plan');
-  await mkdir(planDir, { recursive: true });
-
-  // Derive a short slug from the topic for a readable filename
-  const slug = opts.topic
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60) || opts.id.slice(0, 8);
-  const filePath = path.join(planDir, `discussion-${slug}.md`);
+  // filePath is set later in runDiscussion after LLM generates the title
+  const filePath = '';
   const participants: DiscussionParticipant[] = opts.participants.map((p, i) => {
     const reused = !!p.sessionName;
     const subId = reused
@@ -387,8 +417,6 @@ export async function startDiscussion(
   };
 
   discussions.set(opts.id, discussion);
-
-  await writeFile(filePath, buildFileHeader(discussion), 'utf8');
 
   void runDiscussion(discussion, onUpdate).catch((e) => {
     discussion.state = 'failed';
