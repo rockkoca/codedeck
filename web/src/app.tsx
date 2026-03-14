@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'preact/hooks';
 import { LoginPage } from './pages/LoginPage.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 import { SessionTabs } from './components/SessionTabs.js';
@@ -292,6 +292,17 @@ export function App() {
 
   // Timeline events for chat view
   const { events: timelineEvents, loading: timelineLoading, refreshing: timelineRefreshing } = useTimeline(activeSession, wsRef.current);
+
+  // Extract latest usage from timeline for the context bar in SessionControls
+  const lastUsage = useMemo(() => {
+    for (let i = timelineEvents.length - 1; i >= 0; i--) {
+      const e = timelineEvents[i];
+      if (e.type === 'usage.update' && e.payload.inputTokens) {
+        return e.payload as { inputTokens: number; cacheTokens: number; contextWindow: number; model?: string };
+      }
+    }
+    return null;
+  }, [timelineEvents]);
 
   // Set up WebSocket only when a server is selected
   useEffect(() => {
@@ -856,7 +867,7 @@ export function App() {
               </div>
             )}
 
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={scrollActiveToBottom} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={false} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={scrollActiveToBottom} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={false} lastUsage={lastUsage} />
 
             {/* Sub-session bar */}
             {selectedServerId && (

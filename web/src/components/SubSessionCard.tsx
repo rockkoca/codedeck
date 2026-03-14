@@ -153,7 +153,13 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
           const ctx = lastUsage.contextWindow || 1_000_000;
           const inputPct = Math.min(100, lastUsage.inputTokens / ctx * 100);
           const cachePct = Math.min(inputPct, lastUsage.cacheTokens / ctx * 100);
-          const tip = `${lastUsage.model ? lastUsage.model + ' · ' : ''}${lastUsage.inputTokens.toLocaleString()} / ${ctx.toLocaleString()} tokens · ${lastUsage.cacheTokens.toLocaleString()} cached`;
+          const pctStr = inputPct < 1 ? inputPct.toFixed(2) : inputPct.toFixed(1);
+          const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+          const tip = [
+            lastUsage.model ?? '',
+            `Input: ${fmt(lastUsage.inputTokens)} / ${fmt(ctx)} (${pctStr}%)`,
+            `Cache: ${fmt(lastUsage.cacheTokens)}`,
+          ].filter(Boolean).join('\n');
           return (
             <div class="subcard-ctx-bar" title={tip}>
               <div class="subcard-ctx-input" style={{ width: `${inputPct}%` }} />

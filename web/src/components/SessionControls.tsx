@@ -23,6 +23,8 @@ interface Props {
   detectedModel?: ModelChoice;
   /** Hide the shortcuts row (e.g. in chat mode). */
   hideShortcuts?: boolean;
+  /** Latest usage stats from JSONL for the active session. */
+  lastUsage?: { inputTokens: number; cacheTokens: number; contextWindow: number; model?: string } | null;
   /** Called after a message is sent — for local UX only (e.g. optimistic display). Does not emit timeline events. */
   onSend?: (sessionName: string, text: string) => void;
   /** Sub-session overrides — when set, menu actions use these instead of main session commands. */
@@ -68,7 +70,7 @@ function loadCodexModel(): CodexModelChoice | null {
   return null;
 }
 
-export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, lastUsage, onSend, onSubRestart, onSubNew, onSubStop }: Props) {
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -347,6 +349,28 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
             )}
           </div>
         )}
+        {/* Context usage bar */}
+        {lastUsage && (() => {
+          const ctx = lastUsage.contextWindow || 1_000_000;
+          const inputPct = Math.min(100, lastUsage.inputTokens / ctx * 100);
+          const cachePct = Math.min(inputPct, lastUsage.cacheTokens / ctx * 100);
+          const pctStr = inputPct < 1 ? inputPct.toFixed(2) : inputPct.toFixed(1);
+          const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+          const tip = [
+            lastUsage.model ?? '',
+            `Input: ${fmt(lastUsage.inputTokens)} / ${fmt(ctx)} (${pctStr}%)`,
+            `Cache: ${fmt(lastUsage.cacheTokens)}`,
+          ].filter(Boolean).join('\n');
+          return (
+            <div class="session-ctx-wrap" title={tip}>
+              <span class="session-ctx-label">{fmt(lastUsage.inputTokens)}</span>
+              <div class="session-ctx-bar">
+                <div class="session-ctx-input" style={{ width: `${inputPct}%` }} />
+                <div class="session-ctx-cache" style={{ width: `${cachePct}%` }} />
+              </div>
+            </div>
+          );
+        })()}
       </div>}
 
       {/* Main input row */}
