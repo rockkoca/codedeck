@@ -401,6 +401,8 @@ export class TerminalStreamer {
       if (wasIdle) {
         this.idleState.set(sessionName, false);
         timelineEmitter.emit(sessionName, 'session.state', { state: 'running' });
+        const sess = getSession(sessionName);
+        if (sess) upsertSession({ ...sess, state: 'running', updatedAt: Date.now() });
       }
       this.resetIdleTimer(sessionName);
     }
@@ -485,6 +487,8 @@ export class TerminalStreamer {
       if (!currentlyIdle) {
         this.idleState.set(sessionName, true);
         timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
+        const sess = getSession(sessionName);
+        if (sess) upsertSession({ ...sess, state: 'idle', updatedAt: Date.now() });
       }
     }, IDLE_THRESHOLD_MS);
     this.idleTimers.set(sessionName, timer);

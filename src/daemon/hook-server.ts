@@ -17,6 +17,7 @@ import path from 'path';
 import os from 'os';
 import logger from '../util/logger.js';
 import { timelineEmitter } from './timeline-emitter.js';
+import { getSession, upsertSession } from '../store/session-store.js';
 
 export const DEFAULT_HOOK_PORT = 51913;
 const PORT_FILE = path.join(os.homedir(), '.codedeck', 'hook-port');
@@ -110,6 +111,8 @@ export async function startHookServer(onHook: HookCallback): Promise<{ server: h
           logger.info({ session, agentType }, 'Hook: session idle');
           onHook({ event: 'idle', session, agentType });
           timelineEmitter.emit(session, 'session.state', { state: 'idle' }, { source: 'hook' });
+          const sess = getSession(session);
+          if (sess) upsertSession({ ...sess, state: 'idle', updatedAt: Date.now() });
         } else if (event === 'notification') {
           const title = (msg['title'] as string | undefined) ?? '';
           const message = (msg['message'] as string | undefined) ?? '';
