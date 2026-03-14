@@ -3,7 +3,7 @@
  * Manages 2-3 agent sub-sessions in a structured multi-round discussion with a final verdict.
  */
 
-import { sessionExists, sendKeys } from '../agent/tmux.js';
+import { sessionExists, sendKeysDelayedEnter } from '../agent/tmux.js';
 import { startSubSession, stopSubSession, readSubSessionResponse } from './subsession-manager.js';
 import { writeFile, mkdir, appendFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -181,7 +181,7 @@ async function generateTitle(sessionName: string, topic: string): Promise<string
     `Topic: ${topic}`,
   ].join('\n');
 
-  await sendKeys(sessionName, prompt);
+  await sendKeysDelayedEnter(sessionName, prompt);
   await waitForIdle(sessionName, 30_000);
 
   const result = await readSubSessionResponse(sessionName);
@@ -225,7 +225,7 @@ async function runDiscussion(
   // Switch CC model if specified
   for (const p of d.participants) {
     if (p.agentType === 'claude-code' && p.model) {
-      await sendKeys(p.sessionName, `/model ${p.model}`);
+      await sendKeysDelayedEnter(p.sessionName, `/model ${p.model}`);
       await waitForIdle(p.sessionName, 15_000).catch(() => {
         logger.warn({ sessionName: p.sessionName, model: p.model }, 'Model switch idle timeout, continuing anyway');
       });
@@ -270,7 +270,7 @@ async function runDiscussion(
 
       const prompt = buildRoundPrompt(d.filePath, participant, round, d.maxRounds);
 
-      await sendKeys(participant.sessionName, prompt);
+      await sendKeysDelayedEnter(participant.sessionName, prompt);
       await waitForIdle(participant.sessionName, IDLE_TIMEOUT);
 
       const result = await readSubSessionResponse(participant.sessionName);
@@ -303,7 +303,7 @@ async function runDiscussion(
 
   const verdictPrompt = buildVerdictPrompt(d.filePath, judge);
 
-  await sendKeys(judge.sessionName, verdictPrompt);
+  await sendKeysDelayedEnter(judge.sessionName, verdictPrompt);
   await waitForIdle(judge.sessionName, IDLE_TIMEOUT);
 
   const verdictResult = await readSubSessionResponse(judge.sessionName);
