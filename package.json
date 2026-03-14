@@ -1,5 +1,5 @@
 {
-  "name": "codedeck",
+  "name": "@codedeck/codedeck",
   "version": "0.1.0",
   "description": "Remote control AI coding agents (Claude Code, Codex, OpenCode) via chat platforms and web terminal",
   "license": "MIT",
