@@ -169,9 +169,33 @@ export function parseLine(sessionName: string, line: string, model?: string): vo
     return;
   }
 
+  if (evtType === 'agent_message' && payload['phase'] === 'commentary') {
+    // Tool-call interstitial commentary — emit immediately as streaming indicator
+    const text = payload['message'] as string | undefined;
+    if (!text?.trim()) return;
+    timelineEmitter.emit(sessionName, 'assistant.text',
+      { text: `_${text}_`, streaming: true },
+      { source: 'daemon', confidence: 'high' });
+    return;
+  }
+
+  if (evtType === 'agent_reasoning') {
+    // Model reasoning/thinking — emit as streaming indicator
+    const text = payload['message'] as string | undefined;
+    if (!text?.trim()) return;
+    timelineEmitter.emit(sessionName, 'assistant.text',
+      { text: `_${text}_`, streaming: true },
+      { source: 'daemon', confidence: 'high' });
+    return;
+  }
+
   if (evtType === 'agent_message' && payload['phase'] === 'final_answer') {
     const text = payload['message'] as string | undefined;
     if (!text?.trim()) return;
+    // Emit immediately as streaming update, debounce the final non-streaming emit
+    timelineEmitter.emit(sessionName, 'assistant.text',
+      { text, streaming: true },
+      { source: 'daemon', confidence: 'high' });
     // Debounce: buffer the latest snapshot and reset the timer
     const existing = finalAnswerBuffers.get(sessionName);
     if (existing) clearTimeout(existing.timer);

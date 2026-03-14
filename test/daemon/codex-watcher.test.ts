@@ -107,10 +107,19 @@ describe('parseLine — agent_message', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('emits assistant.text for final_answer phase after debounce', () => {
+  it('emits assistant.text streaming immediately, then final after debounce', () => {
     parseLine('session-b', agentMessageLine('Here is my answer', 'final_answer'));
-    expect(timelineEmitter.emit).not.toHaveBeenCalled(); // still buffered
+    // Streaming emit happens immediately
+    expect(timelineEmitter.emit).toHaveBeenCalledOnce();
+    expect(timelineEmitter.emit).toHaveBeenCalledWith(
+      'session-b',
+      'assistant.text',
+      { text: 'Here is my answer', streaming: true },
+      { source: 'daemon', confidence: 'high' },
+    );
+    vi.mocked(timelineEmitter.emit).mockClear();
     vi.runAllTimers();
+    // Final non-streaming emit after debounce
     expect(timelineEmitter.emit).toHaveBeenCalledOnce();
     expect(timelineEmitter.emit).toHaveBeenCalledWith(
       'session-b',
@@ -120,11 +129,15 @@ describe('parseLine — agent_message', () => {
     );
   });
 
-  it('only emits the last snapshot when multiple final_answer events arrive rapidly', () => {
+  it('streams each token, only final debounce emits streaming:false', () => {
     parseLine('session-b', agentMessageLine('Work', 'final_answer'));
     parseLine('session-b', agentMessageLine('Working', 'final_answer'));
     parseLine('session-b', agentMessageLine('Working on it', 'final_answer'));
+    // 3 streaming emits happened immediately
+    expect(timelineEmitter.emit).toHaveBeenCalledTimes(3);
+    vi.mocked(timelineEmitter.emit).mockClear();
     vi.runAllTimers();
+    // Only last value emitted as streaming:false
     expect(timelineEmitter.emit).toHaveBeenCalledOnce();
     expect(timelineEmitter.emit).toHaveBeenCalledWith(
       'session-b',
@@ -134,10 +147,16 @@ describe('parseLine — agent_message', () => {
     );
   });
 
-  it('does NOT emit for commentary phase', () => {
+  it('emits commentary phase as streaming:true immediately', () => {
     parseLine('session-b', agentMessageLine('Working on it...', 'commentary'));
     vi.runAllTimers();
-    expect(timelineEmitter.emit).not.toHaveBeenCalled();
+    expect(timelineEmitter.emit).toHaveBeenCalledOnce();
+    expect(timelineEmitter.emit).toHaveBeenCalledWith(
+      'session-b',
+      'assistant.text',
+      { text: '_Working on it..._', streaming: true },
+      expect.any(Object),
+    );
   });
 
   it('does NOT emit for empty final_answer text', () => {
@@ -321,9 +340,12 @@ describe('startWatching — file-based integration', () => {
     vi.runAllTimers();
     vi.useRealTimers();
 
-    expect(timelineEmitter.emit).toHaveBeenCalledTimes(2);
+    // user.message + commentary (streaming) + final_answer (streaming) + final_answer (debounced non-streaming)
+    expect(timelineEmitter.emit).toHaveBeenCalledTimes(4);
     expect(vi.mocked(timelineEmitter.emit).mock.calls[0][1]).toBe('user.message');
-    expect(vi.mocked(timelineEmitter.emit).mock.calls[1][1]).toBe('assistant.text');
+    expect(vi.mocked(timelineEmitter.emit).mock.calls[1][1]).toBe('assistant.text'); // final_answer streaming
+    expect(vi.mocked(timelineEmitter.emit).mock.calls[2][1]).toBe('assistant.text'); // commentary streaming
+    expect(vi.mocked(timelineEmitter.emit).mock.calls[3][1]).toBe('assistant.text'); // final debounced
   });
 
   it('multiple sessions with different workDirs are isolated', async () => {
