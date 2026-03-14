@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../env.js';
-import { getServersByUserId, updateServerHeartbeat, updateServerName, upsertChannelBinding } from '../db/queries.js';
+import { getServersByUserId, updateServerHeartbeat, updateServerName, deleteServer, upsertChannelBinding } from '../db/queries.js';
+import { WsBridge } from '../ws/bridge.js';
 import { sha256Hex, randomHex } from '../security/crypto.js';
 import { requireAuth } from '../security/authorization.js';
 import { z } from 'zod';
@@ -33,6 +34,21 @@ serverRoutes.patch('/:id/name', requireAuth(), async (c) => {
 
   const updated = await updateServerName(c.env.DB, serverId, userId, parsed.data.name.trim());
   if (!updated) return c.json({ error: 'not_found' }, 404);
+  return c.json({ ok: true });
+});
+
+// DELETE /api/server/:id — delete a server (user must own it); notifies daemon to self-destruct first
+serverRoutes.delete('/:id', requireAuth(), async (c) => {
+  const userId = c.get('userId' as never) as string;
+  const serverId = c.req.param('id') ?? '';
+
+  // Notify daemon to self-destruct (best-effort — daemon may be offline)
+  try {
+    WsBridge.get(serverId).sendToDaemon(JSON.stringify({ type: 'server.delete' }));
+  } catch { /* daemon may be offline, continue with DB deletion */ }
+
+  const deleted = await deleteServer(c.env.DB, serverId, userId);
+  if (!deleted) return c.json({ error: 'not_found' }, 404);
   return c.json({ ok: true });
 });
 

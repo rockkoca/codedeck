@@ -212,6 +212,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
     case 'discussion.list':
       handleDiscussionList(serverLink);
       break;
+    case 'server.delete':
+      void handleServerDelete();
+      break;
     case 'auth_ok':
     case 'heartbeat':
     case 'heartbeat_ack':
@@ -801,4 +804,35 @@ async function handleDiscussionStop(cmd: Record<string, unknown>): Promise<void>
   await stopDiscussion(discussionId).catch((e: unknown) =>
     logger.error({ err: e, discussionId }, 'discussion.stop failed'),
   );
+}
+
+/** server.delete — remove credentials + service, then exit */
+async function handleServerDelete(): Promise<void> {
+  const { homedir } = await import('os');
+  const { join } = await import('path');
+  const { unlink, access } = await import('fs/promises');
+  const { execSync } = await import('child_process');
+
+  logger.info('server.delete received — self-destructing daemon');
+
+  const credsPath = join(homedir(), '.codedeck', 'server.json');
+  try { await unlink(credsPath); } catch { /* already gone */ }
+
+  // Uninstall system service so daemon doesn't restart
+  if (process.platform === 'darwin') {
+    const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'codedeck.daemon.plist');
+    try {
+      await access(plistPath);
+      execSync(`launchctl unload "${plistPath}" 2>/dev/null`, { stdio: 'ignore' });
+      await unlink(plistPath);
+    } catch { /* not installed or already removed */ }
+  } else if (process.platform === 'linux') {
+    try {
+      execSync('systemctl --user disable --now codedeck 2>/dev/null', { stdio: 'ignore' });
+    } catch { /* not installed */ }
+  }
+
+  logger.info('Daemon unbound — exiting');
+  // Give the log a moment to flush before exiting
+  setTimeout(() => process.exit(0), 500);
 }

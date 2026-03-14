@@ -12,6 +12,7 @@ import { SubSessionWindow } from './components/SubSessionWindow.js';
 import { StartSubSessionDialog } from './components/StartSubSessionDialog.js';
 import { StartDiscussionDialog, type DiscussionPrefs, type SubSessionOption } from './components/StartDiscussionDialog.js';
 import { AskQuestionDialog, type PendingQuestion } from './components/AskQuestionDialog.js';
+import { ServerContextMenu, DeleteServerDialog } from './components/ServerContextMenu.js';
 import { DiscussionsPage } from './pages/DiscussionsPage.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
@@ -60,6 +61,8 @@ export function App() {
     () => localStorage.getItem('rcc_server_name'),
   );
   const [showMobileServerMenu, setShowMobileServerMenu] = useState(false);
+  const [serverCtxMenu, setServerCtxMenu] = useState<{ server: ServerInfo; x: number; y: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ServerInfo | null>(null);
 
   // Keep layout height within visual viewport on mobile (keyboard-aware)
   useEffect(() => {
@@ -117,6 +120,20 @@ export function App() {
         localStorage.setItem('rcc_server_name', newName.trim());
       }
     } catch { /* ignore */ }
+  }, [selectedServerId]);
+
+  const handleDeleteServer = useCallback(async (server: ServerInfo) => {
+    try {
+      await apiFetch(`/api/server/${server.id}`, { method: 'DELETE' });
+      setServers((prev) => prev.filter((s) => s.id !== server.id));
+      if (server.id === selectedServerId) {
+        setSelectedServerId(null);
+        setSelectedServerName(null);
+        localStorage.removeItem('rcc_server');
+        localStorage.removeItem('rcc_server_name');
+      }
+    } catch { /* ignore */ }
+    setDeleteTarget(null);
   }, [selectedServerId]);
 
   // Load servers list whenever auth is available
@@ -732,7 +749,7 @@ export function App() {
                 key={server.id}
                 class={`server-item${server.id === selectedServerId ? ' active' : ''}${online ? '' : ' offline'}`}
                 onClick={() => handleSelectServer(server.id, server.name)}
-                onContextMenu={(e) => { e.preventDefault(); handleRenameServer(server); }}
+                onContextMenu={(e) => { e.preventDefault(); setServerCtxMenu({ server, x: e.clientX, y: e.clientY }); }}
               >
                 <span class="server-item-dot" style={{ color: online ? '#4ade80' : '#475569' }}>
                   {online ? '●' : '○'}
@@ -1012,6 +1029,25 @@ export function App() {
             setPendingQuestion(null);
           }}
           onDismiss={() => setPendingQuestion(null)}
+        />
+      )}
+
+      {serverCtxMenu && (
+        <ServerContextMenu
+          x={serverCtxMenu.x}
+          y={serverCtxMenu.y}
+          serverName={serverCtxMenu.server.name}
+          onRename={() => handleRenameServer(serverCtxMenu.server)}
+          onDelete={() => setDeleteTarget(serverCtxMenu.server)}
+          onClose={() => setServerCtxMenu(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteServerDialog
+          serverName={deleteTarget.name}
+          onConfirm={() => handleDeleteServer(deleteTarget)}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
 
