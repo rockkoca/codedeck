@@ -553,12 +553,10 @@ function handleTimelineHistory(cmd: Record<string, unknown>, serverLink: ServerL
     return;
   }
 
-  // Read more than requested so dedup doesn't shrink the set too aggressively
+  // Read more than requested so dedup doesn't shrink the set too aggressively.
+  // Do NOT filter by epoch — history should include events across daemon restarts.
   const readLimit = Math.min(limit * 4, 2000);
-  let events = timelineStore.read(sessionName, { epoch: timelineEmitter.epoch, limit: readLimit });
-  if (events.length === 0) {
-    events = timelineStore.read(sessionName, { limit: readLimit });
-  }
+  const events = timelineStore.read(sessionName, { limit: readLimit });
 
   // Deduplicate consecutive session.state events — keep only the last in each run.
   // This prevents idle↔running oscillation storms from crowding out user.message events.

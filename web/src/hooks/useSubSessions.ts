@@ -65,23 +65,33 @@ export function useSubSessions(
     if (!connected) rebuiltRef.current = false;
   }, [connected]);
 
-  // Listen for session.state timeline events to update sub-session state
+  // Listen for session state changes to update sub-session state
   useEffect(() => {
     if (!ws) return;
     return ws.onMessage((msg) => {
-      if (msg.type !== 'timeline.event') return;
-      const ev = msg.event;
-      if (ev.type !== 'session.state') return;
-      const state = String(ev.payload.state ?? '');
+      let sessionName: string | undefined;
+      let state: string | undefined;
+
+      if (msg.type === 'timeline.event') {
+        const ev = msg.event;
+        if (ev.type !== 'session.state') return;
+        state = String(ev.payload.state ?? '');
+        sessionName = ev.sessionId;
+      } else if (msg.type === 'session.idle') {
+        state = 'idle';
+        sessionName = msg.session as string | undefined;
+      } else {
+        return;
+      }
+
+      if (!sessionName || !sessionName.startsWith('deck_sub_')) return;
       if (state !== 'idle' && state !== 'running') return;
-      const sessionName = ev.sessionId;
-      if (!sessionName.startsWith('deck_sub_')) return;
       setSubSessions((prev) => {
         const idx = prev.findIndex((s) => s.sessionName === sessionName);
         if (idx === -1) return prev;
         if (prev[idx].state === state) return prev;
         const next = [...prev];
-        next[idx] = { ...next[idx], state };
+        next[idx] = { ...next[idx], state: state as SubSession['state'] };
         return next;
       });
     });

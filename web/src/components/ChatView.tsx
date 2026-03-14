@@ -219,9 +219,11 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     };
   }, []);
 
-  // Expose scroll-to-bottom so parent can force-snap after sending a message
+  // Expose scroll-to-bottom so parent can force-snap after sending a message.
+  // Also scroll immediately on mount (e.g. when switching terminal→chat).
   useEffect(() => {
     onScrollBottomFn?.(scrollToBottom);
+    scrollToBottom();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onScrollBottomFn]);
 
