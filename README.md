@@ -5,7 +5,7 @@ Remote control AI coding agents (Claude Code, Codex, OpenCode) via Discord, Tele
 ## Install
 
 ```bash
-npm install -g codedeck
+npm install -g @codedeck/codedeck
 ```
 
 ## Quick Start

@@ -35,7 +35,6 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.59.0",
     "commander": "^12.1.0",
     "octokit": "^4.0.2",
     "pino": "^9.5.0",
