@@ -1036,7 +1036,6 @@ export function App() {
         <ServerContextMenu
           x={serverCtxMenu.x}
           y={serverCtxMenu.y}
-          serverName={serverCtxMenu.server.name}
           onRename={() => handleRenameServer(serverCtxMenu.server)}
           onDelete={() => setDeleteTarget(serverCtxMenu.server)}
           onClose={() => setServerCtxMenu(null)}

@@ -3,13 +3,12 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 interface Props {
   x: number;
   y: number;
-  serverName: string;
   onRename: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
 
-export function ServerContextMenu({ x, y, serverName, onRename, onDelete, onClose }: Props) {
+export function ServerContextMenu({ x, y, onRename, onDelete, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
