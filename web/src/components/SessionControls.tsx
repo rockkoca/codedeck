@@ -284,7 +284,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
   const placeholder = !hasSession ? 'No session' : !connected ? `Reconnecting… (send queued)` : `Send to ${sessionDisplayName ?? activeSession?.name ?? 'session'}…`;
 
   return (
-    <div class="controls-wrapper">
+    <div class={`controls-wrapper${activeSession?.state === 'running' ? ' controls-wrapper-running' : ''}`}>
       {/* Shortcut row — hidden in chat mode */}
       {!hideShortcuts && <div class="shortcuts-row">
         <div class="shortcuts">

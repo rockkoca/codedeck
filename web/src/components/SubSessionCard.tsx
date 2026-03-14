@@ -138,7 +138,7 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
 
   return (
     <div
-      class={`subcard${isOpen ? ' subcard-open' : ''}`}
+      class={`subcard${isOpen ? ' subcard-open' : ''}${sub.state === 'running' ? ' subcard-running-pulse' : ''}`}
       style={{ width: effectiveW, height: cardH, minWidth: effectiveW, position: 'relative' }}
       onClick={() => { if (!draggingRef.current) onOpen(); }}
     >
