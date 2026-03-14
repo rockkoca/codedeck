@@ -9,36 +9,27 @@ export const githubAuthRoutes = new Hono<{ Bindings: Env; Variables: { userId: s
 // GET /api/auth/github — redirect to GitHub OAuth
 // ?reauth=1 → forces GitHub login page (prevents auto-login after logout)
 githubAuthRoutes.get('/', async (c): Promise<Response> => {
-  // Enhanced origin detection:
-  // 1. X-Forwarded-Host (set by your HK proxy)
-  // 2. Host header (direct or standard proxy)
-  // 3. Referer (if this is a navigation from the login page)
-  const forwardedHost = c.req.header('x-forwarded-host');
-  const currentHost = c.req.header('host');
-  const referer = c.req.header('referer');
-  
-  let detectedHost = forwardedHost ?? currentHost;
-  
-  // If we suspect we are being proxied to the main domain (Cloudflare setup),
-  // check if referer gives us a hint of the original domain.
-  if (referer && detectedHost === new URL(c.env.SERVER_URL).host) {
-    try {
-      const refUrl = new URL(referer);
-      // Only trust the referer if it's an allowed origin
-      const allowed = (c.env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim());
-      const refOrigin = `${refUrl.protocol}//${refUrl.host}`;
-      if (allowed.includes(refOrigin)) {
-        detectedHost = refUrl.host;
-      }
-    } catch { /* ignore invalid referer */ }
-  }
-
+  const host = c.req.header('x-forwarded-host') ?? c.req.header('host');
   const protocol = c.env.NODE_ENV === 'production' ? 'https' : (c.req.header('x-forwarded-proto') ?? 'http');
-  const origin = detectedHost ? `${protocol}://${detectedHost}` : c.env.SERVER_URL;
+  const currentOrigin = host ? `${protocol}://${host}` : c.env.SERVER_URL;
+  
+  // Use the origin from query param if provided (from a relay), otherwise detect it.
+  const targetOrigin = c.req.query('origin') ?? currentOrigin;
+
+  // --- Login Start Relay ---
+  // If we are NOT on the main SERVER_URL domain, we must redirect to the main domain
+  // so that the 'oauth_state' cookie is set on the correct domain for the callback.
+  const serverUrlObj = new URL(c.env.SERVER_URL);
+  if (host && host !== serverUrlObj.host && !c.req.query('origin')) {
+    const relayUrl = new URL(`${c.env.SERVER_URL}/api/auth/github`);
+    relayUrl.searchParams.set('origin', targetOrigin);
+    if (c.req.query('reauth') === '1') relayUrl.searchParams.set('reauth', '1');
+    return c.redirect(relayUrl.toString());
+  }
 
   // Task 3: state = JWT containing nonce; nonce also stored in HttpOnly cookie for binding
   const stateValue = randomHex(32);
-  const stateJwt = signJwt({ nonce: stateValue, origin }, c.env.JWT_SIGNING_KEY, 600);
+  const stateJwt = signJwt({ nonce: stateValue, origin: targetOrigin }, c.env.JWT_SIGNING_KEY, 600);
 
   const isSecure = c.env.NODE_ENV === 'production' || protocol === 'https';
   setCookie(c, 'oauth_state', stateValue, {
