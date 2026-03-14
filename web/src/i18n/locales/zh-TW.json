@@ -1,0 +1,112 @@
+{
+  "common": {
+    "cancel": "取消",
+    "confirm": "確認",
+    "loading": "載入中…",
+    "send": "傳送",
+    "rename": "重新命名",
+    "delete": "刪除",
+    "close": "關閉",
+    "copy": "複製",
+    "copied": "已複製！",
+    "generating": "生成中...",
+    "starting": "啟動中...",
+    "yes": "是",
+    "connected": "已連線",
+    "disconnected": "已斷線",
+    "reconnecting": "重新連線中…"
+  },
+  "chat": {
+    "loading": "載入對話中...",
+    "syncing": "↻ 同步中...",
+    "no_events": "尚無事件",
+    "session_state": "Session {{state}}"
+  },
+  "session": {
+    "restart": "↺ 重新啟動",
+    "confirm_restart": "確認重新啟動？",
+    "new": "+ 新建",
+    "confirm_new": "確認新建？",
+    "stop": "✕ 停止",
+    "confirm_stop": "確認停止？",
+    "rename": "✎ 重新命名",
+    "no_session": "無 Session",
+    "send_queued": "重新連線中… (訊息已排隊)",
+    "send_placeholder": "傳送給 {{name}}…",
+    "actions": "Session 操作",
+    "new_btn": "新建 Session"
+  },
+  "server": {
+    "upgrade_daemon": "↑ 升級 Daemon",
+    "delete": "✕ 刪除伺服器",
+    "upgrade_sent": "升級指令已傳送至「{{name}}」，Daemon 將安裝最新版本並重新啟動。",
+    "upgrade_failed": "傳送升級指令失敗，Daemon 可能已離線。",
+    "delete_title": "刪除伺服器：{{name}}",
+    "delete_warning": "此操作將從伺服器移除所有綁定與 Session 記錄，並通知 Daemon 停止並刪除本機憑證。",
+    "delete_tmux_note": "tmux sessions 不會被關閉",
+    "delete_tmux_suffix": "，但 Daemon 將不再自動啟動。",
+    "delete_confirm_prompt": "請輸入伺服器名稱以確認刪除：",
+    "delete_confirm": "確認刪除"
+  },
+  "quick_input": {
+    "title": "快速輸入",
+    "commands": "快速指令",
+    "phrases": "快速短語",
+    "history": "歷史記錄",
+    "this_session": "本 Session",
+    "all": "全部",
+    "no_history_session": "本 Session 暫無歷史記錄",
+    "no_history": "尚無歷史記錄 — 訊息將自動儲存",
+    "clear_history": "清除歷史記錄",
+    "add_command": "＋ 指令",
+    "add_phrase": "＋ 短語",
+    "label_command": "指令",
+    "label_phrase": "短語",
+    "placeholder_phrase": "修復此問題",
+    "newer": "← 較新",
+    "older": "較舊 →",
+    "loading": "載入中…"
+  },
+  "toast": {
+    "finished": "完成"
+  },
+  "discussion": {
+    "role_critic": "評論者",
+    "role_pragmatist": "務實者",
+    "role_innovator": "創新者",
+    "role_custom": "自訂...",
+    "arbiter": "仲裁者",
+    "arbiter_active": "⚖️ 仲裁者"
+  },
+  "new_session": {
+    "project_required": "專案名稱為必填",
+    "dir_required": "工作目錄為必填",
+    "not_connected": "未連線至 Daemon",
+    "daemon_offline": "Daemon 已離線 — 請確認 codedeck daemon 正在執行",
+    "start": "啟動",
+    "starting": "啟動中...",
+    "timeout": "等待 Session 啟動逾時，請查看 Daemon 日誌。"
+  },
+  "api_key": {
+    "copy": "複製",
+    "copied": "已複製！",
+    "label_placeholder": "標籤（選填）",
+    "generate": "生成金鑰",
+    "generating": "生成中...",
+    "revoke": "撤銷"
+  },
+  "getting_started": {
+    "step1_pending": "步驟 1：生成 API 金鑰",
+    "step1_done": "✓ 步驟 1：API 金鑰已就緒"
+  },
+  "language": {
+    "label": "語言",
+    "en": "English",
+    "zh_CN": "中文（简体）",
+    "zh_TW": "中文（繁體）",
+    "es": "Español",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ko": "한국어"
+  }
+}

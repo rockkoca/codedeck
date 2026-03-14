@@ -1,0 +1,112 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "loading": "Loading…",
+    "send": "Send",
+    "rename": "Rename",
+    "delete": "Delete",
+    "close": "Close",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "generating": "Generating...",
+    "starting": "Starting...",
+    "yes": "yes",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "reconnecting": "Reconnecting…"
+  },
+  "chat": {
+    "loading": "Loading chat...",
+    "syncing": "↻ Syncing...",
+    "no_events": "No events yet",
+    "session_state": "Session {{state}}"
+  },
+  "session": {
+    "restart": "↺ Restart",
+    "confirm_restart": "Confirm restart?",
+    "new": "+ New",
+    "confirm_new": "Confirm new?",
+    "stop": "✕ Stop",
+    "confirm_stop": "Confirm stop?",
+    "rename": "✎ Rename",
+    "no_session": "No session",
+    "send_queued": "Reconnecting… (send queued)",
+    "send_placeholder": "Send to {{name}}…",
+    "actions": "Session actions",
+    "new_btn": "New session"
+  },
+  "server": {
+    "upgrade_daemon": "↑ Upgrade Daemon",
+    "delete": "✕ Delete server",
+    "upgrade_sent": "Upgrade command sent to \"{{name}}\". The daemon will install the latest version and restart.",
+    "upgrade_failed": "Failed to send upgrade command. The daemon may be offline.",
+    "delete_title": "Delete server: {{name}}",
+    "delete_warning": "This will remove all bindings and session records from the server, and notify the daemon to stop and delete local credentials.",
+    "delete_tmux_note": "tmux sessions will not be closed",
+    "delete_tmux_suffix": ", but the daemon will no longer auto-start.",
+    "delete_confirm_prompt": "Type the server name to confirm deletion:",
+    "delete_confirm": "Confirm Delete"
+  },
+  "quick_input": {
+    "title": "Quick input",
+    "commands": "Quick Commands",
+    "phrases": "Quick Phrases",
+    "history": "History",
+    "this_session": "This Session",
+    "all": "All",
+    "no_history_session": "No history for this session",
+    "no_history": "No history yet — messages are saved automatically",
+    "clear_history": "Clear history",
+    "add_command": "＋ Command",
+    "add_phrase": "＋ Phrase",
+    "label_command": "Command",
+    "label_phrase": "Phrase",
+    "placeholder_phrase": "fix this issue",
+    "newer": "← Newer",
+    "older": "Older →",
+    "loading": "Loading…"
+  },
+  "toast": {
+    "finished": "finished"
+  },
+  "discussion": {
+    "role_critic": "Critic",
+    "role_pragmatist": "Pragmatist",
+    "role_innovator": "Innovator",
+    "role_custom": "Custom...",
+    "arbiter": "Arbiter",
+    "arbiter_active": "⚖️ Arbiter"
+  },
+  "new_session": {
+    "project_required": "Project name is required",
+    "dir_required": "Working directory is required",
+    "not_connected": "Not connected to daemon",
+    "daemon_offline": "Daemon is offline — check that codedeck daemon is running",
+    "start": "Start",
+    "starting": "Starting...",
+    "timeout": "Timed out waiting for session to start. Check daemon logs."
+  },
+  "api_key": {
+    "copy": "Copy",
+    "copied": "Copied!",
+    "label_placeholder": "Label (optional)",
+    "generate": "Generate Key",
+    "generating": "Generating...",
+    "revoke": "Revoke"
+  },
+  "getting_started": {
+    "step1_pending": "Step 1: Generate an API Key",
+    "step1_done": "✓ Step 1: API Key ready"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "zh_CN": "中文（简体）",
+    "zh_TW": "中文（繁體）",
+    "es": "Español",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ko": "한국어"
+  }
+}

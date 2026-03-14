@@ -1,0 +1,112 @@
+{
+  "common": {
+    "cancel": "取消",
+    "confirm": "确认",
+    "loading": "加载中…",
+    "send": "发送",
+    "rename": "重命名",
+    "delete": "删除",
+    "close": "关闭",
+    "copy": "复制",
+    "copied": "已复制！",
+    "generating": "生成中...",
+    "starting": "启动中...",
+    "yes": "是",
+    "connected": "已连接",
+    "disconnected": "已断开",
+    "reconnecting": "重新连接中…"
+  },
+  "chat": {
+    "loading": "加载聊天记录中...",
+    "syncing": "↻ 同步最新消息...",
+    "no_events": "暂无消息",
+    "session_state": "会话 {{state}}"
+  },
+  "session": {
+    "restart": "↺ 重启",
+    "confirm_restart": "确认重启?",
+    "new": "+ 新建",
+    "confirm_new": "确认新建?",
+    "stop": "✕ 停止",
+    "confirm_stop": "确认停止?",
+    "rename": "✎ 重命名",
+    "no_session": "无会话",
+    "send_queued": "重连中… (消息已排队)",
+    "send_placeholder": "发送到 {{name}}…",
+    "actions": "会话操作",
+    "new_btn": "新建会话"
+  },
+  "server": {
+    "upgrade_daemon": "↑ 升级 Daemon",
+    "delete": "✕ 删除 server",
+    "upgrade_sent": "升级命令已发送到「{{name}}」，daemon 将自动安装最新版并重启。",
+    "upgrade_failed": "发送失败，daemon 可能不在线。",
+    "delete_title": "删除 server：{{name}}",
+    "delete_warning": "这将从服务器删除所有绑定、会话记录，并通知 daemon 停止运行并删除本地凭据。",
+    "delete_tmux_note": "tmux 会话不会被关闭",
+    "delete_tmux_suffix": "，但 daemon 将不再自动启动。",
+    "delete_confirm_prompt": "输入 server 名称确认删除：",
+    "delete_confirm": "确认删除"
+  },
+  "quick_input": {
+    "title": "快捷输入",
+    "commands": "快捷命令",
+    "phrases": "快捷短语",
+    "history": "历史记录",
+    "this_session": "本 Session",
+    "all": "全部",
+    "no_history_session": "本 Session 暂无历史",
+    "no_history": "暂无历史，发送消息后自动保存",
+    "clear_history": "清空历史",
+    "add_command": "＋ 命令",
+    "add_phrase": "＋ 短语",
+    "label_command": "命令",
+    "label_phrase": "短语",
+    "placeholder_phrase": "修复这个问题",
+    "newer": "← 较新",
+    "older": "较旧 →",
+    "loading": "加载中…"
+  },
+  "toast": {
+    "finished": "完成了"
+  },
+  "discussion": {
+    "role_critic": "批判者",
+    "role_pragmatist": "实用主义者",
+    "role_innovator": "创新者",
+    "role_custom": "自定义...",
+    "arbiter": "裁决者",
+    "arbiter_active": "⚖️ 裁决者"
+  },
+  "new_session": {
+    "project_required": "项目名称不能为空",
+    "dir_required": "工作目录不能为空",
+    "not_connected": "未连接到 daemon",
+    "daemon_offline": "Daemon 离线 — 请确认 codedeck daemon 正在运行",
+    "start": "启动",
+    "starting": "启动中...",
+    "timeout": "等待会话启动超时，请检查 daemon 日志。"
+  },
+  "api_key": {
+    "copy": "复制",
+    "copied": "已复制！",
+    "label_placeholder": "标签（可选）",
+    "generate": "生成 Key",
+    "generating": "生成中...",
+    "revoke": "撤销"
+  },
+  "getting_started": {
+    "step1_pending": "步骤 1：生成 API Key",
+    "step1_done": "✓ 步骤 1：API Key 已就绪"
+  },
+  "language": {
+    "label": "语言",
+    "en": "English",
+    "zh_CN": "中文（简体）",
+    "zh_TW": "中文（繁體）",
+    "es": "Español",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ko": "한국어"
+  }
+}

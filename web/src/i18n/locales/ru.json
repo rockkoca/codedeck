@@ -1,0 +1,112 @@
+{
+  "common": {
+    "cancel": "Отмена",
+    "confirm": "Подтвердить",
+    "loading": "Загрузка…",
+    "send": "Отправить",
+    "rename": "Переименовать",
+    "delete": "Удалить",
+    "close": "Закрыть",
+    "copy": "Копировать",
+    "copied": "Скопировано!",
+    "generating": "Генерация...",
+    "starting": "Запуск...",
+    "yes": "да",
+    "connected": "Подключено",
+    "disconnected": "Отключено",
+    "reconnecting": "Переподключение…"
+  },
+  "chat": {
+    "loading": "Загрузка чата...",
+    "syncing": "↻ Синхронизация...",
+    "no_events": "Событий пока нет",
+    "session_state": "Сессия {{state}}"
+  },
+  "session": {
+    "restart": "↺ Перезапустить",
+    "confirm_restart": "Подтвердить перезапуск?",
+    "new": "+ Новая",
+    "confirm_new": "Подтвердить создание?",
+    "stop": "✕ Остановить",
+    "confirm_stop": "Подтвердить остановку?",
+    "rename": "✎ Переименовать",
+    "no_session": "Нет сессии",
+    "send_queued": "Переподключение… (отправка в очереди)",
+    "send_placeholder": "Отправить в {{name}}…",
+    "actions": "Действия с сессией",
+    "new_btn": "Новая сессия"
+  },
+  "server": {
+    "upgrade_daemon": "↑ Обновить Daemon",
+    "delete": "✕ Удалить сервер",
+    "upgrade_sent": "Команда обновления отправлена в \"{{name}}\". Daemon установит последнюю версию и перезапустится.",
+    "upgrade_failed": "Не удалось отправить команду обновления. Daemon может быть отключён.",
+    "delete_title": "Удалить сервер: {{name}}",
+    "delete_warning": "Это удалит все привязки и записи сессий с сервера, а также уведомит daemon об остановке и удалении локальных учётных данных.",
+    "delete_tmux_note": "Сессии tmux не будут закрыты",
+    "delete_tmux_suffix": ", но daemon больше не будет запускаться автоматически.",
+    "delete_confirm_prompt": "Введите имя сервера для подтверждения удаления:",
+    "delete_confirm": "Подтвердить удаление"
+  },
+  "quick_input": {
+    "title": "Быстрый ввод",
+    "commands": "Быстрые команды",
+    "phrases": "Быстрые фразы",
+    "history": "История",
+    "this_session": "Эта сессия",
+    "all": "Все",
+    "no_history_session": "История для этой сессии отсутствует",
+    "no_history": "Истории пока нет — сообщения сохраняются автоматически",
+    "clear_history": "Очистить историю",
+    "add_command": "＋ Команда",
+    "add_phrase": "＋ Фраза",
+    "label_command": "Команда",
+    "label_phrase": "Фраза",
+    "placeholder_phrase": "исправить эту проблему",
+    "newer": "← Новее",
+    "older": "Старее →",
+    "loading": "Загрузка…"
+  },
+  "toast": {
+    "finished": "завершено"
+  },
+  "discussion": {
+    "role_critic": "Критик",
+    "role_pragmatist": "Прагматик",
+    "role_innovator": "Новатор",
+    "role_custom": "Пользовательская...",
+    "arbiter": "Арбитр",
+    "arbiter_active": "⚖️ Арбитр"
+  },
+  "new_session": {
+    "project_required": "Название проекта обязательно",
+    "dir_required": "Рабочий каталог обязателен",
+    "not_connected": "Не подключено к daemon",
+    "daemon_offline": "Daemon не в сети — убедитесь, что codedeck daemon запущен",
+    "start": "Запустить",
+    "starting": "Запуск...",
+    "timeout": "Истекло время ожидания запуска сессии. Проверьте журналы daemon."
+  },
+  "api_key": {
+    "copy": "Копировать",
+    "copied": "Скопировано!",
+    "label_placeholder": "Метка (необязательно)",
+    "generate": "Сгенерировать ключ",
+    "generating": "Генерация...",
+    "revoke": "Отозвать"
+  },
+  "getting_started": {
+    "step1_pending": "Шаг 1: Сгенерируйте API-ключ",
+    "step1_done": "✓ Шаг 1: API-ключ готов"
+  },
+  "language": {
+    "label": "Язык",
+    "en": "English",
+    "zh_CN": "中文（简体）",
+    "zh_TW": "中文（繁體）",
+    "es": "Español",
+    "ru": "Русский",
+    "ja": "日本語",
+    "ko": "한국어"
+  }
+}
