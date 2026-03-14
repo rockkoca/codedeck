@@ -151,3 +151,21 @@ export async function patchSubSession(
 export async function deleteSubSession(serverId: string, subId: string): Promise<void> {
   await apiFetch(`/api/server/${serverId}/sub-sessions/${subId}`, { method: 'DELETE' });
 }
+
+// ── User preferences ───────────────────────────────────────────────────────
+
+export async function getUserPref(key: string): Promise<unknown | null> {
+  try {
+    const res = await apiFetch<{ value: unknown }>(`/api/preferences/${key}`);
+    return res.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveUserPref(key: string, value: unknown): Promise<void> {
+  await apiFetch(`/api/preferences/${key}`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+  });
+}

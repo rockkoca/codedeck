@@ -197,6 +197,15 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
     case 'subsession.set_model':
       void handleSubSessionSetModel(cmd);
       break;
+    case 'discussion.start':
+      void handleDiscussionStart(cmd, serverLink);
+      break;
+    case 'discussion.status':
+      handleDiscussionStatus(cmd, serverLink);
+      break;
+    case 'discussion.stop':
+      void handleDiscussionStop(cmd);
+      break;
     case 'auth_ok':
     case 'heartbeat':
     case 'heartbeat_ack':
@@ -638,4 +647,102 @@ async function handleSubSessionReadResponse(cmd: Record<string, unknown>, server
   try {
     serverLink.send({ type: 'subsession.response', sessionName: sName, ...result });
   } catch { /* not connected */ }
+}
+
+// ── Discussion handlers ────────────────────────────────────────────────────
+
+async function handleDiscussionStart(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
+  const topic = cmd.topic as string | undefined;
+  const cwd = cmd.cwd as string | undefined;
+  const requestId = cmd.requestId as string | undefined;
+  const rawParticipants = cmd.participants as Array<Record<string, unknown>> | undefined;
+
+  if (!topic || !rawParticipants || rawParticipants.length < 2) {
+    logger.warn('discussion.start: missing required fields');
+    try { serverLink.send({ type: 'discussion.error', requestId, error: 'missing_fields' }); } catch { /* ignore */ }
+    return;
+  }
+
+  const { startDiscussion } = await import('./discussion-orchestrator.js');
+
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  const participants = rawParticipants.map((p) => ({
+    agentType: (p.agentType as string) ?? 'claude-code',
+    model: p.model as string | undefined,
+    roleId: (p.roleId as string) ?? 'custom',
+    roleLabel: p.roleLabel as string | undefined,
+    rolePrompt: p.rolePrompt as string | undefined,
+    sessionName: p.sessionName as string | undefined,
+  }));
+
+  try {
+    const d = await startDiscussion(
+      {
+        id,
+        serverId: '',
+        topic,
+        cwd: cwd ?? '',
+        participants,
+        maxRounds: (cmd.maxRounds as number | undefined) ?? 3,
+        verdictIdx: cmd.verdictIdx as number | undefined,
+      },
+      (msg) => {
+        try { serverLink.send(msg as Record<string, unknown>); } catch { /* not connected */ }
+      },
+    );
+
+    try {
+      serverLink.send({
+        type: 'discussion.started',
+        requestId,
+        discussionId: d.id,
+        filePath: d.filePath,
+        participants: d.participants.map((p) => ({
+          sessionName: p.sessionName,
+          roleLabel: p.roleLabel,
+          agentType: p.agentType,
+          model: p.model,
+        })),
+      });
+    } catch { /* not connected */ }
+  } catch (err) {
+    logger.error({ err }, 'discussion.start failed');
+    const error = err instanceof Error ? err.message : String(err);
+    try { serverLink.send({ type: 'discussion.error', requestId, error }); } catch { /* ignore */ }
+  }
+}
+
+function handleDiscussionStatus(cmd: Record<string, unknown>, serverLink: ServerLink): void {
+  const discussionId = cmd.discussionId as string | undefined;
+  if (!discussionId) return;
+
+  import('./discussion-orchestrator.js').then(({ getDiscussion }) => {
+    const d = getDiscussion(discussionId);
+    if (!d) {
+      try { serverLink.send({ type: 'discussion.error', discussionId, error: 'not_found' }); } catch { /* ignore */ }
+      return;
+    }
+    try {
+      serverLink.send({
+        type: 'discussion.update',
+        discussionId: d.id,
+        state: d.state,
+        currentRound: d.currentRound,
+        maxRounds: d.maxRounds,
+        currentSpeaker: d.participants[d.currentSpeakerIdx]?.roleLabel,
+      });
+    } catch { /* not connected */ }
+  }).catch(() => {});
+}
+
+async function handleDiscussionStop(cmd: Record<string, unknown>): Promise<void> {
+  const discussionId = cmd.discussionId as string | undefined;
+  if (!discussionId) return;
+  const { stopDiscussion } = await import('./discussion-orchestrator.js');
+  await stopDiscussion(discussionId).catch((e: unknown) =>
+    logger.error({ err: e, discussionId }, 'discussion.stop failed'),
+  );
 }

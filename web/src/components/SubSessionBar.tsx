@@ -8,11 +8,24 @@ import type { SubSession } from '../hooks/useSubSessions.js';
 import type { WsClient } from '../ws-client.js';
 import type { TerminalDiff } from '../types.js';
 
+interface DiscussionSummary {
+  id: string;
+  topic: string;
+  state: string;
+  currentRound: number;
+  maxRounds: number;
+  currentSpeaker?: string;
+  conclusion?: string;
+}
+
 interface Props {
   subSessions: SubSession[];
   openIds: Set<string>;
   onOpen: (id: string) => void;
   onNew: () => void;
+  onNewDiscussion?: () => void;
+  discussions?: DiscussionSummary[];
+  onStopDiscussion?: (id: string) => void;
   ws: WsClient | null;
   connected: boolean;
   onDiff: (sessionName: string, apply: (d: TerminalDiff) => void) => void;
@@ -46,7 +59,7 @@ function save(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
 }
 
-export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connected, onDiff, onHistory }: Props) {
+export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscussion, discussions = [], onStopDiscussion, ws, connected, onDiff, onHistory }: Props) {
   const [layout, setLayout] = useState<Layout>(() => load('rcc_subcard_layout', 'single'));
   const [collapsed, setCollapsed] = useState(isMobile);
   const [showSizePanel, setShowSizePanel] = useState(false);
@@ -79,7 +92,7 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
     setShowSizePanel(false);
   };
 
-  if (subSessions.length === 0 && collapsed) return null;
+  if (subSessions.length === 0 && discussions.length === 0 && collapsed) return null;
 
   return (
     <div class="subcard-bar">
@@ -104,6 +117,11 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
           </>
         )}
         <button class="subcard-toolbar-add" onClick={onNew} title="New sub-session">+</button>
+        {onNewDiscussion && (
+          <button class="subcard-toolbar-btn" onClick={onNewDiscussion} title="Start discussion" style={{ marginLeft: 4, fontSize: 13 }}>
+            ⚖️
+          </button>
+        )}
       </div>
 
       {/* Size settings panel */}
@@ -157,6 +175,34 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, ws, connect
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Discussions panel */}
+      {!collapsed && discussions.length > 0 && (
+        <div class="discussion-panel">
+          {discussions.map((d) => (
+            <div key={d.id} class="discussion-card">
+              <div class="discussion-card-header">
+                <div class="discussion-card-title">{d.topic || 'Discussion'}</div>
+                <div class={`discussion-card-state ${d.state}`}>
+                  {d.state === 'setup' ? 'Setting up...' :
+                   d.state === 'running' ? `Round ${d.currentRound}/${d.maxRounds}` :
+                   d.state === 'verdict' ? 'Verdict...' :
+                   d.state === 'done' ? 'Done' : 'Failed'}
+                </div>
+                {d.state !== 'done' && d.state !== 'failed' && onStopDiscussion && (
+                  <button class="btn btn-sm btn-danger" onClick={() => onStopDiscussion(d.id)}>Stop</button>
+                )}
+              </div>
+              {d.currentSpeaker && d.state === 'running' && (
+                <div class="discussion-speaker">{d.currentSpeaker} speaking...</div>
+              )}
+              {d.conclusion && (
+                <div class="discussion-conclusion">{d.conclusion}</div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 

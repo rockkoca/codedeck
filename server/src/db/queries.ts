@@ -372,6 +372,29 @@ export async function deleteSubSession(db: PgDatabase, id: string, serverId: str
   await db.prepare('DELETE FROM sub_sessions WHERE id = ? AND server_id = ?').bind(id, serverId).run();
 }
 
+// ── User preferences ──────────────────────────────────────────────────────
+
+export async function getUserPref(db: PgDatabase, userId: string, key: string): Promise<string | null> {
+  const row = await db
+    .prepare('SELECT value FROM user_preferences WHERE user_id = ? AND key = ?')
+    .bind(userId, key)
+    .first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+export async function setUserPref(db: PgDatabase, userId: string, key: string, value: string): Promise<void> {
+  await db
+    .prepare(
+      'INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at',
+    )
+    .bind(userId, key, value, Date.now())
+    .run();
+}
+
+export async function deleteUserPref(db: PgDatabase, userId: string, key: string): Promise<void> {
+  await db.prepare('DELETE FROM user_preferences WHERE user_id = ? AND key = ?').bind(userId, key).run();
+}
+
 // ── Audit log ─────────────────────────────────────────────────────────────
 
 export async function writeAuditLog(

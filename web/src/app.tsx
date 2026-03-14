@@ -10,10 +10,11 @@ import { NewSessionDialog } from './components/NewSessionDialog.js';
 import { SubSessionBar } from './components/SubSessionBar.js';
 import { SubSessionWindow } from './components/SubSessionWindow.js';
 import { StartSubSessionDialog } from './components/StartSubSessionDialog.js';
+import { StartDiscussionDialog, type DiscussionPrefs, type SubSessionOption } from './components/StartDiscussionDialog.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
 import { WsClient } from './ws-client.js';
-import { configure as configureApi, apiFetch, onAuthExpired } from './api.js';
+import { configure as configureApi, apiFetch, onAuthExpired, getUserPref } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
 
 type ViewMode = 'terminal' | 'chat';
@@ -180,6 +181,20 @@ export function App() {
   // z-index per sub-session window
   const [subZIndexes, setSubZIndexes] = useState<Map<string, number>>(new Map());
   const [showSubDialog, setShowSubDialog] = useState(false);
+
+  // ── Discussions ─────────────────────────────────────────────────────────────
+  const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
+  const [discussionPrefs, setDiscussionPrefs] = useState<DiscussionPrefs | null>(null);
+  const [discussions, setDiscussions] = useState<Array<{
+    id: string;
+    topic: string;
+    state: string;
+    currentRound: number;
+    maxRounds: number;
+    currentSpeaker?: string;
+    conclusion?: string;
+    filePath?: string;
+  }>>([]);
 
   const bringSubToFront = useCallback((id: string) => {
     setSubZIndexes((prev) => {
@@ -365,6 +380,33 @@ export function App() {
           else m.delete(sessionName);
           return m;
         });
+      }
+      if (msg.type === 'discussion.started') {
+        setDiscussions((prev) => [
+          ...prev,
+          { id: msg.discussionId, topic: '', state: 'setup', currentRound: 0, maxRounds: 3 },
+        ]);
+      }
+      if (msg.type === 'discussion.update') {
+        setDiscussions((prev) => prev.map((d) =>
+          d.id === msg.discussionId
+            ? { ...d, state: msg.state, currentRound: msg.currentRound, maxRounds: msg.maxRounds, currentSpeaker: msg.currentSpeaker }
+            : d,
+        ));
+      }
+      if (msg.type === 'discussion.done') {
+        setDiscussions((prev) => prev.map((d) =>
+          d.id === msg.discussionId
+            ? { ...d, state: 'done', conclusion: msg.conclusion, filePath: msg.filePath }
+            : d,
+        ));
+      }
+      if (msg.type === 'discussion.error') {
+        if (msg.discussionId) {
+          setDiscussions((prev) => prev.map((d) =>
+            d.id === msg.discussionId ? { ...d, state: 'failed' } : d,
+          ));
+        }
       }
       if (msg.type === 'daemon.reconnected') {
         // Daemon process (re)started — all its subscriptions are gone.
@@ -745,6 +787,14 @@ export function App() {
                 openIds={openSubIds}
                 onOpen={toggleSubSession}
                 onNew={() => setShowSubDialog(true)}
+                onNewDiscussion={() => {
+                  void getUserPref('discussion_prefs').then((prefs) => {
+                    setDiscussionPrefs(prefs as DiscussionPrefs | null);
+                    setShowDiscussionDialog(true);
+                  });
+                }}
+                discussions={discussions}
+                onStopDiscussion={(id) => wsRef.current?.discussionStop(id)}
                 ws={wsRef.current}
                 connected={connected}
                 onDiff={registerDiffApplyer}
@@ -778,6 +828,20 @@ export function App() {
           onFocus={() => bringSubToFront(sub.id)}
         />
       ))}
+
+      {showDiscussionDialog && wsRef.current && (
+        <StartDiscussionDialog
+          ws={wsRef.current}
+          defaultCwd={activeSessionInfo?.projectDir}
+          existingSessions={subSessions.map((s): SubSessionOption => ({
+            sessionName: s.sessionName,
+            label: s.label ?? '',
+            type: s.type,
+          }))}
+          savedPrefs={discussionPrefs}
+          onClose={() => setShowDiscussionDialog(false)}
+        />
+      )}
 
       {showSubDialog && (
         <StartSubSessionDialog

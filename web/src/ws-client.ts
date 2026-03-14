@@ -38,7 +38,11 @@ export type ServerMessage =
   | { type: 'error'; message: string }
   | { type: 'pong' }
   | { type: 'subsession.shells'; shells: string[] }
-  | { type: 'subsession.response'; sessionName: string; status: 'working' | 'idle'; response?: string };
+  | { type: 'subsession.response'; sessionName: string; status: 'working' | 'idle'; response?: string }
+  | { type: 'discussion.started'; requestId?: string; discussionId: string; filePath: string; participants: Array<{ sessionName: string; roleLabel: string; agentType: string; model?: string }> }
+  | { type: 'discussion.update'; discussionId: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; lastResponse?: string }
+  | { type: 'discussion.done'; discussionId: string; filePath: string; conclusion: string }
+  | { type: 'discussion.error'; discussionId?: string; requestId?: string; error: string };
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
@@ -201,6 +205,35 @@ export class WsClient {
 
   subSessionSetModel(sessionName: string, model: string, cwd?: string): void {
     this.send({ type: 'subsession.set_model', sessionName, model, cwd });
+  }
+
+  // ── Discussion commands ────────────────────────────────────────────────────
+
+  discussionStart(
+    topic: string,
+    cwd: string,
+    participants: Array<{
+      agentType: string;
+      model?: string;
+      roleId: string;
+      roleLabel?: string;
+      rolePrompt?: string;
+      sessionName?: string;
+    }>,
+    maxRounds?: number,
+    verdictIdx?: number,
+  ): void {
+    const requestId = crypto.randomUUID();
+    this.send({ type: 'discussion.start', requestId, topic, cwd, participants, maxRounds, verdictIdx });
+  }
+
+  discussionStatus(discussionId: string): void {
+    const requestId = crypto.randomUUID();
+    this.send({ type: 'discussion.status', discussionId, requestId });
+  }
+
+  discussionStop(discussionId: string): void {
+    this.send({ type: 'discussion.stop', discussionId });
   }
 
   /** Request timeline event replay from the daemon for reconnection gap-fill. */

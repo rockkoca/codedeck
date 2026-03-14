@@ -66,6 +66,9 @@ const BROWSER_WHITELIST = new Set([
   'subsession.rebuild_all',
   'subsession.detect_shells',
   'subsession.read_response',
+  'discussion.start',
+  'discussion.status',
+  'discussion.stop',
 ]);
 
 // ── Terminal forwarding queue (per (session, browser)) ────────────────────────
@@ -431,6 +434,17 @@ export class WsBridge {
         return;
       }
       this.sendToSessionSubscribers(sessionName, JSON.stringify(msg));
+      return;
+    }
+
+    // ── Discussion messages: broadcast to all browsers ────────────────────────
+    if (
+      type === 'discussion.started' ||
+      type === 'discussion.update' ||
+      type === 'discussion.done' ||
+      type === 'discussion.error'
+    ) {
+      this.broadcastToBrowsers(JSON.stringify(msg));
       return;
     }
 

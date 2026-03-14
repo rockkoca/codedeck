@@ -316,3 +316,19 @@ body {
 .subsession-type-btn { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #94a3b8; cursor: pointer; font-size: 13px; font-family: inherit; transition: all 0.15s; }
 .subsession-type-btn:hover { background: #253348; border-color: #475569; color: #e2e8f0; }
 .subsession-type-btn.active { background: #1e3a5f; border-color: #3b82f6; color: #93c5fd; }
+
+/* ── Discussion dialog ────────────────────────────────────────────────────── */
+.discussion-participant-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 8px; background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; }
+.discussion-verdict-badge { font-size: 14px; margin-left: 2px; flex-shrink: 0; }
+.discussion-panel { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.discussion-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; }
+.discussion-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.discussion-card-title { font-size: 13px; font-weight: 500; color: #e2e8f0; flex: 1; }
+.discussion-card-state { font-size: 11px; color: #64748b; }
+.discussion-card-state.running { color: #22c55e; }
+.discussion-card-state.verdict { color: #f59e0b; }
+.discussion-card-state.done { color: #3b82f6; }
+.discussion-card-state.failed { color: #ef4444; }
+.discussion-progress { font-size: 11px; color: #64748b; margin-top: 4px; }
+.discussion-speaker { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.discussion-conclusion { font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.5; border-top: 1px solid #1e293b; padding-top: 6px; }
