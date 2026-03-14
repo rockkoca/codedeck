@@ -264,12 +264,12 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   };
 
   if (loading) {
-    return <div class="chat-view"><div class="chat-loading">加载聊天记录中...</div></div>;
+    return <div class="chat-view"><div class="chat-loading">Loading chat...</div></div>;
   }
 
   return (
     <div class="chat-view-wrap">
-      {refreshing && <div class="chat-refreshing">↻ 同步最新消息...</div>}
+      {refreshing && <div class="chat-refreshing">↻ Syncing...</div>}
       <div class="chat-view" ref={scrollRef} onScroll={preview ? undefined : handleScroll}>
         {viewItems.length === 0 && (
           <div class="chat-loading">

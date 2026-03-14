@@ -362,7 +362,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
         <div class="qp-trigger-wrap" ref={quickWrapRef}>
           <button
             class="qp-trigger"
-            title="快捷输入"
+            title="Quick input"
             onClick={() => setQuickOpen((o) => !o)}
           >
             ⚡
@@ -434,13 +434,13 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
                 class={`menu-item ${confirm === 'restart' ? 'menu-item-warn' : ''}`}
                 onClick={() => handleMenuAction('restart')}
               >
-                {confirm === 'restart' ? '确认重启?' : '↺ Restart'}
+                {confirm === 'restart' ? 'Confirm restart?' : '↺ Restart'}
               </button>
               <button
                 class={`menu-item ${confirm === 'new' ? 'menu-item-warn' : ''}`}
                 onClick={() => handleMenuAction('new')}
               >
-                {confirm === 'new' ? '确认新建?' : '+ New'}
+                {confirm === 'new' ? 'Confirm new?' : '+ New'}
               </button>
               <button
                 class="menu-item"
@@ -453,7 +453,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
                 class={`menu-item ${confirm === 'stop' ? 'menu-item-danger' : ''}`}
                 onClick={() => handleMenuAction('stop')}
               >
-                {confirm === 'stop' ? '确认关闭?' : '✕ Stop'}
+                {confirm === 'stop' ? 'Confirm stop?' : '✕ Stop'}
               </button>
             </div>
           )}

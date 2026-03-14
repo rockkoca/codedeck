@@ -3,10 +3,10 @@ import type { WsClient } from '../ws-client.js';
 import { saveUserPref } from '../api.js';
 
 const PRESET_ROLES = [
-  { id: 'critic', label: '批判者', icon: '🔍' },
-  { id: 'pragmatist', label: '实用主义者', icon: '🔧' },
-  { id: 'innovator', label: '创新者', icon: '💡' },
-  { id: 'custom', label: '自定义...', icon: '✏️' },
+  { id: 'critic', label: 'Critic', icon: '🔍' },
+  { id: 'pragmatist', label: 'Pragmatist', icon: '🔧' },
+  { id: 'innovator', label: 'Innovator', icon: '💡' },
+  { id: 'custom', label: 'Custom...', icon: '✏️' },
 ];
 
 const AGENTS = [
@@ -157,7 +157,7 @@ export function StartDiscussionDialog({ ws, defaultCwd, existingSessions, savedP
                     onClick={() => setVerdictIdx(idx)}
                     style={{ whiteSpace: 'nowrap', minWidth: 60, fontSize: 12 }}
                   >
-                    {verdictIdx === idx ? '⚖️ 裁决者' : '裁决者'}
+                    {verdictIdx === idx ? '⚖️ Arbiter' : 'Arbiter'}
                   </button>
 
                   {/* Role selector */}

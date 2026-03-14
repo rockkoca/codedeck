@@ -125,9 +125,9 @@ export function App() {
   const handleUpgradeDaemon = useCallback(async (server: ServerInfo) => {
     try {
       await apiFetch(`/api/server/${server.id}/upgrade`, { method: 'POST' });
-      alert(`升级命令已发送到 "${server.name}"，daemon 将自动安装最新版并重启。`);
+      alert(`Upgrade command sent to "${server.name}". The daemon will install the latest version and restart.`);
     } catch {
-      alert('发送失败，daemon 可能不在线。');
+      alert('Failed to send upgrade command. The daemon may be offline.');
     }
   }, []);
 
@@ -1107,7 +1107,7 @@ export function App() {
               <span class="toast-icon">{t.kind === 'idle' ? '✓' : '🔔'}</span>
               <span class="toast-body">
                 {t.kind === 'idle' ? (
-                  <><strong>{t.project}</strong> 完成了</>
+                  <><strong>{t.project}</strong> finished</>
                 ) : (
                   <><strong>{t.title || t.project}</strong>{t.message ? <> — {t.message}</> : null}</>
                 )}
