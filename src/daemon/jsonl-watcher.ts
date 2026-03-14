@@ -281,6 +281,28 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
     const lines = chunk.split('\n');
     const startIdx = size > readSize ? 1 : 0; // skip partial first line
 
+    // First pass: find the most recent usage data (scan all lines, not limited to HISTORY_LINES)
+    let lastUsagePayload: Record<string, unknown> | null = null;
+    for (let i = startIdx; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+      let raw: Record<string, unknown>;
+      try { raw = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+      if (raw['type'] === 'assistant') {
+        const msg = raw['message'] as Record<string, unknown> | undefined;
+        const usage = msg?.['usage'] as { input_tokens?: number; cache_read_input_tokens?: number } | undefined;
+        const model = msg?.['model'] as string | undefined;
+        if (usage && typeof usage.input_tokens === 'number') {
+          lastUsagePayload = {
+            inputTokens: usage.input_tokens,
+            cacheTokens: usage.cache_read_input_tokens ?? 0,
+            contextWindow: 1_000_000,
+            ...(model ? { model } : {}),
+          };
+        }
+      }
+    }
+
     let count = 0;
     for (let i = startIdx; i < lines.length && count < HISTORY_LINES; i++) {
       const line = lines[i];
@@ -328,6 +350,12 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
           }
         }
       }
+    }
+
+    // Emit the most recent usage snapshot so the context bar populates on load
+    if (lastUsagePayload) {
+      timelineEmitter.emit(sessionName, 'usage.update', lastUsagePayload,
+        { source: 'daemon', confidence: 'high' });
     }
   } catch {
     // best-effort

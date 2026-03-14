@@ -151,19 +151,21 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
         {modelLabel && <span class="subcard-model">{modelLabel}</span>}
         {lastUsage && (() => {
           const ctx = lastUsage.contextWindow || 1_000_000;
-          const inputPct = Math.min(100, lastUsage.inputTokens / ctx * 100);
-          const cachePct = Math.min(inputPct, lastUsage.cacheTokens / ctx * 100);
-          const pctStr = inputPct < 1 ? inputPct.toFixed(2) : inputPct.toFixed(1);
-          const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+          const total = lastUsage.inputTokens + lastUsage.cacheTokens;
+          const totalPct = Math.min(100, total / ctx * 100);
+          const cachePct = Math.min(totalPct, lastUsage.cacheTokens / ctx * 100);
+          const newPct = totalPct - cachePct;
+          const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
+          const pctStr = totalPct < 1 ? totalPct.toFixed(1) : totalPct.toFixed(0);
           const tip = [
             lastUsage.model ?? '',
-            `Input: ${fmt(lastUsage.inputTokens)} / ${fmt(ctx)} (${pctStr}%)`,
-            `Cache: ${fmt(lastUsage.cacheTokens)}`,
+            `Context: ${fmt(total)} / ${fmt(ctx)} (${pctStr}%)`,
+            `  New: ${fmt(lastUsage.inputTokens)}  Cache: ${fmt(lastUsage.cacheTokens)}`,
           ].filter(Boolean).join('\n');
           return (
             <div class="subcard-ctx-bar" title={tip}>
-              <div class="subcard-ctx-input" style={{ width: `${inputPct}%` }} />
               <div class="subcard-ctx-cache" style={{ width: `${cachePct}%` }} />
+              <div class="subcard-ctx-input" style={{ width: `${newPct}%`, left: `${cachePct}%` }} />
             </div>
           );
         })()}

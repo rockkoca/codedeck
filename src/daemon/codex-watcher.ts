@@ -184,7 +184,7 @@ export function parseLine(sessionName: string, line: string, model?: string): vo
 
 const HISTORY_LINES = 200;
 
-async function emitRecentHistory(sessionName: string, filePath: string): Promise<void> {
+async function emitRecentHistory(sessionName: string, filePath: string, model?: string): Promise<void> {
   let fh: Awaited<ReturnType<typeof open>> | null = null;
   try {
     fh = await open(filePath, 'r');
@@ -200,11 +200,10 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
     const lines = chunk.split('\n');
     const startIdx = size > readSize ? 1 : 0; // skip possible partial first line
 
-    // Pre-pass: deduplicate streaming final_answer snapshots.
-    // Codex emits a snapshot per token; for history, consecutive final_answer events
-    // for the same assistant turn are collapsed — only the last (longest) one is kept.
+    // Pre-pass: deduplicate streaming final_answer snapshots and find last token_count.
     interface HistoryEvent { type: 'user' | 'assistant'; text: string }
     const historyEvents: HistoryEvent[] = [];
+    let lastTokenPayload: Record<string, unknown> | null = null;
     for (let i = startIdx; i < lines.length; i++) {
       const line = lines[i];
       if (!line.trim()) continue;
@@ -220,12 +219,22 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
       } else if (evtType === 'agent_message' && payload['phase'] === 'final_answer') {
         const text = payload['message'] as string | undefined;
         if (!text?.trim()) continue;
-        // Replace the previous assistant entry if it's a streaming continuation
         const last = historyEvents[historyEvents.length - 1];
         if (last?.type === 'assistant') {
-          last.text = text; // update in place — keep the latest snapshot
+          last.text = text;
         } else {
           historyEvents.push({ type: 'assistant', text });
+        }
+      } else if (evtType === 'token_count') {
+        const info = payload['info'] as Record<string, unknown> | undefined;
+        const last = info?.['last_token_usage'] as Record<string, unknown> | undefined;
+        const ctxWin = (info?.['model_context_window'] as number | undefined) ?? 1_000_000;
+        if (last && typeof last['input_tokens'] === 'number') {
+          lastTokenPayload = {
+            inputTokens: last['input_tokens'] as number,
+            cacheTokens: (last['cached_input_tokens'] as number | undefined) ?? 0,
+            contextWindow: ctxWin,
+          };
         }
       }
     }
@@ -241,6 +250,13 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
           { text: ev.text, streaming: false },
           { source: 'daemon', confidence: 'high' });
       }
+    }
+
+    // Emit last usage snapshot so the context bar populates on load
+    if (lastTokenPayload) {
+      timelineEmitter.emit(sessionName, 'usage.update',
+        { ...lastTokenPayload, ...(model ? { model } : {}) },
+        { source: 'daemon', confidence: 'high' });
     }
   } catch {
     // best-effort
@@ -357,7 +373,7 @@ export async function startWatching(sessionName: string, workDir: string, model?
         const s = await stat(found);
         state.activeFile = found;
         state.fileOffset = s.size;
-        await emitRecentHistory(sessionName, found);
+        await emitRecentHistory(sessionName, found, state.model);
       } catch {
         state.activeFile = found;
         state.fileOffset = 0;
@@ -416,7 +432,7 @@ export async function startWatchingSpecificFile(sessionName: string, filePath: s
   };
   watchers.set(sessionName, state);
 
-  await emitRecentHistory(sessionName, filePath);
+  await emitRecentHistory(sessionName, filePath, state.model);
 
   // Poll every 2s as fallback
   state.pollTimer = setInterval(() => {
