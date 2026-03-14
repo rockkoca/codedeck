@@ -46,6 +46,9 @@ const PROACTIVE_REFRESH_MS = 12 * 60 * 1000; // refresh every 12 min (before 15-
 /** Start proactive token refresh timer. Call when user logs in. */
 export function startProactiveRefresh(): void {
   stopProactiveRefresh();
+  // Refresh immediately so we always start with a fresh session regardless of
+  // how old the existing cookie is (e.g. page reload when cookie is 12+ min old).
+  void doRefresh();
   _refreshTimerId = setInterval(() => { void doRefresh(); }, PROACTIVE_REFRESH_MS);
 }
 

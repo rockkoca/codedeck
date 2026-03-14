@@ -19,7 +19,7 @@ import { DiscussionsPage } from './pages/DiscussionsPage.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
 import { WsClient } from './ws-client.js';
-import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh } from './api.js';
+import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSession } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
 
 type ViewMode = 'terminal' | 'chat';
@@ -116,6 +116,15 @@ export function App() {
       stopProactiveRefresh();
     }
     return () => stopProactiveRefresh();
+  }, [auth]);
+
+  // Refresh session whenever the tab becomes visible again (mobile browsers pause
+  // setInterval when the tab is backgrounded, so the proactive timer may miss).
+  useEffect(() => {
+    if (!auth) return;
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshSession(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [auth]);
 
   const handleRenameServer = useCallback(async (server: ServerInfo) => {
