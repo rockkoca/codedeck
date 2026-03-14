@@ -143,6 +143,20 @@ export function parseLine(sessionName: string, line: string): void {
 
   const evtType = payload['type'] as string | undefined;
 
+  if (evtType === 'token_count') {
+    const info = payload['info'] as Record<string, unknown> | undefined;
+    const last = info?.['last_token_usage'] as Record<string, unknown> | undefined;
+    const ctxWin = (info?.['model_context_window'] as number | undefined) ?? 1_000_000;
+    if (last && typeof last['input_tokens'] === 'number') {
+      timelineEmitter.emit(sessionName, 'usage.update', {
+        inputTokens: last['input_tokens'] as number,
+        cacheTokens: (last['cached_input_tokens'] as number | undefined) ?? 0,
+        contextWindow: ctxWin,
+      }, { source: 'daemon', confidence: 'high' });
+    }
+    return;
+  }
+
   if (evtType === 'user_message') {
     // Flush any pending assistant text before a new user message
     flushFinalAnswer(sessionName);

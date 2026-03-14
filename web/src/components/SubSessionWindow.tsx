@@ -2,7 +2,8 @@
  * SubSessionWindow — floating, draggable/resizable window for a sub-session.
  * Uses the full SessionControls for input (same as the main session).
  */
-import { useState, useRef, useCallback, useEffect } from 'preact/hooks';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'preact/hooks';
+import { recordCost, getSessionCost, getWeeklyCost, getMonthlyCost, formatCost } from '../cost-tracker.js';
 import { TerminalView } from './TerminalView.js';
 import { ChatView } from './ChatView.js';
 import { SessionControls } from './SessionControls.js';
@@ -167,6 +168,32 @@ export function SubSessionWindow({
   const agentTag = sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type;
   const typeLabel = sub.label ? `${sub.label} · ${agentTag}` : agentTag;
 
+  // Usage tracking
+  const lastUsage = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].type === 'usage.update' && events[i].payload.inputTokens) {
+        return events[i].payload as { inputTokens: number; cacheTokens: number; contextWindow: number };
+      }
+    }
+    return null;
+  }, [events]);
+
+  const lastCostEvent = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].type === 'usage.update' && events[i].payload.costUsd) {
+        return events[i].payload as { costUsd: number };
+      }
+    }
+    return null;
+  }, [events]);
+
+  // Record cost delta to ledger whenever costUsd increases
+  useEffect(() => {
+    if (lastCostEvent?.costUsd) {
+      recordCost(sub.sessionName, lastCostEvent.costUsd);
+    }
+  }, [lastCostEvent?.costUsd, sub.sessionName]);
+
   const style: Record<string, string | number> = isMobile
     ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex }
     : { position: 'fixed', left: geom.x, top: geom.y, width: geom.w, height: geom.h, zIndex };
@@ -220,6 +247,33 @@ export function SubSessionWindow({
           />
         )}
       </div>
+
+      {/* Usage footer — context bar + cost */}
+      {lastUsage && (() => {
+        const ctx = lastUsage.contextWindow || 1_000_000;
+        const inputPct = Math.min(100, lastUsage.inputTokens / ctx * 100);
+        const cachePct = Math.min(inputPct, lastUsage.cacheTokens / ctx * 100);
+        const sessionCost = lastCostEvent ? getSessionCost(sub.sessionName) : 0;
+        const weeklyCost = sessionCost > 0 ? getWeeklyCost() : 0;
+        const monthlyCost = sessionCost > 0 ? getMonthlyCost() : 0;
+        const tip = `${lastUsage.inputTokens.toLocaleString()} / ${ctx.toLocaleString()} tokens · ${lastUsage.cacheTokens.toLocaleString()} cached`;
+        return (
+          <div class="session-usage-footer">
+            <div class="session-ctx-bar" title={tip}>
+              <div class="session-ctx-input" style={{ width: `${inputPct}%` }} />
+              <div class="session-ctx-cache" style={{ width: `${cachePct}%` }} />
+            </div>
+            <div class="session-usage-stats">
+              <span class="session-usage-tokens">{(lastUsage.inputTokens / 1000).toFixed(1)}k / {(ctx / 1000).toFixed(0)}k ctx</span>
+              {sessionCost > 0 && (
+                <span class="session-usage-cost">
+                  {formatCost(sessionCost)} · wk {formatCost(weeklyCost)} · mo {formatCost(monthlyCost)}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Full SessionControls — with sub-session action overrides */}
       <div onMouseDown={startDrag} style={{ cursor: 'grab' }}>

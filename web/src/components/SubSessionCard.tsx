@@ -3,7 +3,7 @@
  * Content renders at native size (no scaling) — card acts as a clipped viewport.
  * Right-edge drag handle lets user resize width independently per card.
  */
-import { useRef, useState, useCallback } from 'preact/hooks';
+import { useRef, useState, useCallback, useMemo } from 'preact/hooks';
 import { ChatView } from './ChatView.js';
 import { TerminalView } from './TerminalView.js';
 import { useTimeline } from '../hooks/useTimeline.js';
@@ -55,6 +55,15 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
   const label = sub.label ? `${sub.label} · ${agentTag}` : agentTag;
   const icon = TYPE_ICON[sub.type] ?? '⚡';
   const badge = STATE_BADGE[sub.state];
+
+  const lastUsage = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].type === 'usage.update' && events[i].payload.inputTokens) {
+        return events[i].payload as { inputTokens: number; cacheTokens: number; contextWindow: number };
+      }
+    }
+    return null;
+  }, [events]);
 
   // Per-card width override (persisted in localStorage)
   const [localW, setLocalW] = useState(() => loadCardW(sub.id, cardW));
@@ -120,6 +129,18 @@ export function SubSessionCard({ sub, ws, connected, isOpen, onOpen, onDiff, onH
         <span class="subcard-label">{label}</span>
         {badge && <span class="subcard-badge">{badge}</span>}
         {sub.state === 'running' && <span class="subcard-running">●</span>}
+        {lastUsage && (() => {
+          const ctx = lastUsage.contextWindow || 1_000_000;
+          const inputPct = Math.min(100, lastUsage.inputTokens / ctx * 100);
+          const cachePct = Math.min(inputPct, lastUsage.cacheTokens / ctx * 100);
+          const tip = `${lastUsage.inputTokens.toLocaleString()} / ${ctx.toLocaleString()} tokens · ${lastUsage.cacheTokens.toLocaleString()} cached`;
+          return (
+            <div class="subcard-ctx-bar" title={tip}>
+              <div class="subcard-ctx-input" style={{ width: `${inputPct}%` }} />
+              <div class="subcard-ctx-cache" style={{ width: `${cachePct}%` }} />
+            </div>
+          );
+        })()}
       </div>
 
       {/* Preview — native size, clipped by card overflow:hidden, non-interactive */}
