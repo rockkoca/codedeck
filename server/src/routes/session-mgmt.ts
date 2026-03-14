@@ -33,7 +33,8 @@ sessionMgmtRoutes.get('/:id/sessions', async (c) => {
   const role = await resolveServerRole(c.env.DB, serverId, userId);
   if (role === 'none') return c.json({ error: 'forbidden' }, 403);
 
-  const sessions = await getDbSessionsByServer(c.env.DB, serverId);
+  const all = await getDbSessionsByServer(c.env.DB, serverId);
+  const sessions = all.filter((s) => !s.name.startsWith('deck_sub_'));
   return c.json({ sessions });
 });
 
