@@ -210,7 +210,7 @@ export function SubSessionWindow({
         <span class="subsession-drag-icon">⠿</span>
         <span class="subsession-title">{typeLabel}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-          <button class={`subsession-mode-btn${viewMode === 'chat' ? ' active' : ''}`} onClick={() => setViewMode('chat')} title="Chat view">💬</button>
+          <button class={`subsession-mode-btn${viewMode === 'chat' ? ' active' : ''}`} onClick={() => { setViewMode('chat'); requestAnimationFrame(() => chatScrollRef.current?.()); }} title="Chat view">💬</button>
           <button class={`subsession-mode-btn${viewMode === 'terminal' ? ' active' : ''}`} onClick={() => setViewMode('terminal')} title="Terminal view">⌨</button>
           <button class="subsession-minimize-btn" onClick={onMinimize} title="Minimize">─</button>
           {confirmClose ? (
