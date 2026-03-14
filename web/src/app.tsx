@@ -66,6 +66,8 @@ export function App() {
     if (!vv) return;
     const update = () => {
       document.documentElement.style.setProperty('--vvh', `${vv.height}px`);
+      // Reset any document scroll caused by keyboard opening on mobile
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
     };
     update();
     vv.addEventListener('resize', update);

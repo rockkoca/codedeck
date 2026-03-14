@@ -209,6 +209,13 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     }
   };
 
+  // On mobile, focusing contenteditable can scroll the document body — force it back
+  const handleFocus = () => {
+    if (window.scrollY !== 0) window.scrollTo(0, 0);
+    if (document.documentElement.scrollTop !== 0) document.documentElement.scrollTop = 0;
+    if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+  };
+
   // Plain-text only paste
   const handlePaste = (e: Event) => {
     e.preventDefault();
@@ -397,6 +404,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
           aria-label="Message input"
           data-placeholder={placeholder}
           spellcheck={false}
+          onFocus={handleFocus}
           onInput={() => setHasText(!!(divRef.current?.textContent?.trim()))}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
