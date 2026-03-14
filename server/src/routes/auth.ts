@@ -299,6 +299,12 @@ authRoutes.post('/refresh', async (c) => {
     return c.json({ error: 'invalid_token' }, 401);
   }
 
+  // Per-user lockout check (after token lookup succeeds so we know the user_id)
+  const userLockout = await checkAuthLockout(c.env.DB, `user:${row.user_id}`);
+  if (userLockout.locked) {
+    return c.json({ error: 'too_many_attempts', retryAfterMs: userLockout.lockedUntil ? userLockout.lockedUntil - Date.now() : 0 }, 429);
+  }
+
   // Mark old token consumed (rotation)
   await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE id = ?').bind(Date.now(), row.id).run();
 
@@ -321,7 +327,7 @@ authRoutes.post('/refresh', async (c) => {
       httpOnly: true, secure: isSecure, sameSite: 'Lax', path: '/', maxAge: 900,
     });
     setCookie(c, 'rcc_refresh', newRefresh, {
-      httpOnly: true, secure: isSecure, sameSite: 'Lax', path: '/api/auth/refresh', maxAge: 30 * 86400,
+      httpOnly: true, secure: isSecure, sameSite: 'Lax', path: '/', maxAge: 30 * 86400,
     });
     setCookie(c, 'rcc_csrf', randomHex(32), {
       httpOnly: false, secure: isSecure, sameSite: 'Lax', path: '/', maxAge: 86400,
@@ -339,7 +345,7 @@ authRoutes.post('/logout', async (c) => {
 
   // Clear all auth cookies regardless of auth state
   deleteCookie(c, 'rcc_session', { path: '/' });
-  deleteCookie(c, 'rcc_refresh', { path: '/api/auth/refresh' });
+  deleteCookie(c, 'rcc_refresh', { path: '/' });
   deleteCookie(c, 'rcc_csrf', { path: '/' });
 
   // Invalidate all active refresh tokens for the user

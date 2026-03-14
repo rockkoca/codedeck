@@ -239,6 +239,12 @@ function scheduleCrons(env: Env) {
 
 async function main() {
   const envConfig = loadEnv();
+
+  if (!envConfig.JWT_SIGNING_KEY || Buffer.byteLength(envConfig.JWT_SIGNING_KEY, 'utf8') < 32) {
+    console.error('FATAL: JWT_SIGNING_KEY must be at least 32 bytes');
+    process.exit(1);
+  }
+
   const db = createDatabase(envConfig.DATABASE_URL);
   const env: Env = { ...envConfig, DB: db };
 
