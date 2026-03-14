@@ -229,6 +229,7 @@ export function App() {
   }, []);
 
   const wsRef = useRef<WsClient | null>(null);
+  const [daemonStats, setDaemonStats] = useState<{ cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number } | null>(null);
 
   // ── Sub-sessions ───────────────────────────────────────────────────────────
   const { subSessions, create: createSubSession, close: closeSubSession, restart: restartSubSession, rename: renameSubSession } = useSubSessions(
@@ -439,15 +440,22 @@ export function App() {
     });
 
     ws.onLatency((ms) => setLatencyMs(ms));
+    const unsubStats = ws.onMessage((msg) => {
+      if (msg.type === 'daemon.stats') {
+        setDaemonStats({ cpu: msg.cpu, memUsed: msg.memUsed, memTotal: msg.memTotal, load1: msg.load1, load5: msg.load5, load15: msg.load15, uptime: msg.uptime });
+      }
+    });
     ws.connect();
 
     return () => {
       unsub();
+      unsubStats();
       ws.onLatency(null);
       ws.disconnect();
       wsRef.current = null;
       setConnected(false);
       setLatencyMs(null);
+      setDaemonStats(null);
     };
   }, [auth, selectedServerId]);
 
@@ -678,6 +686,26 @@ export function App() {
           )}
         </div>
         <div style={{ flex: 1 }} />
+        {daemonStats && connected && (
+          <div class="sidebar-stats">
+            <div class="sidebar-stats-row">
+              <span style={{ color: daemonStats.cpu > 80 ? '#f87171' : daemonStats.cpu > 50 ? '#fbbf24' : '#4ade80' }}>
+                CPU {daemonStats.cpu}%
+              </span>
+              <span style={{ color: '#a78bfa' }}>
+                Load {daemonStats.load1}
+              </span>
+            </div>
+            <div class="sidebar-stats-row">
+              <span style={{ color: '#60a5fa' }}>
+                Mem {(() => { const gb = daemonStats.memUsed / (1024 ** 3); return gb >= 1 ? `${gb.toFixed(1)}G` : `${(daemonStats.memUsed / (1024 ** 2)).toFixed(0)}M`; })()}/{(() => { const gb = daemonStats.memTotal / (1024 ** 3); return gb >= 1 ? `${gb.toFixed(1)}G` : `${(daemonStats.memTotal / (1024 ** 2)).toFixed(0)}M`; })()}
+              </span>
+              <span style={{ color: '#94a3b8' }}>
+                {(() => { const s = daemonStats.uptime; const d = Math.floor(s / 86400); const h = Math.floor((s % 86400) / 3600); return d > 0 ? `${d}d ${h}h` : `${h}h`; })()}
+              </span>
+            </div>
+          </div>
+        )}
         <div style={{ padding: '12px 16px', borderTop: '1px solid #334155' }}>
           <div style={{ fontSize: 10, color: '#475569', marginBottom: 8, textAlign: 'center' }}>
             {(() => { try { const d = new Date(__BUILD_TIME__); return `Build: ${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; } catch { return ''; } })()}

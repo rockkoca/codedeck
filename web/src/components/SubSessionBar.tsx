@@ -311,10 +311,12 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
           {orderedSessions.map((sub) => (
             <div
               key={sub.id}
+              class="subcard-drag-wrap"
               draggable
               onDragStart={(e) => {
                 dragIdRef.current = sub.id;
                 e.dataTransfer!.effectAllowed = 'move';
+                (e.currentTarget as HTMLElement).style.opacity = '0.5';
               }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -331,14 +333,14 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
                   return next;
                 });
               }}
-              onDragEnd={() => {
+              onDragEnd={(e) => {
                 dragIdRef.current = null;
+                (e.currentTarget as HTMLElement).style.opacity = '';
                 setOrderedIds((current) => {
                   save('rcc_subcard_order', current);
                   return current;
                 });
               }}
-              style={{ display: 'contents' }}
             >
               <SubSessionCard
                 sub={sub}

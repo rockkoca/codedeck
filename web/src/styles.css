@@ -23,6 +23,8 @@ body {
 .server-item.active { background: #1d4ed820; border-left-color: #3b82f6; color: #93c5fd; }
 .server-item.offline { color: #64748b; }
 .server-item-dot { font-size: 8px; flex-shrink: 0; }
+.sidebar-stats { padding: 8px 16px; border-top: 1px solid #334155; font-size: 11px; }
+.sidebar-stats-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
 
 /* Session tabs */
 .tab-bar { display: flex; align-items: stretch; background: #0d1117; border-bottom: 1px solid #21262d; overflow-x: auto; flex-shrink: 0; scrollbar-width: none; min-height: 36px; }
@@ -270,6 +272,8 @@ body {
 .subcard-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
 .subcard-single { display: flex; flex-wrap: nowrap; }
 .subcard-double { display: grid; grid-template-rows: repeat(2, auto); grid-auto-flow: column; grid-auto-columns: 350px; }
+.subcard-drag-wrap { flex-shrink: 0; cursor: grab; transition: opacity 0.15s; }
+.subcard-drag-wrap:active { cursor: grabbing; }
 
 /* Individual card */
 .subcard { width: 350px; height: 250px; min-width: 350px; background: #0f1117; border: 1px solid #334155; border-radius: 8px; overflow: hidden; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; display: flex; flex-direction: column; }
