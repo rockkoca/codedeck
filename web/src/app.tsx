@@ -243,6 +243,8 @@ export function App() {
     if (name) localStorage.setItem('rcc_session', name);
     else localStorage.removeItem('rcc_session');
     setActiveSessionState(name);
+    // scroll chat to bottom on session switch (rAF gives ChatView time to mount)
+    requestAnimationFrame(() => chatScrollFnRef.current?.());
   }, []);
 
   const wsRef = useRef<WsClient | null>(null);
@@ -286,6 +288,9 @@ export function App() {
       const next: ViewMode = current === 'terminal' ? 'chat' : 'terminal';
       const updated = { ...prev, [activeSession]: next };
       localStorage.setItem('rcc_viewModes', JSON.stringify(updated));
+      if (next === 'chat') {
+        requestAnimationFrame(() => chatScrollFnRef.current?.());
+      }
       return updated;
     });
   }, [activeSession, defaultViewMode]);
