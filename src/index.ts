@@ -8,13 +8,15 @@ import { bindFlow } from './bind/bind-flow.js';
 import logger from './util/logger.js';
 import { execSync } from 'child_process';
 import { homedir } from 'os';
-import { existsSync, realpathSync } from 'fs';
-import { resolve } from 'path';
+import { existsSync, realpathSync, readFileSync } from 'fs';
+import { resolve, join, dirname } from 'path';
+
+const { version } = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8')) as { version: string };
 
 const program = new Command()
   .name('codedeck')
   .description('Remote AI coding agent controller')
-  .version('0.1.0');
+  .version(version);
 
 program
   .command('start')
