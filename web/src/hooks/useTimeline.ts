@@ -8,6 +8,11 @@ import { useEffect, useRef, useState, useCallback } from 'preact/hooks';
 import type { WsClient, TimelineEvent, ServerMessage } from '../ws-client.js';
 import { TimelineDB } from '../timeline-db.js';
 
+// Singleton DB shared across all useTimeline instances — opened once at module load.
+// This avoids per-hook open() latency and ensures the DB is ready before any hook queries it.
+const sharedDb = new TimelineDB();
+sharedDb.open().catch(() => {});
+
 const MAX_MEMORY_EVENTS = 500;
 const ECHO_WINDOW_MS = 2000;
 // Dedup window for user.message from JSONL vs web-UI-sent: JSONL watcher polls every 2s,
@@ -37,23 +42,11 @@ export function useTimeline(
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const dbRef = useRef<TimelineDB | null>(null);
   const epochRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
   const replayRequestIdRef = useRef<string | null>(null);
   const historyRequestIdRef = useRef<string | null>(null);
   const historyLoadedRef = useRef<string | null>(null); // tracks which session has been loaded
-
-  // Initialize DB once
-  useEffect(() => {
-    const db = new TimelineDB();
-    dbRef.current = db;
-    db.open().catch(() => {});
-    return () => {
-      db.close();
-      dbRef.current = null;
-    };
-  }, []);
 
   // Reset on session change
   useEffect(() => {
@@ -75,7 +68,7 @@ export function useTimeline(
     // Use getRecentEvents (ts-based, no epoch filter) so cached events across
     // daemon restarts are all included — epoch change doesn't hide old messages.
     const load = async () => {
-      const db = dbRef.current;
+      const db = sharedDb;
       if (!db) return;
       await db.open(); // ensure DB is open before querying (open() is idempotent)
       const last = await db.getLastSeqAndEpoch(sessionId);
@@ -178,7 +171,7 @@ export function useTimeline(
         seqRef.current = Math.max(seqRef.current, event.seq);
         appendEvent(event);
 
-        dbRef.current?.putEvent(event).catch(() => {});
+        sharedDb?.putEvent(event).catch(() => {});
       }
 
       // ── History response (full load from daemon file store) ──
@@ -194,7 +187,7 @@ export function useTimeline(
           const maxSeq = msg.events.reduce((max, e) => Math.max(max, e.seq), 0);
           seqRef.current = Math.max(seqRef.current, maxSeq);
           mergeEvents(msg.events);
-          dbRef.current?.putEvents(msg.events).catch(() => {});
+          sharedDb?.putEvents(msg.events).catch(() => {});
         }
         setLoading(false);
         setRefreshing(false);
@@ -218,7 +211,7 @@ export function useTimeline(
           const maxSeq = replayEvents.reduce((max, e) => Math.max(max, e.seq), 0);
           seqRef.current = Math.max(seqRef.current, maxSeq);
           mergeEvents(replayEvents);
-          dbRef.current?.putEvents(replayEvents).catch(() => {});
+          sharedDb?.putEvents(replayEvents).catch(() => {});
         }
         setRefreshing(false);
       }
