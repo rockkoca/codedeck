@@ -252,6 +252,10 @@ body {
 .chat-refreshing { text-align: center; color: #475569; font-size: 11px; padding: 4px 0; flex-shrink: 0; }
 .chat-thinking-bar { color: #94a3b8; font-size: 12px; padding: 6px 16px; background: #1e293b; border-top: 1px solid #334155; flex-shrink: 0; }
 .chat-thinking-dots { animation: thinking-pulse 1.2s ease-in-out infinite; letter-spacing: 2px; }
+.chat-thinking { padding: 2px 0; }
+.chat-thinking-toggle { display: flex; align-items: flex-start; gap: 6px; background: none; border: none; color: #64748b; cursor: pointer; font-family: inherit; font-size: 12px; padding: 3px 0; text-align: left; width: 100%; transition: color 0.15s; }
+.chat-thinking-toggle:hover { color: #94a3b8; }
+.chat-thinking-text { font-style: italic; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 @keyframes thinking-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
 .chat-bubble-content { white-space: pre-wrap; word-break: break-word; }
 .chat-bubble-time { font-size: 10px; color: #64748b; margin-top: 2px; }
