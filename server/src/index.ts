@@ -64,8 +64,9 @@ export function buildApp(env: Env) {
     await next();
   });
 
-  // Extract real client IP using proxy-addr (same library as Express).
-  // Runs once per request; routes read c.get('clientIp') — never raw XFF.
+  // Extract real client IP.
+  // Priority: CF-Connecting-IP (set by Cloudflare, not spoofable) → XFF via trusted proxies → socket IP.
+  // Runs once per request; routes read c.get('clientIp') — never raw headers.
   const trust = proxyAddr.compile(
     env.TRUSTED_PROXIES
       ? env.TRUSTED_PROXIES.split(',').map((s) => s.trim()).filter(Boolean)
@@ -74,9 +75,17 @@ export function buildApp(env: Env) {
   app.use('*', async (c, next) => {
     let socketIp = '127.0.0.1';
     try { socketIp = getConnInfo(c).remote.address ?? '127.0.0.1'; } catch { /* test or non-node context */ }
-    const xff = c.req.header('x-forwarded-for');
-    const fakeReq = { socket: { remoteAddress: socketIp }, headers: { 'x-forwarded-for': xff } };
-    const clientIp = proxyAddr(fakeReq as never, trust);
+    // CF-Connecting-IP is injected by Cloudflare and cannot be spoofed by clients
+    // (Cloudflare strips any client-supplied CF-Connecting-IP before adding its own).
+    const cfIp = c.req.header('cf-connecting-ip');
+    let clientIp: string;
+    if (cfIp) {
+      clientIp = cfIp.trim();
+    } else {
+      const xff = c.req.header('x-forwarded-for');
+      const fakeReq = { socket: { remoteAddress: socketIp }, headers: { 'x-forwarded-for': xff } };
+      clientIp = proxyAddr(fakeReq as never, trust);
+    }
     c.set('clientIp' as never, clientIp);
 
     // Resolve trusted host: only honour x-forwarded-host when the request
