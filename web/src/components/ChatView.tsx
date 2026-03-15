@@ -258,8 +258,7 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
         scrollToBottom();
         return;
       }
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-      if (atBottom) scrollToBottom();
+      if (autoScrollRef.current) scrollToBottom();
     });
   }, [lastVisibleTs, preview]);
 

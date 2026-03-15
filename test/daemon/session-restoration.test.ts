@@ -49,6 +49,7 @@ vi.mock('../../src/daemon/jsonl-watcher.js', () => ({
 vi.mock('../../src/daemon/codex-watcher.js', () => ({
   startWatching: mocks.codexStartWatching,
   startWatchingSpecificFile: mocks.codexStartWatchingSpecificFile,
+  startWatchingById: vi.fn().mockResolvedValue(undefined),
   isWatching: mocks.codexIsWatching,
   preClaimFile: vi.fn(),
   findRolloutPathByUuid: vi.fn().mockResolvedValue(null),

@@ -19,7 +19,7 @@ import {
 import logger from '../util/logger.js';
 import { timelineEmitter } from '../daemon/timeline-emitter.js';
 import { startWatching, startWatchingFile, stopWatching, isWatching, claudeProjectDir } from '../daemon/jsonl-watcher.js';
-import { startWatching as startCodexWatching, startWatchingSpecificFile as startCodexWatchingFile, stopWatching as stopCodexWatching, isWatching as isCodexWatching, extractNewRolloutUuid, findRolloutPathByUuid } from '../daemon/codex-watcher.js';
+import { startWatching as startCodexWatching, startWatchingSpecificFile as startCodexWatchingFile, startWatchingById as startCodexWatchingById, stopWatching as stopCodexWatching, isWatching as isCodexWatching, findRolloutPathByUuid, extractNewRolloutUuid } from '../daemon/codex-watcher.js';
 import { startWatching as startGeminiWatching, startWatchingLatest as startGeminiWatchingLatest, stopWatching as stopGeminiWatching, isWatching as isGeminiWatching } from '../daemon/gemini-watcher.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
