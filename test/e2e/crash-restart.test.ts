@@ -3,13 +3,19 @@
  * Requires tmux. Skip with SKIP_TMUX_TESTS=1.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { execSync } from 'child_process';
 import { newSession, killSession, sessionExists } from '../../src/agent/tmux.js';
 import { loadStore, upsertSession, updateSessionState } from '../../src/store/session-store.js';
 import { restartSession } from '../../src/agent/session-manager.js';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-const SKIP = process.env.SKIP_TMUX_TESTS === '1' || !!process.env.CLAUDECODE;
+function hasClaude(): boolean {
+  try { execSync('which claude', { stdio: 'ignore' }); return true; } catch { return false; }
+}
+
+// restartSession re-launches via the claude-code driver — requires `claude` binary
+const SKIP = process.env.SKIP_TMUX_TESTS === '1' || !!process.env.CLAUDECODE || !hasClaude();
 const SESSION = 'e2e_crash_restart_test';
 const FIXTURES = new URL('../fixtures', import.meta.url).pathname;
 
