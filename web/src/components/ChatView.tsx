@@ -278,8 +278,10 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
             {sessionState ? t('chat.session_state', { state: sessionState }) : t('chat.no_events')}
           </div>
         )}
-        {viewItems.map((item) =>
-          item.type === 'assistant-block' ? (
+        {viewItems.map((item, idx) => {
+          const nextItem = viewItems[idx + 1];
+          const nextTs = nextItem?.ts ?? nextItem?.event?.ts;
+          return item.type === 'assistant-block' ? (
             <div key={item.key} class="chat-event chat-assistant">
               <RichText text={item.text!} />
               <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
@@ -287,9 +289,9 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
           ) : item.type === 'tool-group' ? (
             <ToolCallGroup key={item.key} events={item.toolEvents!} />
           ) : (
-            <ChatEvent key={item.key} event={item.event!} />
-          ),
-        )}
+            <ChatEvent key={item.key} event={item.event!} nextTs={nextTs} />
+          );
+        })}
         <div ref={bottomRef} />
       </div>
       {/* Thinking status bar — fixed at bottom, shows real CC thinking from JSONL */}
@@ -346,7 +348,7 @@ function ToolCallGroup({ events }: { events: TimelineEvent[] }) {
   );
 }
 
-function ChatEvent({ event }: { event: TimelineEvent }) {
+function ChatEvent({ event, nextTs }: { event: TimelineEvent; nextTs?: number }) {
   switch (event.type) {
     case 'user.message':
       return (
@@ -405,7 +407,7 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
     }
 
     case 'assistant.thinking':
-      return <ThinkingEvent event={event} />;
+      return <ThinkingEvent event={event} endTs={nextTs} />;
 
     case 'terminal.snapshot':
       return <SnapshotEvent event={event} />;
@@ -415,15 +417,33 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
   }
 }
 
-function ThinkingEvent({ event }: { event: TimelineEvent }) {
+function ThinkingEvent({ event, endTs }: { event: TimelineEvent; endTs?: number }) {
   const [expanded, setExpanded] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const startTs = event.ts ?? Date.now();
+  const finished = endTs !== undefined;
+
+  useEffect(() => {
+    if (finished) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [finished]);
+
+  const elapsedMs = (finished ? endTs! : now) - startTs;
+  const elapsedSec = Math.max(0, Math.round(elapsedMs / 1000));
+  const elapsedStr = elapsedSec > 0 ? ` · ${elapsedSec}s` : '';
+  const label = finished ? `思考了${elapsedStr}` : `思考中${elapsedStr}`;
+
   const text = String(event.payload.text ?? '');
   const preview = text.length > 100 ? text.slice(0, 100) + '…' : text;
+  const hasText = text.length > 0;
+
   return (
     <div class="chat-event chat-thinking">
-      <button class="chat-thinking-toggle" onClick={() => setExpanded(!expanded)}>
-        <span class="chat-tool-icon">~</span>
-        <span class="chat-thinking-text">{expanded ? text : preview}</span>
+      <button class={`chat-thinking-toggle${hasText ? '' : ' no-text'}`} onClick={hasText ? () => setExpanded(!expanded) : undefined}>
+        <span class={`chat-thinking-dot${finished ? ' done' : ''}`}>~</span>
+        <span class="chat-thinking-label">{label}</span>
+        {hasText && expanded && <span class="chat-thinking-text">{expanded ? text : preview}</span>}
       </button>
     </div>
   );
