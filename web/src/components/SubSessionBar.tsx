@@ -55,6 +55,15 @@ const TYPE_ICON: Record<string, string> = {
   'script': '🔄',
 };
 
+const TYPE_ABBR: Record<string, string> = {
+  'claude-code': 'cc',
+  'codex': 'cx',
+  'opencode': 'oc',
+  'gemini': 'gm',
+  'shell': 'sh',
+  'script': 'sc',
+};
+
 type Layout = 'single' | 'double';
 
 interface CardSize { w: number; h: number }
@@ -269,7 +278,7 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
           {orderedSessions.map((sub) => {
             const agentTag = sub.type === 'shell' ? (sub.shellBin?.split('/').pop() ?? 'shell') : sub.type;
             const label = sub.label ? `${sub.label} · ${agentTag}` : agentTag;
-            const icon = TYPE_ICON[sub.type] ?? '⚡';
+            const abbr = TYPE_ABBR[sub.type] ?? agentTag.slice(0, 2);
             const isOpen = openIds.has(sub.id);
             return (
               <button
@@ -278,8 +287,8 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
                 onClick={() => onOpen(sub.id)}
                 title={label}
               >
-                <span class="subsession-card-icon">{icon}</span>
-                <span class="subsession-card-label">{label.slice(0, 4)}</span>
+                <span class="subsession-card-icon">{abbr}</span>
+                <span class="subsession-card-label">{sub.label ? sub.label.slice(0, 6) : agentTag.slice(0, 6)}</span>
                 {sub.state === 'starting' && <span class="subsession-card-badge">…</span>}
               </button>
             );
