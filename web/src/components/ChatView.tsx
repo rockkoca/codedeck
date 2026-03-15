@@ -170,12 +170,19 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     return null;
   }, [events]);
 
-  // Active thinking event = last assistant.thinking that has no subsequent non-thinking/non-status event
+  // Active thinking event = last assistant.thinking with no subsequent text output.
+  // tool.call / tool.result do NOT end thinking — only assistant.text (or similar) does.
   const activeThinkingTs = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i];
       if (e.type === 'assistant.thinking') return e.ts;
-      if (e.type !== 'agent.status' && e.type !== 'usage.update') return null;
+      if (
+        e.type === 'agent.status' ||
+        e.type === 'usage.update' ||
+        e.type === 'tool.call' ||
+        e.type === 'tool.result'
+      ) continue;
+      return null;
     }
     return null;
   }, [events]);

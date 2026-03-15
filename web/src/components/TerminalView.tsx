@@ -118,8 +118,13 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       }
     }
 
-    // Forward all keyboard input to the tmux session
+    // Forward all keyboard input to the tmux session — but skip when terminal
+    // is hidden (display:none on ancestor sets clientWidth/Height to 0).
+    // This prevents keys from going to the terminal in chat mode even if
+    // xterm's hidden textarea still has focus.
     term.onData((data) => {
+      const el = containerRef.current;
+      if (el && el.clientWidth === 0 && el.clientHeight === 0) return;
       wsRef.current?.sendInput(sessionName, data);
     });
 

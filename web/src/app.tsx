@@ -353,7 +353,14 @@ export function App() {
       const updated = { ...prev, [activeSession]: next };
       localStorage.setItem('rcc_viewModes', JSON.stringify(updated));
       if (next === 'chat') {
-        requestAnimationFrame(() => chatScrollFnRef.current?.());
+        requestAnimationFrame(() => {
+          chatScrollFnRef.current?.();
+          // Steal focus from xterm textarea so it stops capturing keystrokes in chat mode.
+          // Only on desktop — on mobile we don't want to pop up the keyboard automatically.
+          if (!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            inputRef.current?.focus();
+          }
+        });
       }
       return updated;
     });
