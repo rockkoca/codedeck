@@ -180,7 +180,7 @@ function parseLine(sessionName: string, line: string, lineByteOffset?: number): 
           text: block.text,
           streaming: false,
         }, { source: 'daemon', confidence: 'high', ...(stableId ? { eventId: stableId('at') } : {}), ...(ts ? { ts } : {}) });
-      } else if (block.type === 'thinking' && block.thinking) {
+      } else if (block.type === 'thinking') {
         timelineEmitter.emit(sessionName, 'assistant.thinking', {
           text: block.thinking,
         }, { source: 'daemon', confidence: 'high', ...(stableId ? { eventId: stableId('th') } : {}), ...(ts ? { ts } : {}) });
@@ -359,7 +359,7 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
               text: block.text, streaming: false,
             }, { source: 'daemon', confidence: 'high', eventId: stableId('at') });
             count++;
-          } else if (block.type === 'thinking' && block.thinking) {
+          } else if (block.type === 'thinking') {
             timelineEmitter.emit(sessionName, 'assistant.thinking', {
               text: block.thinking,
             }, { source: 'daemon', confidence: 'high', eventId: stableId('th') });
