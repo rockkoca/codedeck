@@ -77,6 +77,7 @@ export function useTimeline(
     const load = async () => {
       const db = dbRef.current;
       if (!db) return;
+      await db.open(); // ensure DB is open before querying (open() is idempotent)
       const last = await db.getLastSeqAndEpoch(sessionId);
       if (last) {
         epochRef.current = last.epoch;
