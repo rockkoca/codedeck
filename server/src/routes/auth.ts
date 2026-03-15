@@ -5,7 +5,7 @@ import { createUser, getUserById } from '../db/queries.js';
 import { randomHex, sha256Hex, signJwt, verifyJwt } from '../security/crypto.js';
 import { checkIdempotency, recordIdempotency } from '../security/replay.js';
 import { logAudit } from '../security/audit.js';
-import { recordAuthFailure, checkAuthLockout } from '../security/lockout.js';
+import { checkAuthLockout } from '../security/lockout.js';
 import { resolveServerRole } from '../security/authorization.js';
 import { WsBridge } from '../ws/bridge.js';
 import { z } from 'zod';
@@ -271,14 +271,6 @@ authRoutes.post('/ws-ticket', async (c) => {
 const refreshSchema = z.object({ refreshToken: z.string().optional() });
 
 authRoutes.post('/refresh', async (c) => {
-  const ip = c.get('clientIp' as never) as string ?? 'unknown';
-
-  // Check lockout before attempting auth
-  const lockout = await checkAuthLockout(c.env.DB, ip);
-  if (lockout.locked) {
-    return c.json({ error: 'too_many_attempts', retryAfterMs: lockout.lockedUntil ? lockout.lockedUntil - Date.now() : 0 }, 429);
-  }
-
   // Task 5: Support rcc_refresh cookie (browser) or JSON body (CLI)
   const cookieRefresh = getCookie(c, 'rcc_refresh');
   const body = await c.req.json().catch(() => null);
@@ -295,7 +287,9 @@ authRoutes.post('/refresh', async (c) => {
     .first<{ id: string; user_id: string; family_id: string }>();
 
   if (!row) {
-    await recordAuthFailure(c.env.DB, ip);
+    // Do not count toward lockout: refresh tokens are 32-byte random values,
+    // not brute-forceable. Normal token rotation (multi-tab, page reload) causes
+    // already-used tokens to be retried, which should not trigger IP lockouts.
     return c.json({ error: 'invalid_token' }, 401);
   }
 

@@ -304,6 +304,7 @@ export function SubSessionWindow({
           onSubNew={onRestart}
           onSubStop={onClose}
           onRenameSession={onRename}
+          sessionDisplayName={sub.label ?? agentTag}
         />
       </div>
     </div>
