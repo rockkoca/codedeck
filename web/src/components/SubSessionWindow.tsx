@@ -215,8 +215,18 @@ export function SubSessionWindow({
     return () => ro.disconnect();
   }, [isMobile]);
 
+  const [vvh, setVvh] = useState(() => window.visualViewport?.height ?? window.innerHeight);
+  useEffect(() => {
+    if (!isMobile) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setVvh(vv.height);
+    vv.addEventListener('resize', update);
+    return () => vv.removeEventListener('resize', update);
+  }, [isMobile]);
+
   const style: Record<string, string | number> = isMobile
-    ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: barHeight, zIndex }
+    ? { position: 'fixed', top: 0, left: 0, right: 0, height: vvh - barHeight, zIndex }
     : { position: 'fixed', left: geom.x, top: geom.y, width: geom.w, height: geom.h, zIndex };
 
   return (
