@@ -27,6 +27,9 @@ let refreshPromise: Promise<boolean> | null = null;
 async function doRefresh(): Promise<boolean> {
   // Use rawFetch so the CSRF token is automatically attached
   const res = await rawFetch('/api/auth/refresh', { method: 'POST' });
+  // 5xx means server is temporarily unavailable, not that the session expired.
+  // Throw so callers can distinguish "no session" (false) from "server down" (throws).
+  if (res.status >= 500) throw new ApiError(res.status, await res.text().catch(() => ''));
   return res.ok;
 }
 
@@ -84,7 +87,14 @@ export async function apiFetch<T = unknown>(
     if (!refreshPromise) {
       refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
     }
-    const ok = await refreshPromise;
+    let ok: boolean;
+    try {
+      ok = await refreshPromise;
+    } catch {
+      // Refresh threw (5xx or network error) — server unavailable, not session expired.
+      // Rethrow as-is so the caller sees the real error without triggering logout.
+      throw new ApiError(503, 'server_unavailable');
+    }
     if (ok) {
       const retryRes = await rawFetch(path, opts);
       if (!retryRes.ok) {
@@ -93,7 +103,7 @@ export async function apiFetch<T = unknown>(
       }
       return retryRes.json() as Promise<T>;
     }
-    // Refresh failed — session expired
+    // Refresh returned false (401/403) — session truly expired
     _onAuthExpired?.();
     throw new ApiError(401, 'session_expired');
   }

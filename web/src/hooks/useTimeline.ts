@@ -68,6 +68,8 @@ export function useTimeline(
     setRefreshing(false);
     historyLoadedRef.current = null;
 
+    let cancelled = false;
+
     // Check module-level memory cache first — shows events instantly for sessions
     // already loaded in this page session (e.g. SubSessionWindow reopened while
     // SubSessionCard had been receiving events).
@@ -80,7 +82,7 @@ export function useTimeline(
         setRefreshing(true);
         historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
       }
-      return;
+      return () => { cancelled = true; };
     }
 
     // No memory cache — load from IndexedDB as immediate cache while waiting for daemon.
@@ -91,11 +93,14 @@ export function useTimeline(
       const db = sharedDb;
       if (!db) return;
       await db.open(); // ensure DB is open before querying (open() is idempotent)
+      if (cancelled) return;
       const last = await db.getLastSeqAndEpoch(sessionId);
+      if (cancelled) return;
       if (last) {
         epochRef.current = last.epoch;
         seqRef.current = last.seq;
         const stored = await db.getRecentEvents(sessionId, { limit: MAX_MEMORY_EVENTS });
+        if (cancelled) return;
         eventsCache.set(sessionId, stored);
         setEvents(stored);
         // Cache hit — show immediately, but always request full history from daemon
@@ -108,6 +113,7 @@ export function useTimeline(
       } else {
         epochRef.current = 0;
         seqRef.current = 0;
+        if (cancelled) return;
         setEvents([]);
         // No cache — request full history from daemon
         if (ws?.connected) {
@@ -118,6 +124,7 @@ export function useTimeline(
       }
     };
     load().catch(() => {});
+    return () => { cancelled = true; };
   }, [sessionId, ws]);
 
   // Append a single event, dedup by eventId
@@ -257,11 +264,6 @@ export function useTimeline(
         }
       }
     };
-
-    // Always request full history on connect (cache is just for instant display).
-    if (ws.connected && historyLoadedRef.current !== sessionId) {
-      historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
-    }
 
     const unsub = ws.onMessage(handler);
     return unsub;

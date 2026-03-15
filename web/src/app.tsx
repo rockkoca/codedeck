@@ -19,7 +19,7 @@ import { DiscussionsPage } from './pages/DiscussionsPage.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
 import { WsClient } from './ws-client.js';
-import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSession } from './api.js';
+import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSession, ApiError } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
 
 type ViewMode = 'terminal' | 'chat';
@@ -99,10 +99,14 @@ export function App() {
       const authState: AuthState = { userId: user.id, baseUrl };
       localStorage.setItem('rcc_auth', JSON.stringify(authState));
       setAuth(authState);
-    }).catch(() => {
-      // Not authenticated — clear stale localStorage and show login (no reload)
-      localStorage.removeItem('rcc_auth');
-      setAuth(null);
+    }).catch((err) => {
+      // Only clear auth on 401 (not authenticated).
+      // 5xx / network errors mean the server is temporarily unavailable (e.g. restart) —
+      // keep existing auth state so the user isn't logged out on every deploy.
+      if (err instanceof ApiError && err.status === 401) {
+        localStorage.removeItem('rcc_auth');
+        setAuth(null);
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
