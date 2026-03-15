@@ -397,6 +397,32 @@ export function App() {
     return null;
   }, [timelineEvents]);
 
+  // Active thinking detection — same logic as ChatView.
+  // tool.call/tool.result do not end thinking; only text output does.
+  const activeThinkingTs = useMemo(() => {
+    for (let i = timelineEvents.length - 1; i >= 0; i--) {
+      const e = timelineEvents[i];
+      if (e.type === 'assistant.thinking') return e.ts ?? null;
+      if (
+        e.type === 'agent.status' ||
+        e.type === 'usage.update' ||
+        e.type === 'tool.call' ||
+        e.type === 'tool.result'
+      ) continue;
+      return null;
+    }
+    return null;
+  }, [timelineEvents]);
+
+  // Timer for thinking elapsed display (1s tick only while thinking)
+  const [thinkingNow, setThinkingNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!activeThinkingTs) return;
+    setThinkingNow(Date.now());
+    const id = setInterval(() => setThinkingNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [!!activeThinkingTs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Set up WebSocket only when a server is selected
   useEffect(() => {
     if (!auth || !selectedServerId) return;
@@ -1045,11 +1071,17 @@ export function App() {
                   <div class="session-usage-stats">
                     <span class="session-usage-tokens">{fmt(total)} / {fmt(ctx)} ({pctStr}%)</span>
                     {lastUsage.model && <span class="session-usage-tokens" style={{ color: '#818cf8' }}>{lastUsage.model.includes('opus') ? 'opus' : lastUsage.model.includes('sonnet') ? 'sonnet' : lastUsage.model.includes('haiku') ? 'haiku' : lastUsage.model.includes('flash') ? 'flash' : lastUsage.model.split('-').pop()}</span>}
+                    {activeThinkingTs && (
+                      <span class="session-thinking-inline">
+                        <span class="chat-thinking-dots">···</span>
+                        {' '}{trans('chat.thinking_running', { sec: Math.max(0, Math.round((thinkingNow - activeThinkingTs) / 1000)) })}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
             })()}
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={(_name, text) => { addOptimisticUserMessage(text); scrollActiveToBottom(); }} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={false} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={(_name, text) => { addOptimisticUserMessage(text); scrollActiveToBottom(); }} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={false} activeThinking={!!activeThinkingTs} />
 
             {/* Sub-session bar */}
             {selectedServerId && (

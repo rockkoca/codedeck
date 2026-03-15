@@ -356,6 +356,7 @@ body {
 .session-usage-stats { display: flex; justify-content: space-between; font-size: 10px; color: #475569; }
 .session-usage-tokens { color: #64748b; }
 .session-usage-cost { color: #94a3b8; }
+.session-thinking-inline { color: #818cf8; font-style: italic; margin-left: auto; padding-left: 8px; }
 .subsession-input-bar { display: flex; gap: 6px; padding: 6px 8px; background: #0d1117; border-top: 1px solid #1e293b; flex-shrink: 0; }
 .subsession-input { flex: 1; background: #1e293b; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-family: inherit; font-size: 13px; padding: 5px 10px; outline: none; }
 .subsession-input:focus { border-color: #3b82f6; }

@@ -30,6 +30,8 @@ interface Props {
   onSubRestart?: () => void;
   onSubNew?: () => void;
   onSubStop?: () => void;
+  /** When true, show the scan-sweep animation even if session state is not 'running'. */
+  activeThinking?: boolean;
 }
 
 type MenuAction = 'restart' | 'new' | 'stop';
@@ -69,7 +71,7 @@ function loadCodexModel(): CodexModelChoice | null {
   return null;
 }
 
-export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop, activeThinking }: Props) {
   const { t } = useTranslation();
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -286,7 +288,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
   const placeholder = !hasSession ? t('session.no_session') : !connected ? t('session.send_queued') : t('session.send_placeholder', { name: sessionDisplayName ?? activeSession?.name ?? 'session' });
 
   return (
-    <div class={`controls-wrapper${activeSession?.state === 'running' ? ' controls-wrapper-running' : ''}`}>
+    <div class={`controls-wrapper${(activeSession?.state === 'running' || activeThinking) ? ' controls-wrapper-running' : ''}`}>
       {/* Shortcut row — hidden in chat mode */}
       {!hideShortcuts && <div class="shortcuts-row">
         <div class="shortcuts">

@@ -274,7 +274,7 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
             return (
               <button
                 key={sub.id}
-                class={`subsession-card${isOpen ? ' open' : ''} mobile`}
+                class={`subsession-card${isOpen ? ' open' : ''} mobile${sub.state === 'running' ? ' subcard-running-pulse' : ''}`}
                 onClick={() => onOpen(sub.id)}
                 title={label}
               >

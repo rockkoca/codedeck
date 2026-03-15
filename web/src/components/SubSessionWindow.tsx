@@ -3,6 +3,7 @@
  * Uses the full SessionControls for input (same as the main session).
  */
 import { useState, useRef, useCallback, useEffect, useMemo } from 'preact/hooks';
+import { useTranslation } from 'react-i18next';
 import { recordCost, getSessionCost, getWeeklyCost, getMonthlyCost, formatCost } from '../cost-tracker.js';
 import { TerminalView } from './TerminalView.js';
 import { ChatView } from './ChatView.js';
@@ -58,8 +59,33 @@ export function SubSessionWindow({
 }: Props) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+  const { t } = useTranslation();
   const { events, refreshing } = useTimeline(sub.sessionName, ws);
   const quickData = useQuickData();
+
+  // Active thinking detection — tool.call/tool.result do not end thinking
+  const activeThinkingTs = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      if (e.type === 'assistant.thinking') return e.ts ?? null;
+      if (
+        e.type === 'agent.status' ||
+        e.type === 'usage.update' ||
+        e.type === 'tool.call' ||
+        e.type === 'tool.result'
+      ) continue;
+      return null;
+    }
+    return null;
+  }, [events]);
+
+  const [thinkingNow, setThinkingNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!activeThinkingTs) return;
+    setThinkingNow(Date.now());
+    const id = setInterval(() => setThinkingNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [!!activeThinkingTs]); // eslint-disable-line react-hooks/exhaustive-deps
   const initial = loadLocal(sub.id, isMobile);
   const [geom, setGeom] = useState<WindowGeometry>(initial.geom);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.viewMode);
@@ -230,7 +256,7 @@ export function SubSessionWindow({
     : { position: 'fixed', left: geom.x, top: geom.y, width: geom.w, height: geom.h, zIndex };
 
   return (
-    <div class="subsession-window" style={style} onMouseDown={onFocus}>
+    <div class={`subsession-window${(sub.state === 'running' || activeThinkingTs) ? ' subcard-running-pulse' : ''}`} style={style} onMouseDown={onFocus}>
       {/* 8-direction resize handles (desktop only) */}
       {!isMobile && (['n','s','e','w','ne','nw','se','sw'] as ResizeDir[]).map((dir) => (
         <div key={dir} class={`resize-handle resize-${dir}`} onMouseDown={onResizeMouseDown(dir)} />
@@ -308,6 +334,12 @@ export function SubSessionWindow({
                   {formatCost(sessionCost)} · wk {formatCost(weeklyCost)} · mo {formatCost(monthlyCost)}
                 </span>
               )}
+              {activeThinkingTs && (
+                <span class="session-thinking-inline">
+                  <span class="chat-thinking-dots">···</span>
+                  {' '}{t('chat.thinking_running', { sec: Math.max(0, Math.round((thinkingNow - activeThinkingTs) / 1000)) })}
+                </span>
+              )}
             </div>
           </div>
         );
@@ -327,6 +359,7 @@ export function SubSessionWindow({
           onSubStop={onClose}
           onRenameSession={onRename}
           sessionDisplayName={sub.label ?? agentTag}
+          activeThinking={!!activeThinkingTs}
         />
       </div>
     </div>
