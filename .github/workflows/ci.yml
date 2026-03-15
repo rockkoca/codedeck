@@ -149,10 +149,8 @@ jobs:
       - run: npm ci
       - name: Run pipe-pane e2e tests
         run: npx vitest run test/e2e/pipe-pane-stream.test.ts
-      - name: Run other e2e tests (tmux-dependent tests skipped — claude not installed in CI)
+      - name: Run other e2e tests
         run: npm run test:e2e
-        env:
-          SKIP_TMUX_TESTS: '1'
 
   # ── Coverage ──────────────────────────────────────────────────────────────
 
@@ -166,10 +164,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION_PRIMARY }}
           cache: 'npm'
+      - name: Install tmux
+        run: sudo apt-get install -y tmux
+      - name: Prime tmux server
+        run: tmux new-session -d -s init && tmux kill-session -t init
       - run: npm ci
       - run: npm run test:coverage
-        env:
-          SKIP_TMUX_TESTS: '1'
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
         with:
