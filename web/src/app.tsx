@@ -321,6 +321,7 @@ export function App() {
   const termFitFnsRef = useRef<Map<string, () => void>>(new Map());
   const termScrollFnsRef = useRef<Map<string, () => void>>(new Map());
   const chatScrollFnRef = useRef<(() => void) | null>(null);
+  const setChatScrollFn = useCallback((fn: () => void) => { chatScrollFnRef.current = fn; }, []);
   const openSubIdsRef = useRef(openSubIds);
   openSubIdsRef.current = openSubIds;
   const subSessionsRef = useRef(subSessions);
@@ -968,7 +969,7 @@ export function App() {
 
             {/* Chat view for active session in chat mode */}
             {activeSession && viewMode === 'chat' && (
-              <ChatView events={timelineEvents} loading={timelineLoading} refreshing={timelineRefreshing} sessionId={activeSession} sessionState={activeSessionInfo?.state} onScrollBottomFn={(fn) => { chatScrollFnRef.current = fn; }} />
+              <ChatView events={timelineEvents} loading={timelineLoading} refreshing={timelineRefreshing} sessionId={activeSession} sessionState={activeSessionInfo?.state} onScrollBottomFn={setChatScrollFn} />
             )}
 
             {!activeSession && !sessionsLoaded && (
