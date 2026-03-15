@@ -282,7 +282,13 @@ export function App() {
   }, []);
 
   const toggleSubSession = useCallback((id: string) => {
+    const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     setOpenSubIds((prev) => {
+      if (mobile) {
+        // Exclusive on mobile: close if already open, otherwise open only this one
+        if (prev.has(id)) return new Set();
+        return new Set([id]);
+      }
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
