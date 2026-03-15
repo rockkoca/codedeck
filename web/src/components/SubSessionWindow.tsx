@@ -203,8 +203,20 @@ export function SubSessionWindow({
     }
   }, [lastCostEvent?.costUsd, sub.sessionName]);
 
+  const [barHeight, setBarHeight] = useState(0);
+  useEffect(() => {
+    if (!isMobile) return;
+    const bar = document.querySelector('.subsession-bar');
+    if (!bar) return;
+    const update = () => setBarHeight((bar as HTMLElement).offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [isMobile]);
+
   const style: Record<string, string | number> = isMobile
-    ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex }
+    ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: barHeight, zIndex }
     : { position: 'fixed', left: geom.x, top: geom.y, width: geom.w, height: geom.h, zIndex };
 
   return (
