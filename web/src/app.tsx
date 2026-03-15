@@ -20,7 +20,7 @@ import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
 import { getActiveThinkingTs } from './thinking-utils.js';
 import { WsClient } from './ws-client.js';
-import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSession, ApiError } from './api.js';
+import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSessionIfStale, ApiError } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
 
 type ViewMode = 'terminal' | 'chat';
@@ -99,7 +99,12 @@ export function App() {
     apiFetch<{ id: string }>('/api/auth/user/me').then((user) => {
       const authState: AuthState = { userId: user.id, baseUrl };
       localStorage.setItem('rcc_auth', JSON.stringify(authState));
-      setAuth(authState);
+      // Use stable reference: if userId and baseUrl haven't changed, keep the same object
+      // so useEffect([auth]) doesn't re-run and startProactiveRefresh() isn't called twice.
+      setAuth((prev) => {
+        if (prev && prev.userId === authState.userId && prev.baseUrl === authState.baseUrl) return prev;
+        return authState;
+      });
     }).catch((err) => {
       // Only clear auth on 401 (not authenticated).
       // 5xx / network errors mean the server is temporarily unavailable (e.g. restart) —
@@ -125,9 +130,10 @@ export function App() {
 
   // Refresh session whenever the tab becomes visible again (mobile browsers pause
   // setInterval when the tab is backgrounded, so the proactive timer may miss).
+  // Rate-limited to avoid excessive token rotation from frequent tab switches.
   useEffect(() => {
     if (!auth) return;
-    const onVisible = () => { if (document.visibilityState === 'visible') void refreshSession(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshSessionIfStale(5 * 60 * 1000); };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [auth]);

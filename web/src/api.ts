@@ -24,12 +24,18 @@ function getCsrfToken(): string | null {
 // Single-flight lock: at most one refresh in progress at a time.
 let refreshPromise: Promise<boolean> | null = null;
 
+// Track the last successful refresh timestamp to rate-limit proactive refreshes.
+// This prevents the double-refresh on startup (auth state changes twice) and
+// excessive token rotation from frequent visibility-change events.
+let _lastRefreshAt = 0;
+
 async function doRefresh(): Promise<boolean> {
   // Use rawFetch so the CSRF token is automatically attached
   const res = await rawFetch('/api/auth/refresh', { method: 'POST' });
   // 5xx means server is temporarily unavailable, not that the session expired.
   // Throw so callers can distinguish "no session" (false) from "server down" (throws).
   if (res.status >= 500) throw new ApiError(res.status, await res.text().catch(() => ''));
+  if (res.ok) _lastRefreshAt = Date.now();
   return res.ok;
 }
 
@@ -41,6 +47,17 @@ export async function refreshSession(): Promise<boolean> {
   return refreshPromise;
 }
 
+/**
+ * Refresh the session only if the last refresh was more than minAgeMs ago.
+ * Returns true if the session is (or was already) fresh.
+ * Use this for proactive/voluntary refreshes (startup, visibility-change) to avoid
+ * unnecessary token rotation. For forced refreshes (401 responses) use refreshSession().
+ */
+export async function refreshSessionIfStale(minAgeMs = 10 * 60 * 1000): Promise<boolean> {
+  if (Date.now() - _lastRefreshAt < minAgeMs) return true; // recently refreshed, skip
+  return refreshSession();
+}
+
 // ── Proactive refresh ─────────────────────────────────────────────────────
 
 let _refreshTimerId: ReturnType<typeof setInterval> | null = null;
@@ -49,9 +66,10 @@ const PROACTIVE_REFRESH_MS = 3.5 * 3600 * 1000; // refresh every 3.5 hours (befo
 /** Start proactive token refresh timer. Call when user logs in. */
 export function startProactiveRefresh(): void {
   stopProactiveRefresh();
-  // Use refreshSession() (single-flight via refreshPromise) so this immediate refresh
-  // cannot race with a concurrent 401-triggered refresh and consume the token first.
-  void refreshSession();
+  // Refresh immediately, but only if we haven't refreshed recently.
+  // This prevents the double-refresh when auth state updates twice on startup
+  // (once from localStorage, again after /api/auth/user/me verification).
+  void refreshSessionIfStale();
   _refreshTimerId = setInterval(() => { void refreshSession(); }, PROACTIVE_REFRESH_MS);
 }
 

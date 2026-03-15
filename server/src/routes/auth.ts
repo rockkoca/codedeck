@@ -290,35 +290,44 @@ authRoutes.post('/refresh', async (c) => {
     return c.json({ error: 'invalid_token' }, 401);
   }
 
-  // Industrial Standard: Refresh Token Reuse Detection
-  if (row.used_at !== null) {
-    const elapsedSinceUse = Date.now() - row.used_at;
-    if (elapsedSinceUse > REUSE_GRACE_MS) {
-      // Potential Replay Attack! Revoke the entire token family for security.
-      await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE family_id = ?')
-        .bind(Date.now(), row.family_id).run();
-      
-      const ip = c.get('clientIp' as never) as string ?? 'unknown';
-      await logAudit({ userId: row.user_id, action: 'auth.refresh_replay_detected', ip, details: { familyId: row.family_id } }, c.env.DB);
-      
-      // Clear cookies to force re-login
-      deleteCookie(c, 'rcc_session', { path: '/' });
-      deleteCookie(c, 'rcc_refresh', { path: '/' });
-      return c.json({ error: 'security_violation_relogin_required' }, 401);
-    }
-    // Within grace period — we could return the same token, but issuing a new one 
-    // is simpler and still secure within this tiny window.
-  }
-
   // Per-user lockout check
   const userLockout = await checkAuthLockout(c.env.DB, `user:${row.user_id}`);
   if (userLockout.locked) {
     return c.json({ error: 'too_many_attempts', retryAfterMs: userLockout.lockedUntil ? userLockout.lockedUntil - Date.now() : 0 }, 429);
   }
 
-  // Mark old token consumed if it wasn't already
-  if (row.used_at === null) {
-    await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE id = ?').bind(Date.now(), row.id).run();
+  // Atomically mark token as consumed (only if not already consumed).
+  // Using AND used_at IS NULL prevents a race where two concurrent requests both
+  // SELECT used_at=null, then both try to mark the token — the second UPDATE would
+  // overwrite used_at to a later timestamp, making later grace-window checks incorrect.
+  const now = Date.now();
+  const claimResult = await c.env.DB.prepare(
+    'UPDATE refresh_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL',
+  ).bind(now, row.id).run();
+
+  if (claimResult.changes === 0) {
+    // Another concurrent request already marked this token — re-read the actual used_at.
+    // This happens in legitimate multi-tab scenarios where two tabs refresh simultaneously.
+    const refetched = await c.env.DB.prepare(
+      'SELECT used_at FROM refresh_tokens WHERE id = ?',
+    ).bind(row.id).first<{ used_at: number | null }>();
+    const usedAt = refetched?.used_at ?? row.used_at;
+    const elapsedSinceUse = usedAt !== null ? now - usedAt : 0;
+
+    if (elapsedSinceUse > REUSE_GRACE_MS) {
+      // Potential Replay Attack! Revoke the entire token family for security.
+      await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE family_id = ?')
+        .bind(now, row.family_id).run();
+
+      const ip = c.get('clientIp' as never) as string ?? 'unknown';
+      await logAudit({ userId: row.user_id, action: 'auth.refresh_replay_detected', ip, details: { familyId: row.family_id } }, c.env.DB);
+
+      // Clear cookies to force re-login
+      deleteCookie(c, 'rcc_session', { path: '/' });
+      deleteCookie(c, 'rcc_refresh', { path: '/' });
+      return c.json({ error: 'security_violation_relogin_required' }, 401);
+    }
+    // Within grace period — another tab concurrently refreshed. Issue a new token pair.
   }
 
   // Issue new access (4h) + refresh (30d) tokens
