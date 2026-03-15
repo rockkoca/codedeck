@@ -496,6 +496,10 @@ export async function startWatchingFile(sessionName: string, filePath: string): 
 
   if (!appeared || state.stopped) return;
 
+  // Replay recent history so chat view is populated on open/restart.
+  // Same as startWatching does for main sessions.
+  await emitRecentHistory(sessionName, filePath);
+
   // Poll every 2s for new content
   state.pollTimer = setInterval(() => {
     void drainNewLines(sessionName, state);
