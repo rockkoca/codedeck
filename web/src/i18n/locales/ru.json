@@ -20,7 +20,9 @@
     "loading": "Загрузка чата...",
     "syncing": "↻ Синхронизация...",
     "no_events": "Событий пока нет",
-    "session_state": "Сессия {{state}}"
+    "session_state": "Сессия {{state}}",
+    "thinking_running": "Думаю · {{sec}}s",
+    "thinking_done": "Думал {{sec}}s"
   },
   "session": {
     "restart": "↺ Перезапустить",

@@ -20,7 +20,9 @@
     "loading": "채팅 로딩 중...",
     "syncing": "↻ 동기화 중...",
     "no_events": "아직 이벤트 없음",
-    "session_state": "세션 {{state}}"
+    "session_state": "세션 {{state}}",
+    "thinking_running": "생각 중 · {{sec}}s",
+    "thinking_done": "{{sec}}s 동안 생각함"
   },
   "session": {
     "restart": "↺ 재시작",

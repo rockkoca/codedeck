@@ -170,6 +170,16 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     return null;
   }, [events]);
 
+  // Active thinking event = last assistant.thinking that has no subsequent non-thinking/non-status event
+  const activeThinkingTs = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      if (e.type === 'assistant.thinking') return e.ts;
+      if (e.type !== 'agent.status' && e.type !== 'usage.update') return null;
+    }
+    return null;
+  }, [events]);
+
   const scrollToBottom = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -294,11 +304,13 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
         })}
         <div ref={bottomRef} />
       </div>
-      {/* Thinking status bar — fixed at bottom, shows real CC thinking from JSONL */}
-      {!preview && statusText && (
+      {/* Status / thinking bar — fixed at bottom */}
+      {!preview && (statusText || activeThinkingTs) && (
         <div class="chat-thinking-bar">
           <span class="chat-thinking-dots">●●●</span>
-          {' '}{statusText}
+          {' '}{activeThinkingTs
+            ? <ActiveThinkingLabel startTs={activeThinkingTs} />
+            : statusText}
         </div>
       )}
       {!preview && showScrollBtn && (
@@ -417,22 +429,26 @@ function ChatEvent({ event, nextTs }: { event: TimelineEvent; nextTs?: number })
   }
 }
 
-function ThinkingEvent({ event, endTs }: { event: TimelineEvent; endTs?: number }) {
-  const [expanded, setExpanded] = useState(false);
+function ActiveThinkingLabel({ startTs }: { startTs: number }) {
+  const { t } = useTranslation();
   const [now, setNow] = useState(() => Date.now());
-  const startTs = event.ts ?? Date.now();
-  const finished = endTs !== undefined;
-
   useEffect(() => {
-    if (finished) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [finished]);
+  }, []);
+  const sec = Math.max(0, Math.round((now - startTs) / 1000));
+  return <>{t('chat.thinking_running', { sec })}</>;
+}
 
-  const elapsedMs = (finished ? endTs! : now) - startTs;
-  const elapsedSec = Math.max(0, Math.round(elapsedMs / 1000));
-  const elapsedStr = elapsedSec > 0 ? ` · ${elapsedSec}s` : '';
-  const label = finished ? `思考了${elapsedStr}` : `思考中${elapsedStr}`;
+function ThinkingEvent({ event, endTs }: { event: TimelineEvent; endTs?: number }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+
+  // Not finished yet — shown in the bottom bar instead
+  if (endTs === undefined) return null;
+
+  const elapsedSec = Math.max(0, Math.round((endTs - (event.ts ?? endTs)) / 1000));
+  const label = t('chat.thinking_done', { sec: elapsedSec });
 
   const text = String(event.payload.text ?? '');
   const preview = text.length > 100 ? text.slice(0, 100) + '…' : text;
@@ -441,9 +457,9 @@ function ThinkingEvent({ event, endTs }: { event: TimelineEvent; endTs?: number 
   return (
     <div class="chat-event chat-thinking">
       <button class={`chat-thinking-toggle${hasText ? '' : ' no-text'}`} onClick={hasText ? () => setExpanded(!expanded) : undefined}>
-        <span class={`chat-thinking-dot${finished ? ' done' : ''}`}>~</span>
+        <span class="chat-thinking-dot done">~</span>
         <span class="chat-thinking-label">{label}</span>
-        {hasText && expanded && <span class="chat-thinking-text">{expanded ? text : preview}</span>}
+        {hasText && <span class="chat-thinking-text">{expanded ? text : preview}</span>}
       </button>
     </div>
   );

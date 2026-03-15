@@ -20,7 +20,9 @@
     "loading": "Cargando chat...",
     "syncing": "↻ Sincronizando...",
     "no_events": "Sin eventos aún",
-    "session_state": "Sesión {{state}}"
+    "session_state": "Sesión {{state}}",
+    "thinking_running": "Pensando · {{sec}}s",
+    "thinking_done": "Pensó {{sec}}s"
   },
   "session": {
     "restart": "↺ Reiniciar",

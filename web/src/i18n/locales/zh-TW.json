@@ -20,7 +20,9 @@
     "loading": "載入對話中...",
     "syncing": "↻ 同步中...",
     "no_events": "尚無事件",
-    "session_state": "Session {{state}}"
+    "session_state": "Session {{state}}",
+    "thinking_running": "思考中 · {{sec}}s",
+    "thinking_done": "思考了 {{sec}}s"
   },
   "session": {
     "restart": "↺ 重新啟動",

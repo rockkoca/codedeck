@@ -20,7 +20,9 @@
     "loading": "チャットを読み込み中...",
     "syncing": "↻ 同期中...",
     "no_events": "イベントはまだありません",
-    "session_state": "セッション {{state}}"
+    "session_state": "セッション {{state}}",
+    "thinking_running": "考え中 · {{sec}}s",
+    "thinking_done": "{{sec}}s 考えた"
   },
   "session": {
     "restart": "↺ 再起動",
