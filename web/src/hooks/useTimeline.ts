@@ -13,6 +13,12 @@ import { TimelineDB } from '../timeline-db.js';
 const sharedDb = new TimelineDB();
 sharedDb.open().catch(() => {});
 
+// Module-level events cache: sessionId → latest events array.
+// Updated by every useTimeline instance so that a second instance for the same
+// session (e.g. SubSessionWindow opening while SubSessionCard is running) can
+// render immediately from in-memory state without waiting for IDB or network.
+const eventsCache = new Map<string, TimelineEvent[]>();
+
 const MAX_MEMORY_EVENTS = 500;
 const ECHO_WINDOW_MS = 2000;
 // Dedup window for user.message from JSONL vs web-UI-sent: JSONL watcher polls every 2s,
@@ -39,8 +45,9 @@ export function useTimeline(
   sessionId: string | null,
   ws: WsClient | null,
 ): UseTimelineResult {
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = sessionId ? (eventsCache.get(sessionId) ?? []) : [];
+  const [events, setEvents] = useState<TimelineEvent[]>(cached);
+  const [loading, setLoading] = useState(cached.length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const epochRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
@@ -76,6 +83,7 @@ export function useTimeline(
         epochRef.current = last.epoch;
         seqRef.current = last.seq;
         const stored = await db.getRecentEvents(sessionId, { limit: MAX_MEMORY_EVENTS });
+        eventsCache.set(sessionId, stored);
         setEvents(stored);
         // Cache hit — show immediately, but always request full history from daemon
         // so tool.call / other events not in cache get filled in.
@@ -104,9 +112,11 @@ export function useTimeline(
     setEvents((prev) => {
       if (prev.some((e) => e.eventId === event.eventId)) return prev;
       const next = [...prev, event];
-      return next.length > MAX_MEMORY_EVENTS
+      const result = next.length > MAX_MEMORY_EVENTS
         ? next.slice(next.length - MAX_MEMORY_EVENTS)
         : next;
+      if (event.sessionId) eventsCache.set(event.sessionId, result);
+      return result;
     });
   }, []);
 
@@ -118,9 +128,11 @@ export function useTimeline(
       if (newEvents.length === 0) return prev;
       // Sort by timestamp (not seq) — seq resets across epochs and would interleave
       const merged = [...prev, ...newEvents].sort((a, b) => a.ts - b.ts);
-      return merged.length > MAX_MEMORY_EVENTS
+      const result = merged.length > MAX_MEMORY_EVENTS
         ? merged.slice(merged.length - MAX_MEMORY_EVENTS)
         : merged;
+      if (incoming[0]?.sessionId) eventsCache.set(incoming[0].sessionId, result);
+      return result;
     });
   }, []);
 
