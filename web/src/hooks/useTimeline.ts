@@ -45,9 +45,8 @@ export function useTimeline(
   sessionId: string | null,
   ws: WsClient | null,
 ): UseTimelineResult {
-  const cached = sessionId ? (eventsCache.get(sessionId) ?? []) : [];
-  const [events, setEvents] = useState<TimelineEvent[]>(cached);
-  const [loading, setLoading] = useState(cached.length === 0);
+  const [events, setEvents] = useState<TimelineEvent[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const epochRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
@@ -66,14 +65,28 @@ export function useTimeline(
       return;
     }
 
-    // Show loading until we have content to display
-    setLoading(true);
     setRefreshing(false);
     historyLoadedRef.current = null;
 
-    // Load from IndexedDB as immediate cache while waiting for daemon.
+    // Check module-level memory cache first — shows events instantly for sessions
+    // already loaded in this page session (e.g. SubSessionWindow reopened while
+    // SubSessionCard had been receiving events).
+    const memCached = eventsCache.get(sessionId);
+    if (memCached && memCached.length > 0) {
+      setEvents(memCached);
+      setLoading(false);
+      // Still request full history to fill any gaps
+      if (ws?.connected) {
+        setRefreshing(true);
+        historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
+      }
+      return;
+    }
+
+    // No memory cache — load from IndexedDB as immediate cache while waiting for daemon.
     // Use getRecentEvents (ts-based, no epoch filter) so cached events across
     // daemon restarts are all included — epoch change doesn't hide old messages.
+    setLoading(true);
     const load = async () => {
       const db = sharedDb;
       if (!db) return;
