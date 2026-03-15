@@ -39,7 +39,7 @@ interface ViewItem {
  *  - Deduplicate consecutive session.state events with same state (keep last)
  */
 function buildViewItems(events: TimelineEvent[]): ViewItem[] {
-  const visible = events.filter((e) => !e.hidden && e.type !== 'assistant.thinking' && e.type !== 'agent.status' && e.type !== 'usage.update');
+  const visible = events.filter((e) => !e.hidden && e.type !== 'agent.status' && e.type !== 'usage.update');
 
   // Pre-pass: merge tool.call+tool.result pairs and dedup session.state
   const consolidated: TimelineEvent[] = [];
@@ -160,23 +160,14 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
 
   const viewItems = useMemo(() => buildViewItems(events), [events]);
 
-  // Extract active status: show last thinking or agent.status until any other event arrives after it
+  // Extract active status: show last agent.status until any other event arrives after it
   const statusText = useMemo(() => {
-    let lastStatus: string | null = null;
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i];
-      if (e.type === 'assistant.thinking' && e.payload.text) {
-        lastStatus = String(e.payload.text);
-        break;
-      }
-      if (e.type === 'agent.status' && e.payload.label) {
-        lastStatus = String(e.payload.label);
-        break;
-      }
-      // Any other event type means status is done
-      if (e.type !== 'assistant.thinking' && e.type !== 'agent.status') break;
+      if (e.type === 'agent.status' && e.payload.label) return String(e.payload.label);
+      if (e.type !== 'agent.status') break;
     }
-    return lastStatus;
+    return null;
   }, [events]);
 
   const scrollToBottom = () => {
@@ -236,7 +227,7 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   const lastVisibleTs = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i];
-      if (!e.hidden && e.type !== 'assistant.thinking' && e.type !== 'agent.status' && e.type !== 'usage.update') {
+      if (!e.hidden && e.type !== 'agent.status' && e.type !== 'usage.update') {
         return e.ts;
       }
     }
@@ -413,12 +404,29 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
       );
     }
 
+    case 'assistant.thinking':
+      return <ThinkingEvent event={event} />;
+
     case 'terminal.snapshot':
       return <SnapshotEvent event={event} />;
 
     default:
       return null;
   }
+}
+
+function ThinkingEvent({ event }: { event: TimelineEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const text = String(event.payload.text ?? '');
+  const preview = text.length > 100 ? text.slice(0, 100) + '…' : text;
+  return (
+    <div class="chat-event chat-thinking">
+      <button class="chat-thinking-toggle" onClick={() => setExpanded(!expanded)}>
+        <span class="chat-tool-icon">~</span>
+        <span class="chat-thinking-text">{expanded ? text : preview}</span>
+      </button>
+    </div>
+  );
 }
 
 function SnapshotEvent({ event }: { event: TimelineEvent }) {

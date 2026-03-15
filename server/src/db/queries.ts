@@ -119,12 +119,11 @@ export async function createServer(
   userId: string,
   name: string,
   tokenHash: string,
-  keyId?: string,
 ): Promise<DbServer> {
   const now = Date.now();
   await db
-    .prepare('INSERT INTO servers (id, user_id, name, token_hash, status, created_at, bound_with_key_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, userId, name, tokenHash, 'offline', now, keyId ?? null)
+    .prepare('INSERT INTO servers (id, user_id, name, token_hash, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(id, userId, name, tokenHash, 'offline', now)
     .run();
   return { id, user_id: userId, team_id: null, name, token_hash: tokenHash, last_heartbeat_at: null, status: 'offline', created_at: now };
 }
@@ -146,8 +145,8 @@ export async function updateServerName(db: PgDatabase, id: string, userId: strin
   return (result.changes ?? 0) > 0;
 }
 
-export async function updateServerToken(db: PgDatabase, id: string, userId: string, tokenHash: string, name: string, keyId?: string): Promise<boolean> {
-  const result = await db.prepare('UPDATE servers SET token_hash = ?, name = ?, bound_with_key_id = ? WHERE id = ? AND user_id = ?').bind(tokenHash, name, keyId ?? null, id, userId).run();
+export async function updateServerToken(db: PgDatabase, id: string, userId: string, tokenHash: string, name: string): Promise<boolean> {
+  const result = await db.prepare('UPDATE servers SET token_hash = ?, name = ? WHERE id = ? AND user_id = ?').bind(tokenHash, name, id, userId).run();
   return (result.changes ?? 0) > 0;
 }
 

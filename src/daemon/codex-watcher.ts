@@ -128,7 +128,7 @@ export function parseLine(sessionName: string, line: string, model?: string): vo
       const timer = setTimeout(() => flushFinalAnswer(sessionName), FINAL_ANSWER_DEBOUNCE_MS);
       finalAnswerBuffers.set(sessionName, { text, timer });
     } else if (pl.phase === 'commentary') {
-      timelineEmitter.emit(sessionName, 'assistant.text', { text: `_${text}_`, streaming: true }, { source: 'daemon', confidence: 'high' });
+      timelineEmitter.emit(sessionName, 'assistant.thinking', { text }, { source: 'daemon', confidence: 'high' });
     }
   }
 }
