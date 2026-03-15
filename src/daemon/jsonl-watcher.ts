@@ -75,8 +75,12 @@ interface ContentBlock {
  * Parse one JSONL line and emit timeline events.
  * - assistant: emit assistant.text, assistant.thinking, tool.call
  * - user: emit user.message, tool.result
+ *
+ * lineByteOffset: byte offset of this line in the file — used to generate stable
+ * eventIds so the same line always produces the same ID regardless of whether it
+ * arrives via real-time streaming or history replay.
  */
-function parseLine(sessionName: string, line: string): void {
+function parseLine(sessionName: string, line: string, lineByteOffset?: number): void {
   if (!line.trim()) return;
 
   let raw: Record<string, unknown>;
@@ -85,6 +89,16 @@ function parseLine(sessionName: string, line: string): void {
   } catch {
     return;
   }
+
+  // Extract original event timestamp from JSONL (CC writes ISO timestamp on each entry).
+  const lineTs = raw['timestamp'] ? new Date(raw['timestamp'] as string).getTime() : undefined;
+  const ts = lineTs && isFinite(lineTs) ? lineTs : undefined;
+
+  // Stable ID generator: same line always gets same eventId across restarts.
+  let blockIdx = 0;
+  const stableId = lineByteOffset !== undefined
+    ? (suffix: string) => `cc:${sessionName}:${lineByteOffset}:${suffix}:${blockIdx++}`
+    : undefined;
 
   // Progress events — transient status for status bar display (no message.content)
   if (raw['type'] === 'progress') {
@@ -165,28 +179,28 @@ function parseLine(sessionName: string, line: string): void {
         timelineEmitter.emit(sessionName, 'assistant.text', {
           text: block.text,
           streaming: false,
-        }, { source: 'daemon', confidence: 'high' });
+        }, { source: 'daemon', confidence: 'high', ...(stableId ? { eventId: stableId('at') } : {}), ...(ts ? { ts } : {}) });
       } else if (block.type === 'thinking' && block.thinking) {
         timelineEmitter.emit(sessionName, 'assistant.thinking', {
           text: block.thinking,
-        }, { source: 'daemon', confidence: 'high' });
+        }, { source: 'daemon', confidence: 'high', ...(stableId ? { eventId: stableId('th') } : {}), ...(ts ? { ts } : {}) });
       } else if (block.type === 'tool_use' && block.name) {
         if (block.name === 'AskUserQuestion') {
           const inp = block.input as Record<string, unknown> | undefined;
           timelineEmitter.emit(sessionName, 'ask.question', {
             toolUseId: block.id,
             questions: inp?.['questions'] ?? [],
-          }, { source: 'daemon', confidence: 'high' });
+          }, { source: 'daemon', confidence: 'high', ...(stableId ? { eventId: stableId('aq') } : {}), ...(ts ? { ts } : {}) });
         } else {
           const input = extractToolInput(block.name, block.input);
           timelineEmitter.emit(sessionName, 'tool.call', {
             tool: block.name,
             ...(input ? { input } : {}),
-          }, { source: 'daemon', confidence: 'high' });
+          }, { source: 'daemon', confidence: 'high', ...(stableId ? { eventId: stableId('tc') } : {}), ...(ts ? { ts } : {}) });
         }
       }
     }
-    // Emit token usage + model for context bar
+    // Emit token usage + model for context bar (transient, no stable ID needed)
     const usage = msg['usage'] as { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | undefined;
     const model = msg['model'] as string | undefined;
     if (usage && typeof usage.input_tokens === 'number') {
@@ -205,12 +219,12 @@ function parseLine(sessionName: string, line: string): void {
       if (block.type === 'text' && block.text?.trim()) {
         timelineEmitter.emit(sessionName, 'user.message', {
           text: block.text,
-        }, { source: 'daemon', confidence: 'high' });
+        }, { source: 'daemon', confidence: 'high', ...(stableId ? { eventId: stableId('um') } : {}), ...(ts ? { ts } : {}) });
       } else if (block.type === 'tool_result') {
         const error = block.is_error ? String(block.content ?? 'error') : undefined;
         timelineEmitter.emit(sessionName, 'tool.result', {
           ...(error ? { error } : {}),
-        }, { source: 'daemon', confidence: 'high' });
+        }, { source: 'daemon', confidence: 'high', ...(stableId ? { eventId: stableId('tr') } : {}), ...(ts ? { ts } : {}) });
       }
     }
   }
@@ -623,14 +637,18 @@ async function drainNewLines(sessionName: string, state: WatcherState): Promise<
     const { bytesRead } = await fh.read(buf, 0, buf.length, state.fileOffset);
     if (bytesRead === 0) return;
 
+    const chunkStartOffset = state.fileOffset;
     state.fileOffset += bytesRead;
 
     const chunk = buf.subarray(0, bytesRead).toString('utf8');
     const lines = chunk.split('\n');
 
+    // Track byte offset of each line for stable eventId generation
+    let lineByteOffset = chunkStartOffset;
     for (const line of lines) {
       if (state.stopped) break;
-      parseLine(sessionName, line);
+      parseLine(sessionName, line, lineByteOffset);
+      lineByteOffset += Buffer.byteLength(line, 'utf8') + 1; // +1 for \n
     }
   } catch (err) {
     if (!state.stopped) {

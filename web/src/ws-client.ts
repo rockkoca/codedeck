@@ -259,10 +259,11 @@ export class WsClient {
     this.send({ type: 'terminal.snapshot_request', sessionName });
   }
 
-  /** Request full timeline history for a session (used on first load). */
-  sendTimelineHistoryRequest(sessionName: string, limit = 500): string {
+  /** Request full timeline history for a session (used on first load / daemon reconnect).
+   *  afterTs: client's latest known event timestamp — server returns only newer events. */
+  sendTimelineHistoryRequest(sessionName: string, limit = 500, afterTs?: number): string {
     const requestId = crypto.randomUUID();
-    this.send({ type: 'timeline.history_request', sessionName, requestId, limit });
+    this.send({ type: 'timeline.history_request', sessionName, requestId, limit, ...(afterTs !== undefined ? { afterTs } : {}) });
     return requestId;
   }
 

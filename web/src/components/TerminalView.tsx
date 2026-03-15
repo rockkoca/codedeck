@@ -198,22 +198,9 @@ export function TerminalView({ sessionName, ws, connected, onDiff, onHistory, on
       term.scrollToBottom();
       autoFollowRef.current = true;
       requestAnimationFrame(() => { fittingRef.current = false; });
-      // Re-paint buffered content in place so resize doesn't flash blank
-      if (linesRef.current.length > 0) {
-        let buf = '\x1b[H';
-        for (let i = 0; i < linesRef.current.length; i++) {
-          buf += (linesRef.current[i] ?? '') + '\x1b[K';
-          if (i < linesRef.current.length - 1) buf += '\r\n';
-        }
-        buf += '\x1b[J';
-        writingCountRef.current++;
-        term.write(buf, () => {
-          writingCountRef.current--;
-          // Snap to bottom again after content is rewritten
-          autoFollowRef.current = true;
-          term.scrollToBottom();
-        });
-      }
+      // NOTE: do NOT repaint linesRef.current here — xterm reflows on resize natively,
+      // and repainting with stale diff buffer clobbers live PTY output (especially on mobile
+      // where viewport resizes frequently due to address bar / keyboard show/hide).
     });
     if (containerRef.current) observer.observe(containerRef.current);
 

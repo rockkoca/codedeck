@@ -79,10 +79,11 @@ export function useTimeline(
     if (memCached && memCached.length > 0) {
       setEvents(memCached);
       setLoading(false);
-      // Still request full history to fill any gaps
+      // Request only events newer than what we already have
       if (ws?.connected) {
         setRefreshing(true);
-        historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
+        const afterTs = Math.max(...memCached.map((e) => e.ts));
+        historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId, 500, afterTs);
       }
       return () => { cancelled = true; };
     }
@@ -105,12 +106,12 @@ export function useTimeline(
         if (cancelled) return;
         eventsCache.set(sessionId, stored);
         setEvents(stored);
-        // Cache hit — show immediately, but always request full history from daemon
-        // so tool.call / other events not in cache get filled in.
+        // Cache hit — show immediately, request only events newer than cache
         setLoading(false);
         if (ws?.connected) {
           setRefreshing(true);
-          historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
+          const afterTs = stored.length > 0 ? Math.max(...stored.map((e) => e.ts)) : undefined;
+          historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId, 500, afterTs);
         }
       } else {
         epochRef.current = 0;
@@ -282,11 +283,13 @@ export function useTimeline(
         setRefreshing(false);
       }
 
-      // ── Reconnect: daemon restarted → epoch changed, replay is useless. Request full history. ──
+      // ── Reconnect: daemon restarted → epoch changed, replay is useless. Request only new events. ──
       if (msg.type === 'daemon.reconnected') {
         if (ws && sessionId) {
           setRefreshing(true);
-          historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId);
+          const cached = eventsCache.get(sessionId);
+          const afterTs = cached && cached.length > 0 ? Math.max(...cached.map((e) => e.ts)) : undefined;
+          historyRequestIdRef.current = ws.sendTimelineHistoryRequest(sessionId, 500, afterTs);
         }
       }
       // ── Browser WS reconnected: fill gaps since last seen seq ──
