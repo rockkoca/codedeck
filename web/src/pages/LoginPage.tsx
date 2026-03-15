@@ -1,6 +1,7 @@
 export function LoginPage() {
   const handleGithub = () => {
-    window.location.href = '/api/auth/github?reauth=1';
+    const params = new URLSearchParams({ reauth: '1', origin: window.location.origin });
+    window.location.href = `/api/auth/github?${params}`;
   };
 
   return (

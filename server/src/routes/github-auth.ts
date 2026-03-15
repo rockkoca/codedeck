@@ -33,8 +33,23 @@ function resolveCurrentOrigin(
 
 // GET /api/auth/github — redirect to GitHub OAuth
 // ?reauth=1 → forces GitHub login page (prevents auto-login after logout)
+// ?origin=https://... → explicit origin for proxied deployments where Host is rewritten
 githubAuthRoutes.get('/', async (c): Promise<Response> => {
-  const currentOrigin = resolveCurrentOrigin(c);
+  // Allow the frontend to pass its origin explicitly (needed when a reverse proxy
+  // rewrites the Host header, e.g. CF proxy codedeck.cc → app.codedeck.org).
+  // Validated against ALLOWED_ORIGINS to prevent open-redirect.
+  const explicitOrigin = c.req.query('origin');
+  let currentOrigin: string;
+  if (explicitOrigin) {
+    const normalized = explicitOrigin.replace(/\/$/, '');
+    if (allowedOrigins(c.env).has(normalized)) {
+      currentOrigin = normalized;
+    } else {
+      currentOrigin = resolveCurrentOrigin(c);
+    }
+  } else {
+    currentOrigin = resolveCurrentOrigin(c);
+  }
 
   // State JWT embeds the origin so we know where to redirect after OAuth.
   // Cookie is set on the user's actual domain (e.g. codedeck.cc via proxy).
@@ -99,34 +114,30 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
 
     targetOrigin = statePayload.origin ?? null;
 
-    // Cross-domain relay: if the OAuth was initiated on a proxy domain (e.g. codedeck.cc),
-    // the oauth_state cookie lives on that domain, not here (app.codedeck.org).
-    // Forward code+state to the proxy domain where the cookie can be verified.
     const actualOrigin = resolveCurrentOrigin(c);
-
     logger.info({ targetOrigin, actualOrigin }, 'oauth callback: origin detection');
 
-    if (targetOrigin && targetOrigin !== actualOrigin) {
-      const allowed = allowedOrigins(c.env);
-      logger.info({ targetOrigin, match: allowed.has(targetOrigin) }, 'oauth callback: cross-domain relay check');
-      if (allowed.has(targetOrigin)) {
-        const relayUrl = new URL(`${targetOrigin}/api/auth/github/callback`);
-        relayUrl.searchParams.set('code', code);
-        relayUrl.searchParams.set('state', state);
-        logger.info({ relayUrl: relayUrl.toString() }, 'oauth callback: relaying to proxy domain');
-        return c.redirect(relayUrl.toString());
-      }
-    }
-
-    // Verify state JWT + cookie binding (same-domain or proxied-back request)
+    // Verify state JWT + cookie binding.
+    // When the callback arrives on a proxy domain (cookie present), verify normally.
+    // When the callback arrives on SERVER_URL (cross-domain), the cookie won't be here —
+    // we skip cookie check and instead relay via relay_token after exchanging the code.
     const cookieState = getCookie(c, 'oauth_state');
-    logger.info({ cookieState: !!cookieState, nonce: statePayload.nonce?.slice(0, 8) }, 'oauth callback: cookie check');
-    if (!cookieState || statePayload.nonce !== cookieState) {
-      logger.warn({ hasCookie: !!cookieState, targetOrigin, actualOrigin }, 'oauth callback: state_mismatch');
-      return c.json({ error: 'state_mismatch' }, 400);
+    const isCrossDomain = targetOrigin && targetOrigin !== actualOrigin && allowedOrigins(c.env).has(targetOrigin);
+
+    if (!isCrossDomain) {
+      // Same-domain flow: verify cookie binding
+      logger.info({ cookieState: !!cookieState, nonce: statePayload.nonce?.slice(0, 8) }, 'oauth callback: cookie check');
+      if (!cookieState || statePayload.nonce !== cookieState) {
+        logger.warn({ hasCookie: !!cookieState, targetOrigin, actualOrigin }, 'oauth callback: state_mismatch');
+        return c.json({ error: 'state_mismatch' }, 400);
+      }
+      deleteCookie(c, 'oauth_state', { path: '/api/auth/github/callback' });
+    } else {
+      // Cross-domain: cookie lives on the proxy domain, not here. Skip cookie check.
+      // We'll exchange the code here (where GitHub's redirect_uri points) and relay
+      // with a signed relay_token to the proxy domain.
+      logger.info({ targetOrigin }, 'oauth callback: cross-domain relay, skipping cookie check');
     }
-    // Consume the state cookie immediately (one-time use)
-    deleteCookie(c, 'oauth_state', { path: '/api/auth/github/callback' });
 
     // Exchange code for GitHub access token
     const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
@@ -173,6 +184,20 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
       await upsertPlatformIdentity(c.env.DB, randomHex(16), user.id, 'github', String(githubUser.id));
     }
     userId = user.id;
+
+    // Cross-domain relay: exchange is done, now relay with a signed token
+    // so the proxy domain can set cookies without needing the oauth_state cookie.
+    if (isCrossDomain) {
+      const relay = signJwt(
+        { sub: userId, type: 'auth-relay', origin: targetOrigin },
+        c.env.JWT_SIGNING_KEY,
+        120,
+      );
+      const relayUrl = new URL(`${targetOrigin}/api/auth/github/callback`);
+      relayUrl.searchParams.set('relay_token', relay);
+      logger.info({ relayUrl: relayUrl.toString() }, 'oauth callback: relaying to proxy domain with token');
+      return c.redirect(relayUrl.toString());
+    }
   }
 
   const isSecure = c.env.NODE_ENV === 'production';
