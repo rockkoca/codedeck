@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import type { TimelineEvent } from '../ws-client.js';
+import { getActiveThinkingTs } from '../thinking-utils.js';
 
 interface Props {
   events: TimelineEvent[];
@@ -39,7 +40,21 @@ interface ViewItem {
  *  - Deduplicate consecutive session.state events with same state (keep last)
  */
 function buildViewItems(events: TimelineEvent[]): ViewItem[] {
-  const visible = events.filter((e) => !e.hidden && e.type !== 'agent.status' && e.type !== 'usage.update');
+  // Filter out transient/noisy event types that don't belong in the chat log:
+  // - agent.status, usage.update: stats, not chat content
+  // - session.state, mode.state: shown elsewhere (tabs/header), and they break
+  //   consecutive tool-call grouping when hooks fire between tool calls
+  // - command.ack, terminal.snapshot: internal plumbing
+  const visible = events.filter(
+    (e) =>
+      !e.hidden &&
+      e.type !== 'agent.status' &&
+      e.type !== 'usage.update' &&
+      e.type !== 'session.state' &&
+      e.type !== 'mode.state' &&
+      e.type !== 'command.ack' &&
+      e.type !== 'terminal.snapshot',
+  );
 
   // Pre-pass: merge tool.call+tool.result pairs and dedup session.state
   const consolidated: TimelineEvent[] = [];
@@ -170,22 +185,9 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     return null;
   }, [events]);
 
-  // Active thinking event = last assistant.thinking with no subsequent text output.
-  // tool.call / tool.result do NOT end thinking — only assistant.text (or similar) does.
-  const activeThinkingTs = useMemo(() => {
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i];
-      if (e.type === 'assistant.thinking') return e.ts;
-      if (
-        e.type === 'agent.status' ||
-        e.type === 'usage.update' ||
-        e.type === 'tool.call' ||
-        e.type === 'tool.result'
-      ) continue;
-      return null;
-    }
-    return null;
-  }, [events]);
+  // Earliest ts of the current continuous thinking sequence.
+  // Multiple thinking events in one turn keep the original start ts (timer doesn't reset).
+  const activeThinkingTs = useMemo(() => getActiveThinkingTs(events), [events]);
 
   const scrollToBottom = () => {
     const el = scrollRef.current;

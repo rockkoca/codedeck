@@ -4,6 +4,7 @@
  */
 import { useState, useRef, useCallback, useEffect, useMemo } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
+import { getActiveThinkingTs } from '../thinking-utils.js';
 import { recordCost, getSessionCost, getWeeklyCost, getMonthlyCost, formatCost } from '../cost-tracker.js';
 import { TerminalView } from './TerminalView.js';
 import { ChatView } from './ChatView.js';
@@ -63,21 +64,8 @@ export function SubSessionWindow({
   const { events, refreshing } = useTimeline(sub.sessionName, ws);
   const quickData = useQuickData();
 
-  // Active thinking detection — tool.call/tool.result do not end thinking
-  const activeThinkingTs = useMemo(() => {
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i];
-      if (e.type === 'assistant.thinking') return e.ts ?? null;
-      if (
-        e.type === 'agent.status' ||
-        e.type === 'usage.update' ||
-        e.type === 'tool.call' ||
-        e.type === 'tool.result'
-      ) continue;
-      return null;
-    }
-    return null;
-  }, [events]);
+  // Earliest ts of the current continuous thinking sequence (shared logic).
+  const activeThinkingTs = useMemo(() => getActiveThinkingTs(events), [events]);
 
   const [thinkingNow, setThinkingNow] = useState(() => Date.now());
   useEffect(() => {
@@ -329,15 +317,15 @@ export function SubSessionWindow({
             </div>
             <div class="session-usage-stats">
               <span class="session-usage-tokens">{fmt(total)} / {fmt(ctx)} ({pctStr}%)</span>
-              {sessionCost > 0 && (
-                <span class="session-usage-cost">
-                  {formatCost(sessionCost)} · wk {formatCost(weeklyCost)} · mo {formatCost(monthlyCost)}
-                </span>
-              )}
               {activeThinkingTs && (
                 <span class="session-thinking-inline">
                   <span class="chat-thinking-dots">···</span>
                   {' '}{t('chat.thinking_running', { sec: Math.max(0, Math.round((thinkingNow - activeThinkingTs) / 1000)) })}
+                </span>
+              )}
+              {sessionCost > 0 && (
+                <span class="session-usage-cost" style={{ marginLeft: 'auto' }}>
+                  {formatCost(sessionCost)} · wk {formatCost(weeklyCost)} · mo {formatCost(monthlyCost)}
                 </span>
               )}
             </div>

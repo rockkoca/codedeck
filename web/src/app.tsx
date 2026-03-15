@@ -18,6 +18,7 @@ import { ServerContextMenu, DeleteServerDialog } from './components/ServerContex
 import { DiscussionsPage } from './pages/DiscussionsPage.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
+import { getActiveThinkingTs } from './thinking-utils.js';
 import { WsClient } from './ws-client.js';
 import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSession, ApiError } from './api.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
@@ -397,22 +398,8 @@ export function App() {
     return null;
   }, [timelineEvents]);
 
-  // Active thinking detection — same logic as ChatView.
-  // tool.call/tool.result do not end thinking; only text output does.
-  const activeThinkingTs = useMemo(() => {
-    for (let i = timelineEvents.length - 1; i >= 0; i--) {
-      const e = timelineEvents[i];
-      if (e.type === 'assistant.thinking') return e.ts ?? null;
-      if (
-        e.type === 'agent.status' ||
-        e.type === 'usage.update' ||
-        e.type === 'tool.call' ||
-        e.type === 'tool.result'
-      ) continue;
-      return null;
-    }
-    return null;
-  }, [timelineEvents]);
+  // Earliest ts of the current continuous thinking sequence (shared logic).
+  const activeThinkingTs = useMemo(() => getActiveThinkingTs(timelineEvents), [timelineEvents]);
 
   // Timer for thinking elapsed display (1s tick only while thinking)
   const [thinkingNow, setThinkingNow] = useState(() => Date.now());
@@ -1070,13 +1057,13 @@ export function App() {
                   </div>
                   <div class="session-usage-stats">
                     <span class="session-usage-tokens">{fmt(total)} / {fmt(ctx)} ({pctStr}%)</span>
-                    {lastUsage.model && <span class="session-usage-tokens" style={{ color: '#818cf8' }}>{lastUsage.model.includes('opus') ? 'opus' : lastUsage.model.includes('sonnet') ? 'sonnet' : lastUsage.model.includes('haiku') ? 'haiku' : lastUsage.model.includes('flash') ? 'flash' : lastUsage.model.split('-').pop()}</span>}
                     {activeThinkingTs && (
                       <span class="session-thinking-inline">
                         <span class="chat-thinking-dots">···</span>
                         {' '}{trans('chat.thinking_running', { sec: Math.max(0, Math.round((thinkingNow - activeThinkingTs) / 1000)) })}
                       </span>
                     )}
+                    {lastUsage.model && <span class="session-usage-tokens" style={{ color: '#818cf8', marginLeft: 'auto' }}>{lastUsage.model.includes('opus') ? 'opus' : lastUsage.model.includes('sonnet') ? 'sonnet' : lastUsage.model.includes('haiku') ? 'haiku' : lastUsage.model.includes('flash') ? 'flash' : lastUsage.model.split('-').pop()}</span>}
                   </div>
                 </div>
               );
