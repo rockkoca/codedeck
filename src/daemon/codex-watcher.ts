@@ -2,7 +2,7 @@
  * Watches Codex JSONL rollout files for structured events.
  */
 
-import { watch, readdir, stat, open } from 'fs/promises';
+import { watch, readdir, stat, open, mkdir, writeFile } from 'fs/promises';
 import type { FileChangeInfo } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -230,6 +230,33 @@ export async function findRolloutPathByUuid(uuid: string): Promise<string | null
     if (match) return join(dir, match);
   }
   return null;
+}
+
+/**
+ * Ensure a rollout file exists for the given UUID.
+ * If one already exists, returns its path. Otherwise creates a minimal
+ * session_meta file so `codex resume <uuid>` can find and use it.
+ */
+export async function ensureSessionFile(uuid: string, cwd: string): Promise<string> {
+  const existing = await findRolloutPathByUuid(uuid);
+  if (existing) return existing;
+
+  const now = new Date();
+  const dir = codexSessionDir(now);
+  await mkdir(dir, { recursive: true });
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const ts = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}T${pad(now.getUTCHours())}-${pad(now.getUTCMinutes())}-${pad(now.getUTCSeconds())}`;
+  const filePath = join(dir, `rollout-${ts}-${uuid}.jsonl`);
+
+  const meta = JSON.stringify({
+    timestamp: now.toISOString(),
+    type: 'session_meta',
+    payload: { id: uuid, timestamp: now.toISOString(), cwd, originator: 'codex_cli_rs' },
+  });
+  await writeFile(filePath, meta + '\n', 'utf8');
+  logger.info({ uuid, filePath }, 'codex-watcher: created session file for resume');
+  return filePath;
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────

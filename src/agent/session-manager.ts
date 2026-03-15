@@ -19,7 +19,7 @@ import {
 import logger from '../util/logger.js';
 import { timelineEmitter } from '../daemon/timeline-emitter.js';
 import { startWatching, startWatchingFile, stopWatching, isWatching, claudeProjectDir } from '../daemon/jsonl-watcher.js';
-import { startWatching as startCodexWatching, startWatchingSpecificFile as startCodexWatchingFile, startWatchingById as startCodexWatchingById, stopWatching as stopCodexWatching, isWatching as isCodexWatching, findRolloutPathByUuid, extractNewRolloutUuid } from '../daemon/codex-watcher.js';
+import { startWatching as startCodexWatching, startWatchingSpecificFile as startCodexWatchingFile, startWatchingById as startCodexWatchingById, stopWatching as stopCodexWatching, isWatching as isCodexWatching, findRolloutPathByUuid, extractNewRolloutUuid, ensureSessionFile as ensureCodexSessionFile } from '../daemon/codex-watcher.js';
 import { startWatching as startGeminiWatching, startWatchingLatest as startGeminiWatchingLatest, stopWatching as stopGeminiWatching, isWatching as isGeminiWatching } from '../daemon/gemini-watcher.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -311,10 +311,22 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
     // If exists and no stored UUID: ccSessionId stays undefined → fall back to dir scan
   }
 
-  // For Codex sessions: resolve codexSessionId from opts or store
+  // For Codex sessions: resolve codexSessionId from opts or store.
+  // If the stored UUID's rollout file no longer exists on disk, clear it so we
+  // launch fresh and capture a new UUID (avoids an infinite resume-crash loop).
   let codexSessionId = opts.codexSessionId;
   if (agentType === 'codex' && !codexSessionId) {
     codexSessionId = getSession(name)?.codexSessionId;
+  }
+  if (agentType === 'codex' && codexSessionId) {
+    const rolloutPath = await findRolloutPathByUuid(codexSessionId);
+    if (!rolloutPath) {
+      // File missing (e.g. cleaned up or new day) — pre-create it so
+      // `codex resume <uuid>` can find it and the watcher starts immediately.
+      await ensureCodexSessionFile(codexSessionId, projectDir).catch((e) => {
+        logger.warn({ err: e, session: name, codexSessionId }, 'Failed to pre-create Codex session file');
+      });
+    }
   }
 
   // For Gemini sessions: resolve geminiSessionId from opts or store.

@@ -34,11 +34,13 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
 
   if (await sessionExists(sessionName)) return;
 
-  // For Codex: generate explicit UUID before launch to ensure perfect isolation
-  let codexSessionId = sub.codexModel ? undefined : undefined; // placeholder for logic
+  // For Codex: generate explicit UUID before launch, then pre-create the session
+  // file so `codex resume <uuid>` finds it immediately and the watcher starts fast.
   if (agentType === 'codex') {
     const { randomUUID } = await import('node:crypto');
     sub.codexSessionId = sub.codexSessionId ?? randomUUID();
+    const { ensureSessionFile } = await import('./codex-watcher.js');
+    await ensureSessionFile(sub.codexSessionId, sub.cwd ?? process.cwd()).catch(() => {});
   }
 
   const launchCmd = driver.buildLaunchCommand(sessionName, {
