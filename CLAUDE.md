@@ -82,6 +82,7 @@ The web project uses `i18next` with `react-i18next` for internationalization.
   - Translate: `t('namespace.key')` or `t('namespace.key_with_params', { name: 'value' })`
 - **Interpolation**: Uses double curly braces: `{{variable}}`.
 - **Supported**: `en`, `zh-CN`, `zh-TW`, `es`, `ru`, `ja`, `ko`. Default is auto-detected from browser or `localStorage`.
+- **MANDATORY**: All user-visible strings in `web/` MUST use `t()`. Never hardcode display text in any language. When adding new strings, update ALL 7 locale files.
 
 ## Key Conventions
 

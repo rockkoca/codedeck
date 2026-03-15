@@ -679,6 +679,28 @@ export function App() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (el?.isContentEditable) return;
 
+      const currentViewMode = viewModesRef.current[session] ?? defaultViewMode;
+      if (currentViewMode === 'chat') {
+        // In chat mode: route Up/Down/Enter to chat input (history nav + send)
+        const chatInput = inputRef.current;
+        if (!chatInput) return;
+        if (e.key === 'Enter' || e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Backspace') {
+          e.preventDefault();
+          chatInput.focus();
+          chatInput.dispatchEvent(new KeyboardEvent('keydown', {
+            key: e.key, code: e.code, keyCode: e.keyCode,
+            ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
+            bubbles: true, cancelable: true,
+          }));
+        } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
+          // Printable chars: focus and insert text directly into contentEditable
+          e.preventDefault();
+          chatInput.focus();
+          document.execCommand('insertText', false, e.key);
+        }
+        return;
+      }
+
       let data: string | null = null;
       if (e.key === 'Enter')     { data = '\r'; }
       else if (e.key === 'Backspace') { data = '\x7f'; }
