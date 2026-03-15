@@ -46,15 +46,6 @@ interface Props {
 
 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-const TYPE_ICON: Record<string, string> = {
-  'claude-code': '⚡',
-  'codex': '📦',
-  'opencode': '🔆',
-  'gemini': '♊',
-  'shell': '🐚',
-  'script': '🔄',
-};
-
 const TYPE_ABBR: Record<string, string> = {
   'claude-code': 'cc',
   'codex': 'cx',
