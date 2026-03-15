@@ -395,46 +395,42 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
  * @param sessionName  tmux session name (e.g. "deck_myapp_brain")
  * @param workDir      absolute path to the project working directory
  */
-export async function startWatching(sessionName: string, workDir: string): Promise<void> {
-  if (watchers.has(sessionName)) {
-    stopWatching(sessionName);
+/**
+ * Shared: once a specific JSONL file is confirmed to exist, claim it,
+ * replay recent history, and start polling + fs.watch for new content.
+ * Called by both startWatching (found via dir scan) and startWatchingFile (known path).
+ */
+async function activateFile(sessionName: string, state: WatcherState, filePath: string): Promise<void> {
+  preClaimFile(sessionName, filePath);
+  try {
+    const s = await stat(filePath);
+    state.activeFile = filePath;
+    state.fileOffset = s.size;
+  } catch {
+    state.activeFile = filePath;
+    state.fileOffset = 0;
   }
+  await emitRecentHistory(sessionName, filePath);
+}
+
+export async function startWatching(sessionName: string, workDir: string): Promise<void> {
+  if (watchers.has(sessionName)) stopWatching(sessionName);
 
   const projectDir = claudeProjectDir(workDir);
   const state: WatcherState = {
-    projectDir,
-    activeFile: null,
-    fileOffset: 0,
-    abort: new AbortController(),
-    stopped: false,
+    projectDir, activeFile: null, fileOffset: 0,
+    abort: new AbortController(), stopped: false,
   };
   watchers.set(sessionName, state);
 
-  // Find the current active JSONL file, emit recent history, then tail from EOF.
-  // Only claim an unclaimed file; if the latest is already claimed by another session,
-  // start with no active file and wait for a new one to appear.
+  // Find the current active JSONL file; only claim an unclaimed one.
   const latest = await findLatestJsonl(projectDir);
   if (latest && canClaim(sessionName, latest)) {
-    preClaimFile(sessionName, latest);
-    try {
-      const s = await stat(latest);
-      state.activeFile = latest;
-      state.fileOffset = s.size;
-      // Emit recent assistant.text events from history so chat view populates immediately
-      await emitRecentHistory(sessionName, latest);
-    } catch {
-      state.activeFile = latest;
-      state.fileOffset = 0;
-    }
+    await activateFile(sessionName, state, latest);
   }
 
-  // Poll every 2s as a reliable fallback (fs.watch on macOS misses file appends).
-  // Uses pollTick (not drainNewLines) so it can re-acquire a file if the claim was stolen.
-  state.pollTimer = setInterval(() => {
-    void pollTick(sessionName, state);
-  }, 2000);
-
-  // Watch the project directory for new/modified JSONL files (best-effort, faster than poll)
+  // Poll every 2s (uses pollTick so it can re-acquire a file if the claim changes).
+  state.pollTimer = setInterval(() => { void pollTick(sessionName, state); }, 2000);
   void watchDir(sessionName, state);
 }
 
@@ -455,57 +451,38 @@ export function stopWatching(sessionName: string): void {
 }
 
 /**
- * Start watching a specific JSONL file for a session.
- * Polls until the file appears (CC creates it on first conversation), then tails it.
- * Used for CC sub-sessions where the file path is known from --session-id.
+ * Start watching a specific JSONL file (CC sub-sessions with known --session-id path).
+ * Pre-claims the path immediately so the main session's watchDir can't steal it,
+ * then polls until the file appears, replays history, and tails new content.
  */
 export async function startWatchingFile(sessionName: string, filePath: string): Promise<void> {
-  if (watchers.has(sessionName)) {
-    stopWatching(sessionName);
-  }
+  if (watchers.has(sessionName)) stopWatching(sessionName);
 
-  // Pre-claim the file path immediately — before the file even exists — so that
-  // the main session's watchDir cannot steal it when CC creates the file.
+  // Pre-claim before file exists so the main session watcher cannot steal it.
   preClaimFile(sessionName, filePath);
 
-  // Derive projectDir from filePath (parent directory)
-  const projectDir = dirname(filePath);
   const state: WatcherState = {
-    projectDir,
-    activeFile: null,
-    fileOffset: 0,
-    abort: new AbortController(),
-    stopped: false,
+    projectDir: dirname(filePath), activeFile: null, fileOffset: 0,
+    abort: new AbortController(), stopped: false,
   };
   watchers.set(sessionName, state);
 
-  // Poll until the specific file appears (up to 120s — CC needs first conversation)
+  // Poll until the specific file appears (up to 120s — CC needs first conversation).
   let appeared = false;
   for (let i = 0; i < 120 && !state.stopped; i++) {
     try {
-      const s = await stat(filePath);
-      state.activeFile = filePath;
-      state.fileOffset = s.size; // start from end (only new content)
-      preClaimFile(sessionName, filePath);
+      await stat(filePath);
       appeared = true;
       break;
     } catch {
       await new Promise((r) => setTimeout(r, 1000));
     }
   }
-
   if (!appeared || state.stopped) return;
 
-  // Replay recent history so chat view is populated on open/restart.
-  // Same as startWatching does for main sessions.
-  await emitRecentHistory(sessionName, filePath);
+  await activateFile(sessionName, state, filePath);
 
-  // Poll every 2s for new content
-  state.pollTimer = setInterval(() => {
-    void drainNewLines(sessionName, state);
-  }, 2000);
-
-  // Also use fs.watch on the specific file for faster updates
+  state.pollTimer = setInterval(() => { void drainNewLines(sessionName, state); }, 2000);
   void watchFile(sessionName, state, filePath);
 }
 
