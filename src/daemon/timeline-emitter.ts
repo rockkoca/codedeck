@@ -24,7 +24,7 @@ export class TimelineEmitter {
     sessionId: string,
     type: TimelineEventType,
     payload: Record<string, unknown>,
-    opts?: { source?: TimelineSource; confidence?: TimelineConfidence },
+    opts?: { source?: TimelineSource; confidence?: TimelineConfidence; eventId?: string; ts?: number },
   ): TimelineEvent | null {
     // Deduplicate session.state — skip if state unchanged
     if (type === 'session.state') {
@@ -47,9 +47,9 @@ export class TimelineEmitter {
     this.seqMap.set(sessionId, seq);
 
     const event: TimelineEvent = {
-      eventId: randomUUID(),
+      eventId: opts?.eventId ?? randomUUID(),
       sessionId,
-      ts: Date.now(),
+      ts: opts?.ts ?? Date.now(),
       seq,
       epoch: this.epoch,
       source: opts?.source ?? 'daemon',

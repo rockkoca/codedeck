@@ -372,14 +372,20 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
         </div>
       );
 
-    case 'tool.result':
+    case 'tool.result': {
       // Standalone tool.result (not merged) — still rendered for cases without a preceding call
+      const error = event.payload.error;
       return (
         <div class="chat-event chat-tool">
           <span class="chat-tool-icon">{'<'}</span>
-          {event.payload.error ? `error: ${String(event.payload.error)}` : 'done'}
+          {error ? (
+            <span class="chat-tool-error">{`error: ${String(error)}`}</span>
+          ) : (
+            <span class="chat-tool-output">done</span>
+          )}
         </div>
       );
+    }
 
     case 'mode.state':
       return (

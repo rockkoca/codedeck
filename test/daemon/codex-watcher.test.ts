@@ -391,7 +391,7 @@ describe('parseLine — function_call (Codex tool calls)', () => {
     expect(timelineEmitter.emit).toHaveBeenCalledWith(
       'session-f',
       'tool.call',
-      { tool: 'exec_command', input: 'git status', callId: 'call_abc123' },
+      { tool: 'exec_command', input: 'git status' },
       { source: 'daemon', confidence: 'high' },
     );
   });
@@ -401,7 +401,7 @@ describe('parseLine — function_call (Codex tool calls)', () => {
     expect(timelineEmitter.emit).toHaveBeenCalledWith(
       'session-f',
       'tool.call',
-      { tool: 'read_file', input: '/project/src/index.ts', callId: 'call_abc123' },
+      { tool: 'read_file', input: '/project/src/index.ts' },
       expect.any(Object),
     );
   });
@@ -421,41 +421,27 @@ describe('parseLine — function_call (Codex tool calls)', () => {
     expect(timelineEmitter.emit).toHaveBeenCalledWith(
       'session-f',
       'tool.result',
-      expect.objectContaining({ output: expect.stringContaining('hello world'), callId: 'call_abc123' }),
+      {},
       { source: 'daemon', confidence: 'high' },
     );
   });
 
-  it('truncates long tool output to 400 chars', () => {
-    const longOutput = 'x'.repeat(600);
-    parseLine('session-f', functionCallOutputLine(longOutput));
-    const call = vi.mocked(timelineEmitter.emit).mock.calls[0];
-    const output = (call[2] as { output: string }).output;
-    expect(output.length).toBeLessThanOrEqual(404); // 400 + '…'
-    expect(output.endsWith('…')).toBe(true);
-  });
-
-  it('does not truncate short tool output', () => {
-    const shortOutput = 'done';
-    parseLine('session-f', functionCallOutputLine(shortOutput));
-    const call = vi.mocked(timelineEmitter.emit).mock.calls[0];
-    expect((call[2] as { output: string }).output).toBe('done');
-  });
-
-  it('tool.call and tool.result carry same callId', () => {
+  it('tool.call and tool.result use standard payloads without callId', () => {
     parseLine('session-f', functionCallLine('exec_command', { cmd: 'ls' }, 'call_xyz'));
     parseLine('session-f', functionCallOutputLine('file1\nfile2', 'call_xyz'));
     const calls = vi.mocked(timelineEmitter.emit).mock.calls;
-    expect((calls[0][2] as { callId: string }).callId).toBe('call_xyz');
-    expect((calls[1][2] as { callId: string }).callId).toBe('call_xyz');
+    expect(calls[0][1]).toBe('tool.call');
+    expect(calls[1][1]).toBe('tool.result');
+    expect(calls[0][2]).not.toHaveProperty('callId');
+    expect(calls[1][2]).not.toHaveProperty('callId');
   });
 
   it('emits tool.call for each consecutive function_call independently', () => {
     parseLine('session-f', functionCallLine('read_file', { path: '/a' }, 'call_1'));
     parseLine('session-f', functionCallLine('read_file', { path: '/b' }, 'call_2'));
     expect(timelineEmitter.emit).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(timelineEmitter.emit).mock.calls[0][2]).toMatchObject({ input: '/a', callId: 'call_1' });
-    expect(vi.mocked(timelineEmitter.emit).mock.calls[1][2]).toMatchObject({ input: '/b', callId: 'call_2' });
+    expect(vi.mocked(timelineEmitter.emit).mock.calls[0][2]).toMatchObject({ input: '/a' });
+    expect(vi.mocked(timelineEmitter.emit).mock.calls[1][2]).toMatchObject({ input: '/b' });
   });
 });
 

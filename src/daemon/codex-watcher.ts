@@ -152,16 +152,13 @@ export function parseLine(sessionName: string, line: string, model?: string): vo
         if (summary !== undefined) input = String(summary);
       } catch { /* keep raw args */ }
       timelineEmitter.emit(sessionName, 'tool.call', {
-        tool: name,
-        input,
-        callId: pl['call_id'],
+        tool: name, ...(input ? { input } : {}),
       }, { source: 'daemon', confidence: 'high' });
     } else if (pl['type'] === 'function_call_output') {
-      const output = String(pl['output'] ?? '');
-      timelineEmitter.emit(sessionName, 'tool.result', {
-        output: output.length > 400 ? output.slice(0, 400) + '…' : output,
-        callId: pl['call_id'],
-      }, { source: 'daemon', confidence: 'high' });
+      const errMsg = pl['error'] as string | undefined;
+      timelineEmitter.emit(sessionName, 'tool.result',
+        { ...(errMsg ? { error: errMsg } : {}) },
+        { source: 'daemon', confidence: 'high' });
     }
     return;
   }
@@ -255,14 +252,19 @@ async function emitRecentHistory(sessionName: string, filePath: string, model?: 
     const startIdx = size > readSize ? 1 : 0; // skip possible partial first line
 
     // Pre-pass: deduplicate streaming final_answer snapshots and find last token_count.
+    // bytePos tracks absolute file offset of each source line for stable eventId generation.
     type HistoryEvent =
-      | { type: 'user'; text: string }
-      | { type: 'assistant'; text: string }
-      | { type: 'tool_call'; name: string; input: string; callId: string }
-      | { type: 'tool_result'; output: string; callId: string };
+      | { type: 'user'; text: string; stableId: string }
+      | { type: 'assistant'; text: string; stableId: string }
+      | { type: 'tool_call'; name: string; input: string; callId: string; stableId: string }
+      | { type: 'tool_result'; output: string; callId: string; stableId: string; error?: string };
     const historyEvents: HistoryEvent[] = [];
     let lastTokenPayload: Record<string, unknown> | null = null;
+    let bytePos = size - readSize;
+    for (let i = 0; i < startIdx; i++) bytePos += Buffer.byteLength(lines[i], 'utf8') + 1;
     for (let i = startIdx; i < lines.length; i++) {
+      const lineBytePos = bytePos;
+      bytePos += Buffer.byteLength(lines[i], 'utf8') + 1;
       const line = lines[i];
       if (!line.trim()) continue;
       let raw: Record<string, unknown>;
@@ -281,10 +283,11 @@ async function emitRecentHistory(sessionName: string, filePath: string, model?: 
             const summary = args['cmd'] ?? args['command'] ?? args['path'] ?? args['query'] ?? args['input'];
             if (summary !== undefined) input = String(summary);
           } catch { /* keep raw */ }
-          historyEvents.push({ type: 'tool_call', name, input, callId: String(pl['call_id'] ?? '') });
+          historyEvents.push({ type: 'tool_call', name, input, callId: String(pl['call_id'] ?? ''), stableId: `cx:${sessionName}:${lineBytePos}:tc` });
         } else if (pl['type'] === 'function_call_output') {
           const output = String(pl['output'] ?? '');
-          historyEvents.push({ type: 'tool_result', output: output.length > 400 ? output.slice(0, 400) + '…' : output, callId: String(pl['call_id'] ?? '') });
+          const errMsg = pl['error'] as string | undefined;
+          historyEvents.push({ type: 'tool_result', output: output.length > 400 ? output.slice(0, 400) + '…' : output, callId: String(pl['call_id'] ?? ''), stableId: `cx:${sessionName}:${lineBytePos}:tr`, ...(errMsg ? { error: errMsg } : {}) });
         }
         continue;
       }
@@ -295,15 +298,16 @@ async function emitRecentHistory(sessionName: string, filePath: string, model?: 
       const evtType = payload['type'] as string | undefined;
       if (evtType === 'user_message') {
         const text = payload['message'] as string | undefined;
-        if (text?.trim()) historyEvents.push({ type: 'user', text });
+        if (text?.trim()) historyEvents.push({ type: 'user', text, stableId: `cx:${sessionName}:${lineBytePos}:um` });
       } else if (evtType === 'agent_message' && payload['phase'] === 'final_answer') {
         const text = payload['message'] as string | undefined;
         if (!text?.trim()) continue;
         const last = historyEvents[historyEvents.length - 1];
         if (last?.type === 'assistant') {
           last.text = text;
+          last.stableId = `cx:${sessionName}:${lineBytePos}:at`; // update to last final_answer position
         } else {
-          historyEvents.push({ type: 'assistant', text });
+          historyEvents.push({ type: 'assistant', text, stableId: `cx:${sessionName}:${lineBytePos}:at` });
         }
       } else if (evtType === 'token_count') {
         const info = payload['info'] as Record<string, unknown> | undefined;
@@ -320,23 +324,25 @@ async function emitRecentHistory(sessionName: string, filePath: string, model?: 
     }
 
     // Emit deduplicated history (most recent HISTORY_LINES events)
+    // Stable eventIds ensure duplicate re-emissions across daemon restarts are
+    // deduplicated by the browser's mergeEvents.
     const slice = historyEvents.slice(-HISTORY_LINES);
     for (const ev of slice) {
       if (ev.type === 'user') {
         timelineEmitter.emit(sessionName, 'user.message', { text: ev.text },
-          { source: 'daemon', confidence: 'high' });
+          { source: 'daemon', confidence: 'high', eventId: ev.stableId });
       } else if (ev.type === 'assistant') {
         timelineEmitter.emit(sessionName, 'assistant.text',
           { text: ev.text, streaming: false },
-          { source: 'daemon', confidence: 'high' });
+          { source: 'daemon', confidence: 'high', eventId: ev.stableId });
       } else if (ev.type === 'tool_call') {
         timelineEmitter.emit(sessionName, 'tool.call',
-          { tool: ev.name, input: ev.input, callId: ev.callId },
-          { source: 'daemon', confidence: 'high' });
+          { tool: ev.name, ...(ev.input ? { input: ev.input } : {}) },
+          { source: 'daemon', confidence: 'high', eventId: ev.stableId });
       } else if (ev.type === 'tool_result') {
         timelineEmitter.emit(sessionName, 'tool.result',
-          { output: ev.output, callId: ev.callId },
-          { source: 'daemon', confidence: 'high' });
+          { ...(ev.error ? { error: ev.error } : {}) },
+          { source: 'daemon', confidence: 'high', eventId: ev.stableId });
       }
     }
 

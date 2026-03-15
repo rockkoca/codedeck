@@ -166,14 +166,26 @@ interface GeminiConversation {
   messages: GeminiMessage[];
 }
 
-function parseMessage(sessionName: string, msg: GeminiMessage): void {
+interface HistContext {
+  /** Original message timestamp in ms — use as event ts instead of Date.now() */
+  ts: number;
+  /** Stable ID prefix: "g:{sessionName}:{msgIdx}:" — append event-type suffix for unique ID */
+  idPrefix: string;
+  /** Mutable sub-event counter within this message */
+  counter: { n: number };
+}
+
+function parseMessage(sessionName: string, msg: GeminiMessage, hist?: HistContext): void {
+  const stableId = (suffix: string) => hist ? `${hist.idPrefix}${suffix}:${hist.counter.n++}` : undefined;
+  const stableTs = hist?.ts;
+
   if (msg.type === 'user') {
     const blocks = Array.isArray(msg.content) ? msg.content : [];
     for (const block of blocks) {
       if (block.text?.trim()) {
         timelineEmitter.emit(sessionName, 'user.message',
           { text: block.text },
-          { source: 'daemon', confidence: 'high' });
+          { source: 'daemon', confidence: 'high', eventId: stableId('um'), ts: stableTs });
       }
     }
     return;
@@ -187,7 +199,7 @@ function parseMessage(sessionName: string, msg: GeminiMessage): void {
         if (text?.trim()) {
           timelineEmitter.emit(sessionName, 'assistant.thinking',
             { text },
-            { source: 'daemon', confidence: 'high' });
+            { source: 'daemon', confidence: 'high', eventId: stableId('th'), ts: stableTs });
         }
       }
     }
@@ -201,14 +213,16 @@ function parseMessage(sessionName: string, msg: GeminiMessage): void {
         const input = extractToolInput(tc.name, tc.args);
         timelineEmitter.emit(sessionName, 'tool.call',
           { tool: tc.name, ...(input ? { input } : {}) },
-          { source: 'daemon', confidence: 'high' });
+          { source: 'daemon', confidence: 'high', eventId: stableId('tc'), ts: stableTs });
 
         // Emit tool result
         const isError = tc.status === 'error';
         const output = tc.result?.[0]?.functionResponse?.response?.output;
         timelineEmitter.emit(sessionName, 'tool.result',
-          { ...(isError ? { error: output ?? 'error' } : {}) },
-          { source: 'daemon', confidence: 'high' });
+          {
+            ...(isError ? { error: output ?? 'error' } : {})
+          },
+          { source: 'daemon', confidence: 'high', eventId: stableId('tr'), ts: stableTs });
       }
     }
 
@@ -216,7 +230,7 @@ function parseMessage(sessionName: string, msg: GeminiMessage): void {
     if (typeof msg.content === 'string' && msg.content.trim()) {
       timelineEmitter.emit(sessionName, 'assistant.text',
         { text: msg.content, streaming: false },
-        { source: 'daemon', confidence: 'high' });
+        { source: 'daemon', confidence: 'high', eventId: stableId('at'), ts: stableTs });
     }
 
     // Emit token usage + model for context bar
@@ -226,7 +240,7 @@ function parseMessage(sessionName: string, msg: GeminiMessage): void {
         cacheTokens: msg.tokens.cached ?? 0,
         contextWindow: 1_000_000,
         ...(msg.model ? { model: msg.model } : {}),
-      }, { source: 'daemon', confidence: 'high' });
+      }, { source: 'daemon', confidence: 'high', eventId: stableId('uu'), ts: stableTs });
     }
   }
 }
@@ -331,9 +345,21 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
   if (!conv) return;
 
   const HISTORY_MAX = 100;
-  const slice = conv.messages.slice(-HISTORY_MAX);
-  for (const msg of slice) {
-    parseMessage(sessionName, msg);
+  const startIdx = Math.max(0, conv.messages.length - HISTORY_MAX);
+  const slice = conv.messages.slice(startIdx);
+  for (let i = 0; i < slice.length; i++) {
+    const msg = slice[i];
+    const msgIdx = startIdx + i;
+    // Use stable IDs so duplicate re-emissions across daemon restarts get
+    // deduplicated by eventId in the browser (mergeEvents dedup logic).
+    // Use the message's own timestamp for ts so events sort correctly.
+    const ts = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
+    const hist: HistContext = {
+      ts: isNaN(ts) ? Date.now() : ts,
+      idPrefix: `g:${sessionName}:${msgIdx}:`,
+      counter: { n: 0 },
+    };
+    parseMessage(sessionName, msg, hist);
   }
 }
 

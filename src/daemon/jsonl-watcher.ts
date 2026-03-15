@@ -312,8 +312,19 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
       }
     }
 
+    // Track absolute byte offset in file for stable eventId generation.
+    // Stable IDs ensure duplicate re-emissions across daemon restarts are
+    // deduplicated by the browser's mergeEvents (which deduplicates by eventId).
+    let bytePos = size - readSize;
+    for (let i = 0; i < startIdx; i++) {
+      bytePos += Buffer.byteLength(lines[i], 'utf8') + 1; // +1 for \n
+    }
+
     let count = 0;
     for (let i = startIdx; i < lines.length && count < HISTORY_LINES; i++) {
+      const lineBytePos = bytePos;
+      bytePos += Buffer.byteLength(lines[i], 'utf8') + 1;
+
       const line = lines[i];
       if (!line.trim()) continue;
       let raw: Record<string, unknown>;
@@ -323,23 +334,26 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
       const content = msg?.['content'];
       if (!Array.isArray(content)) continue;
 
+      let blockIdx = 0;
+      const stableId = (suffix: string) => `cc:${sessionName}:${lineBytePos}:${suffix}:${blockIdx++}`;
+
       if (raw['type'] === 'assistant') {
         for (const block of content as ContentBlock[]) {
           if (block.type === 'text' && block.text) {
             timelineEmitter.emit(sessionName, 'assistant.text', {
               text: block.text, streaming: false,
-            }, { source: 'daemon', confidence: 'high' });
+            }, { source: 'daemon', confidence: 'high', eventId: stableId('at') });
             count++;
           } else if (block.type === 'thinking' && block.thinking) {
             timelineEmitter.emit(sessionName, 'assistant.thinking', {
               text: block.thinking,
-            }, { source: 'daemon', confidence: 'high' });
+            }, { source: 'daemon', confidence: 'high', eventId: stableId('th') });
             count++;
           } else if (block.type === 'tool_use' && block.name) {
             const input = extractToolInput(block.name, block.input);
             timelineEmitter.emit(sessionName, 'tool.call', {
               tool: block.name, ...(input ? { input } : {}),
-            }, { source: 'daemon', confidence: 'high' });
+            }, { source: 'daemon', confidence: 'high', eventId: stableId('tc') });
             count++;
           }
         }
@@ -348,13 +362,13 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
           if (block.type === 'text' && block.text?.trim()) {
             timelineEmitter.emit(sessionName, 'user.message', {
               text: block.text,
-            }, { source: 'daemon', confidence: 'high' });
+            }, { source: 'daemon', confidence: 'high', eventId: stableId('um') });
             count++;
           } else if (block.type === 'tool_result') {
             const error = block.is_error ? String(block.content ?? 'error') : undefined;
             timelineEmitter.emit(sessionName, 'tool.result', {
               ...(error ? { error } : {}),
-            }, { source: 'daemon', confidence: 'high' });
+            }, { source: 'daemon', confidence: 'high', eventId: stableId('tr') });
             count++;
           }
         }

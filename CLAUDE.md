@@ -71,6 +71,18 @@ Cross-agent audit system: one agent (coder) implements, another (auditor) review
 
 Web terminal viewer (`web/src/ws-client.ts` — WebSocket client with reconnect). Mobile app with biometric auth and push notifications.
 
+### i18n Development (`web/`)
+
+The web project uses `i18next` with `react-i18next` for internationalization.
+
+- **Storage**: Locales are in `web/src/i18n/locales/*.json`.
+- **Structure**: JSON files use nested namespaces (e.g., `common`, `chat`, `session`).
+- **Usage**:
+  - Hook: `const { t } = useTranslation();`
+  - Translate: `t('namespace.key')` or `t('namespace.key_with_params', { name: 'value' })`
+- **Interpolation**: Uses double curly braces: `{{variable}}`.
+- **Supported**: `en`, `zh-CN`, `zh-TW`, `es`, `ru`, `ja`, `ko`. Default is auto-detected from browser or `localStorage`.
+
 ## Key Conventions
 
 - Session names follow the pattern `deck_{project}_{role}` (e.g., `deck_myapp_brain`, `deck_myapp_w1`).
