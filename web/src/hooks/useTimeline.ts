@@ -39,6 +39,8 @@ export interface UseTimelineResult {
   loading: boolean;
   /** True while gap-filling after a cache hit — content is visible but may be stale */
   refreshing: boolean;
+  /** Immediately inject a pending user message (optimistic UI). */
+  addOptimisticUserMessage: (text: string) => void;
 }
 
 export function useTimeline(
@@ -127,6 +129,28 @@ export function useTimeline(
     return () => { cancelled = true; };
   }, [sessionId, ws]);
 
+  // Immediately show a user message before the daemon confirms it.
+  // The real event (from WS) will remove the pending version on arrival.
+  const addOptimisticUserMessage = useCallback((text: string) => {
+    if (!sessionId) return;
+    const event: TimelineEvent = {
+      eventId: `optimistic:${sessionId}:${Date.now()}`,
+      type: 'user.message',
+      sessionId,
+      ts: Date.now(),
+      epoch: 0,
+      seq: 0,
+      source: 'daemon',
+      confidence: 'high',
+      payload: { text, pending: true },
+    };
+    setEvents((prev) => {
+      const result = [...prev, event];
+      eventsCache.set(sessionId, result);
+      return result;
+    });
+  }, [sessionId]);
+
   // Append a single event, dedup by eventId
   const appendEvent = useCallback((event: TimelineEvent) => {
     setEvents((prev) => {
@@ -181,14 +205,24 @@ export function useTimeline(
           });
         }
 
-        // Dedup user.message: JSONL watcher re-emits web-UI-sent messages ~2s later.
-        // If an identical user.message already exists within 30s, hide the duplicate.
+        // user.message: remove matching optimistic (pending) event, then dedup
+        // against already-confirmed events (JSONL watcher re-emits same text ~2s later).
         if (event.type === 'user.message' && event.payload.text) {
           const text = String(event.payload.text).trim();
           setEvents((prev) => {
+            // Remove pending version of this message (optimistic UI cleanup)
+            const withoutPending = prev.filter(
+              (e) => !(e.type === 'user.message' && e.payload.pending && String(e.payload.text ?? '').trim() === text),
+            );
+            if (withoutPending.length < prev.length) {
+              if (event.sessionId) eventsCache.set(event.sessionId, withoutPending);
+              return withoutPending;
+            }
+            // No pending event — check for confirmed dedup (JSONL re-emit)
             const isDup = prev.some(
               (e) =>
                 e.type === 'user.message' &&
+                !e.payload.pending &&
                 Math.abs(e.ts - event.ts) < USER_MSG_DEDUP_WINDOW_MS &&
                 String(e.payload.text ?? '').trim() === text,
             );
@@ -269,5 +303,5 @@ export function useTimeline(
     return unsub;
   }, [ws, sessionId, appendEvent, mergeEvents]);
 
-  return { events, loading, refreshing };
+  return { events, loading, refreshing, addOptimisticUserMessage };
 }

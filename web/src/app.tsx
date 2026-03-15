@@ -371,7 +371,7 @@ export function App() {
   }, [activeSession, defaultViewMode]);
 
   // Timeline events for chat view
-  const { events: timelineEvents, loading: timelineLoading, refreshing: timelineRefreshing } = useTimeline(activeSession, wsRef.current);
+  const { events: timelineEvents, loading: timelineLoading, refreshing: timelineRefreshing, addOptimisticUserMessage } = useTimeline(activeSession, wsRef.current);
 
   // Extract latest usage from timeline for the context bar in SessionControls
   const lastUsage = useMemo(() => {
@@ -1014,7 +1014,7 @@ export function App() {
                 </div>
               );
             })()}
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={scrollActiveToBottom} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={false} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={(_name, text) => { addOptimisticUserMessage(text); scrollActiveToBottom(); }} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={false} />
 
             {/* Sub-session bar */}
             {selectedServerId && (

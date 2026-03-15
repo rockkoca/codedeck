@@ -359,9 +359,9 @@ function ChatEvent({ event }: { event: TimelineEvent }) {
   switch (event.type) {
     case 'user.message':
       return (
-        <div class="chat-event chat-user">
+        <div class={`chat-event chat-user${event.payload.pending ? ' chat-pending' : ''}`}>
           <div class="chat-bubble-content">{String(event.payload.text ?? '')}</div>
-          <ChatTime ts={event.ts} />
+          {!event.payload.pending && <ChatTime ts={event.ts} />}
         </div>
       );
 
