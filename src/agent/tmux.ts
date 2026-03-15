@@ -44,12 +44,27 @@ export async function capturePaneHistory(session: string, lines = 1000): Promise
 /** Send a string of keys to a tmux pane (newline = Enter). */
 /**
  * Send text then Enter to a tmux session.
- * Text and Enter are sent separately with a short delay to avoid
- * paste-burst detection in TUI agents (Codex, Gemini, etc.).
+ * For small strings, uses `send-keys -l`.
+ * For large strings, uses `load-buffer -` (stdin) + `paste-buffer` to avoid shell/arg limits.
  */
 export async function sendKeys(session: string, keys: string): Promise<void> {
-  const escaped = keys.replace(/'/g, "'\\''");
-  await tmuxExec(`send-keys -t ${session} -l -- '${escaped}'`);
+  if (keys.length > 8000) {
+    // Large string: use unique named tmux buffer to avoid ARG_MAX limits and concurrent overwrites
+    const bufferName = `buf_${session}_${Date.now()}`;
+    const { spawn } = await import('child_process');
+    const proc = spawn('tmux', ['load-buffer', '-b', bufferName, '-']);
+    proc.stdin.write(keys);
+    proc.stdin.end();
+    await new Promise<void>((resolve, reject) => {
+      proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`tmux load-buffer failed with code ${code}`))));
+      proc.on('error', reject);
+    });
+    await tmuxExec(`paste-buffer -p -t ${session} -b ${bufferName}`);
+    await tmuxExec(`delete-buffer -b ${bufferName}`).catch(() => {});
+  } else {
+    const escaped = keys.replace(/'/g, "'\\''");
+    await tmuxExec(`send-keys -t ${session} -l -- '${escaped}'`);
+  }
   await new Promise<void>((r) => setTimeout(r, 80));
   await tmuxExec(`send-keys -t ${session} Enter`);
 }
@@ -96,8 +111,11 @@ export async function listSessions(): Promise<string[]> {
   try {
     const raw = await tmuxExec(`list-sessions -F '#{session_name}'`);
     return raw.split('\n').filter(Boolean);
-  } catch {
-    return [];
+  } catch (e: any) {
+    // tmux returns 1 if there are no sessions
+    const err = String(e.stderr || e.message || '');
+    if (err.includes('no sessions') || err.includes('no server running')) return [];
+    throw e;
   }
 }
 

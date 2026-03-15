@@ -69,9 +69,13 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
   } else if (agentType === 'codex' && sub.codexSessionId) {
     const { startWatchingById } = await import('./codex-watcher.js');
     void startWatchingById(sessionName, sub.codexSessionId, sub.codexModel ?? undefined);
-  } else if (agentType === 'gemini' && sub.geminiSessionId) {
-    const { startWatching } = await import('./gemini-watcher.js');
-    startWatching(sessionName, sub.geminiSessionId);
+  } else if (agentType === 'gemini') {
+    const { startWatching, startWatchingDiscovered } = await import('./gemini-watcher.js');
+    if (sub.geminiSessionId) {
+      startWatching(sessionName, sub.geminiSessionId);
+    } else if (sub._fileSnapshot) {
+      startWatchingDiscovered(sessionName, sub._fileSnapshot, sub._onGeminiDiscovered);
+    }
   }
 }
 
@@ -85,7 +89,7 @@ export async function stopSubSession(sessionName: string): Promise<void> {
 export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promise<void> {
   const { startWatchingFile, claudeProjectDir, isWatching } = await import('./jsonl-watcher.js');
   const { startWatchingById, isWatching: isCodexWatching, isFileClaimedByOther } = await import('./codex-watcher.js');
-  const { startWatching: startGeminiWatching, isWatching: isGeminiWatching } = await import('./gemini-watcher.js');
+  const { startWatching: startGeminiWatching, startWatchingDiscovered: startGeminiWatchingDiscovered, isWatching: isGeminiWatching } = await import('./gemini-watcher.js');
 
   for (const sub of subSessions) {
     const sessionName = subSessionName(sub.id);
@@ -102,7 +106,11 @@ export async function rebuildSubSessions(subSessions: SubSessionRecord[]): Promi
           startWatchingById(sessionName, uuid, sub.codexModel ?? undefined);
         }
       } else if (sub.type === 'gemini' && !isGeminiWatching(sessionName)) {
-        if (sub.geminiSessionId) startGeminiWatching(sessionName, sub.geminiSessionId);
+        if (sub.geminiSessionId) {
+          startGeminiWatching(sessionName, sub.geminiSessionId);
+        } else if (sub._fileSnapshot) {
+          startGeminiWatchingDiscovered(sessionName, sub._fileSnapshot, sub._onGeminiDiscovered);
+        }
       }
       upsertSession({
         name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running',

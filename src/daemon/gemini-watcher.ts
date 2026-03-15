@@ -219,6 +219,53 @@ export async function startWatching(sessionName: string, sessionUuid: string): P
   void watchGeminiDir(sessionName, state);
 }
 
+/**
+ * Watch for a NEW Gemini session file to appear (not in the given snapshot).
+ * Once discovered, extract its UUID and notify the callback.
+ */
+export async function startWatchingDiscovered(
+  sessionName: string,
+  snapshot: Set<string>,
+  onDiscovered?: (uuid: string) => void,
+): Promise<void> {
+  if (watchers.has(sessionName)) stopWatching(sessionName);
+  const state: WatcherState = { sessionUuid: '', activeFile: null, seenCount: 0, lastUpdated: '', abort: new AbortController(), stopped: false };
+  watchers.set(sessionName, state);
+
+  state.pollTimer = setInterval(() => {
+    void (async () => {
+      if (!state.activeFile) {
+        // Find a file NOT in the snapshot
+        let slugs: string[];
+        try { slugs = await readdir(GEMINI_TMP_DIR); } catch { return; }
+        for (const slug of slugs) {
+          const chatsDir = join(GEMINI_TMP_DIR, slug, 'chats');
+          let entries: string[];
+          try { entries = await readdir(chatsDir); } catch { continue; }
+          for (const entry of entries) {
+            if (!entry.startsWith('session-') || !entry.endsWith('.json')) continue;
+            const fullPath = join(chatsDir, entry);
+            if (!snapshot.has(fullPath) && !claimedFiles.has(fullPath)) {
+              // Discovered!
+              const conv = await readConversation(fullPath);
+              if (conv && conv.sessionId) {
+                state.activeFile = fullPath;
+                claimedFiles.set(fullPath, sessionName);
+                state.sessionUuid = conv.sessionId;
+                onDiscovered?.(conv.sessionId);
+                void watchGeminiDir(sessionName, state);
+                break;
+              }
+            }
+          }
+          if (state.activeFile) break;
+        }
+      }
+      if (state.activeFile) await pollTick(sessionName, state);
+    })();
+  }, POLL_INTERVAL_MS);
+}
+
 export async function startWatchingLatest(sessionName: string): Promise<void> { return startWatching(sessionName, ''); }
 
 export function isWatching(sessionName: string): boolean { return watchers.has(sessionName); }
