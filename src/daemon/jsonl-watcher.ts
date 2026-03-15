@@ -245,7 +245,8 @@ const watchers = new Map<string, WatcherState>();
 /** Which session has claimed each JSONL file path (prevents cross-session stealing). */
 const claimedFiles = new Map<string, string>(); // filePath → sessionName
 
-function claimFile(sessionName: string, filePath: string): void {
+/** Manually claim a file for a session (prevents directory scan from stealing it). */
+export function preClaimFile(sessionName: string, filePath: string): void {
   // Release any previous file claimed by this session
   for (const [fp, sn] of claimedFiles) {
     if (sn === sessionName) { claimedFiles.delete(fp); break; }
@@ -414,7 +415,7 @@ export async function startWatching(sessionName: string, workDir: string): Promi
   // start with no active file and wait for a new one to appear.
   const latest = await findLatestJsonl(projectDir);
   if (latest && canClaim(sessionName, latest)) {
-    claimFile(sessionName, latest);
+    preClaimFile(sessionName, latest);
     try {
       const s = await stat(latest);
       state.activeFile = latest;
@@ -465,7 +466,7 @@ export async function startWatchingFile(sessionName: string, filePath: string): 
 
   // Pre-claim the file path immediately — before the file even exists — so that
   // the main session's watchDir cannot steal it when CC creates the file.
-  claimFile(sessionName, filePath);
+  preClaimFile(sessionName, filePath);
 
   // Derive projectDir from filePath (parent directory)
   const projectDir = dirname(filePath);
@@ -485,7 +486,7 @@ export async function startWatchingFile(sessionName: string, filePath: string): 
       const s = await stat(filePath);
       state.activeFile = filePath;
       state.fileOffset = s.size; // start from end (only new content)
-      claimFile(sessionName, filePath);
+      preClaimFile(sessionName, filePath);
       appeared = true;
       break;
     } catch {
@@ -556,11 +557,11 @@ async function watchDir(sessionName: string, state: WatcherState): Promise<void>
         const isNewer = await checkNewer(changedFile, state.activeFile);
         if (isNewer) {
           logger.debug({ sessionName, file: event.filename }, 'jsonl-watcher: switching to new JSONL file');
-          claimFile(sessionName, changedFile);
+          preClaimFile(sessionName, changedFile);
           state.activeFile = changedFile;
           state.fileOffset = 0;
         } else if (!state.activeFile) {
-          claimFile(sessionName, changedFile);
+          preClaimFile(sessionName, changedFile);
           state.activeFile = changedFile;
           state.fileOffset = 0;
         } else {
@@ -609,7 +610,7 @@ async function pollTick(sessionName: string, state: WatcherState): Promise<void>
         .filter((x): x is { fp: string; mtime: number } => x !== null)
         .sort((a, b) => b.mtime - a.mtime)[0];
       if (best) {
-        claimFile(sessionName, best.fp);
+        preClaimFile(sessionName, best.fp);
         state.activeFile = best.fp;
         try {
           state.fileOffset = (await stat(best.fp)).size;

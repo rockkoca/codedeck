@@ -81,7 +81,7 @@ export async function readCwd(filePath: string): Promise<string | null> {
  * Find the most recent rollout-*.jsonl in dir whose session_meta.cwd matches workDir.
  * Returns the file path, or null if none found.
  */
-async function findLatestRollout(dir: string, workDir: string): Promise<string | null> {
+async function findLatestRollout(dir: string, workDir: string, excludeClaimed = true): Promise<string | null> {
   let entries: string[];
   try {
     entries = await readdir(dir);
@@ -97,6 +97,13 @@ async function findLatestRollout(dir: string, workDir: string): Promise<string |
 
   for (const name of rollouts) {
     const fpath = join(dir, name);
+
+    // Skip if claimed by someone else
+    if (excludeClaimed) {
+      const owner = claimedFiles.get(fpath);
+      if (owner && owner !== 'UNKNOWN') continue;
+    }
+
     const cwd = await readCwd(fpath);
     if (cwd && normalizePath(cwd) === normalizePath(workDir)) {
       return fpath;
@@ -372,6 +379,16 @@ interface WatcherState {
 }
 
 const watchers = new Map<string, WatcherState>();
+const claimedFiles = new Map<string, string>(); // filePath → sessionName
+
+/** Manually claim a file for a session (prevents directory scan from stealing it). */
+export function preClaimFile(sessionName: string, filePath: string): void {
+  // Clear any existing claim by this session
+  for (const [fp, sn] of claimedFiles) {
+    if (sn === sessionName) { claimedFiles.delete(fp); break; }
+  }
+  claimedFiles.set(filePath, sessionName);
+}
 
 // ── UUID extraction helpers ────────────────────────────────────────────────────
 
@@ -467,10 +484,12 @@ export async function startWatching(sessionName: string, workDir: string, model?
         const s = await stat(found);
         state.activeFile = found;
         state.fileOffset = s.size;
+        claimedFiles.set(found, sessionName);
         await emitRecentHistory(sessionName, found, state.model);
       } catch {
         state.activeFile = found;
         state.fileOffset = 0;
+        claimedFiles.set(found, sessionName);
       }
       break;
     }
@@ -525,6 +544,7 @@ export async function startWatchingSpecificFile(sessionName: string, filePath: s
     ...(model ? { model } : {}),
   };
   watchers.set(sessionName, state);
+  claimedFiles.set(filePath, sessionName);
 
   await emitRecentHistory(sessionName, filePath, state.model);
 
@@ -544,6 +564,12 @@ export function stopWatching(sessionName: string): void {
   state.abort.abort();
   if (state.pollTimer) clearInterval(state.pollTimer);
   watchers.delete(sessionName);
+
+  // Remove claims for this session
+  for (const [fp, sn] of claimedFiles) {
+    if (sn === sessionName) claimedFiles.delete(fp);
+  }
+
   // Flush any buffered final_answer on stop
   flushFinalAnswer(sessionName);
   const buf = finalAnswerBuffers.get(sessionName);
@@ -579,11 +605,20 @@ async function watchDir(sessionName: string, state: WatcherState, dir: string): 
         const cwd = await readCwd(changedFile);
         if (!cwd || normalizePath(cwd) !== normalizePath(state.workDir)) continue;
 
+        // Skip if claimed by someone else
+        const owner = claimedFiles.get(changedFile);
+        if (owner && owner !== sessionName && owner !== 'UNKNOWN') continue;
+
         const isNewer = await checkNewer(changedFile, state.activeFile);
         if (isNewer || !state.activeFile) {
           logger.debug({ sessionName, file: event.filename }, 'codex-watcher: switching to new rollout file');
+
+          // Release old claim
+          if (state.activeFile) claimedFiles.delete(state.activeFile);
+
           state.activeFile = changedFile;
           state.fileOffset = 0;
+          claimedFiles.set(changedFile, sessionName);
         } else {
           continue;
         }

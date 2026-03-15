@@ -20,7 +20,7 @@ import logger from '../util/logger.js';
 import { timelineEmitter } from '../daemon/timeline-emitter.js';
 import { startWatching, startWatchingFile, stopWatching, isWatching, claudeProjectDir } from '../daemon/jsonl-watcher.js';
 import { startWatching as startCodexWatching, startWatchingSpecificFile as startCodexWatchingFile, stopWatching as stopCodexWatching, isWatching as isCodexWatching, extractNewRolloutUuid, findRolloutPathByUuid } from '../daemon/codex-watcher.js';
-import { startWatching as startGeminiWatching, stopWatching as stopGeminiWatching, isWatching as isGeminiWatching } from '../daemon/gemini-watcher.js';
+import { startWatching as startGeminiWatching, startWatchingLatest as startGeminiWatchingLatest, stopWatching as stopGeminiWatching, isWatching as isGeminiWatching } from '../daemon/gemini-watcher.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
@@ -162,6 +162,17 @@ export async function restoreFromStore(): Promise<void> {
       } else {
         startCodexWatching(s.name, s.projectDir).catch((e) =>
           logger.warn({ err: e, session: s.name }, 'codex-watcher start failed (restore)'),
+        );
+      }
+    } else if (s.agentType === 'gemini' && !isGeminiWatching(s.name)) {
+      if (s.geminiSessionId) {
+        startGeminiWatching(s.name, s.geminiSessionId).catch((e) =>
+          logger.warn({ err: e, session: s.name }, 'gemini-watcher start failed (restore)'),
+        );
+      } else {
+        // Fallback: watch latest for orphans/incomplete records
+        startGeminiWatching(s.name, '').catch((e) =>
+          logger.warn({ err: e, session: s.name }, 'gemini-watcher start latest failed (restore)'),
         );
       }
     }
@@ -340,6 +351,19 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
     }
   }
 
+  // For Codex fresh launch: capture UUID from rollout file immediately after start
+  if (agentType === 'codex' && !codexSessionId && !exists) {
+    const launchTime = Date.now();
+    try {
+      codexSessionId = await extractNewRolloutUuid(projectDir, launchTime) || undefined;
+      if (codexSessionId) {
+        logger.info({ session: name, codexSessionId }, 'Codex session UUID captured');
+      }
+    } catch (e) {
+      logger.warn({ err: e, session: name }, 'Codex UUID extraction failed');
+    }
+  }
+
   if (!skipStore) {
     const existing = getSession(name);
     const record: SessionRecord = {
@@ -386,45 +410,23 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
           logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
         );
       });
-    } else if (!exists) {
-      // Fresh launch — start dir-scan watcher now, then async-capture UUID once rollout appears
-      startCodexWatching(name, projectDir).catch((e) =>
-        logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
-      );
-
-      const launchTime = Date.now();
-      void (async () => {
-        try {
-          const uuid = await extractNewRolloutUuid(projectDir, launchTime);
-          if (!uuid) return;
-          const rec = getSession(name);
-          if (!rec) return;
-          const updated: SessionRecord = { ...rec, codexSessionId: uuid };
-          upsertSession(updated);
-          emitSessionPersist(updated, name);
-          logger.info({ session: name, codexSessionId: uuid }, 'Codex session UUID captured');
-          // Switch to specific-file watcher
-          const rolloutPath = await findRolloutPathByUuid(uuid);
-          if (rolloutPath) {
-            stopCodexWatching(name);
-            startCodexWatchingFile(name, rolloutPath).catch((e) =>
-              logger.warn({ err: e, session: name }, 'codex-watcher switch to specific file failed'),
-            );
-          }
-        } catch (e) {
-          logger.warn({ err: e, session: name }, 'Codex UUID extraction failed');
-        }
-      })();
     } else {
-      // Session already exists, no UUID — use dir scan
+      // No UUID — use dir scan
       startCodexWatching(name, projectDir).catch((e) =>
         logger.warn({ err: e, session: name }, 'codex-watcher start failed'),
       );
     }
-  } else if (agentType === 'gemini' && geminiSessionId) {
-    startGeminiWatching(name, geminiSessionId).catch((e) =>
-      logger.warn({ err: e, session: name }, 'gemini-watcher start failed'),
-    );
+  } else if (agentType === 'gemini') {
+    if (geminiSessionId) {
+      startGeminiWatching(name, geminiSessionId).catch((e) =>
+        logger.warn({ err: e, session: name }, 'gemini-watcher start failed'),
+      );
+    } else {
+      // resolveSessionId failed — fall back to watching the most recently modified file
+      startGeminiWatchingLatest(name).catch((e) =>
+        logger.warn({ err: e, session: name }, 'gemini-watcher start latest failed'),
+      );
+    }
   }
 
   // Auto-dismiss startup prompts (trust folder, settings errors, update dialogs)

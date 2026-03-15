@@ -171,12 +171,17 @@ interface HistContext {
   ts: number;
   /** Stable ID prefix: "g:{sessionName}:{msgIdx}:" — append event-type suffix for unique ID */
   idPrefix: string;
-  /** Mutable sub-event counter within this message */
-  counter: { n: number };
+  /** Per-suffix counters — isolates each event type so adding e.g. a new thought doesn't shift toolCall IDs */
+  counts: Map<string, number>;
 }
 
 function parseMessage(sessionName: string, msg: GeminiMessage, hist?: HistContext): void {
-  const stableId = (suffix: string) => hist ? `${hist.idPrefix}${suffix}:${hist.counter.n++}` : undefined;
+  const stableId = (suffix: string) => {
+    if (!hist) return undefined;
+    const n = hist.counts.get(suffix) ?? 0;
+    hist.counts.set(suffix, n + 1);
+    return `${hist.idPrefix}${suffix}:${n}`;
+  };
   const stableTs = hist?.ts;
 
   if (msg.type === 'user') {
@@ -278,7 +283,16 @@ interface WatcherState {
 
 const watchers = new Map<string, WatcherState>();
 /** Files already claimed by a watcher — prevents two watchers from tracking the same file */
-const claimedFiles = new Set<string>();
+const claimedFiles = new Map<string, string>(); // filePath → sessionName
+
+/** Manually claim a file for a session (prevents directory scan from stealing it). */
+export function preClaimFile(sessionName: string, filePath: string): void {
+  // Clear any existing claim by this session
+  for (const [fp, sn] of claimedFiles) {
+    if (sn === sessionName) { claimedFiles.delete(fp); break; }
+  }
+  claimedFiles.set(filePath, sessionName);
+}
 
 // ── Core poll logic ────────────────────────────────────────────────────────────
 
@@ -300,7 +314,7 @@ async function pollTick(sessionName: string, state: WatcherState): Promise<void>
       : await findLatestSessionFile();
     if (found) {
       state.activeFile = found;
-      claimedFiles.add(found);
+      claimedFiles.set(found, sessionName);
       logger.debug({ sessionName, file: found }, 'gemini-watcher: found session file');
     } else {
       return;
@@ -310,12 +324,22 @@ async function pollTick(sessionName: string, state: WatcherState): Promise<void>
   const conv = await readConversation(state.activeFile);
   if (!conv) return;
 
-  // No new messages
-  if (conv.messages.length <= state.seenCount) return;
-  // No change in lastUpdated for same count (shouldn't happen but be safe)
+  // No new activity at all
   if (conv.lastUpdated === state.lastUpdated && conv.messages.length === state.seenCount) return;
 
-  const newMessages = conv.messages.slice(state.seenCount);
+  // Detect if we have new messages OR if the last message was updated in-place
+  const lastMsgIdx = conv.messages.length - 1;
+  const isUpdate = conv.messages.length === state.seenCount && lastMsgIdx >= 0;
+
+  let messagesToProcess: GeminiMessage[];
+  if (isUpdate) {
+    // Just re-process the last message to catch added toolCalls/thoughts
+    messagesToProcess = [conv.messages[lastMsgIdx]];
+  } else {
+    // Process all new messages appended since last time
+    messagesToProcess = conv.messages.slice(state.seenCount);
+  }
+
   state.seenCount = conv.messages.length;
   state.lastUpdated = conv.lastUpdated;
 
@@ -325,12 +349,22 @@ async function pollTick(sessionName: string, state: WatcherState): Promise<void>
     timelineEmitter.emit(sessionName, 'session.state', { state: 'running' });
   }
 
-  for (const msg of newMessages) {
+  for (let i = 0; i < messagesToProcess.length; i++) {
+    const msg = messagesToProcess[i];
     if (state.stopped) break;
-    parseMessage(sessionName, msg);
+
+    // Use stable ID context even for live updates so frontend can deduplicate
+    const msgIdx = isUpdate ? lastMsgIdx : (state.seenCount - messagesToProcess.length + i);
+    const ts = msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now();
+    const hist: HistContext = {
+      ts: isNaN(ts) ? Date.now() : ts,
+      idPrefix: `g:${sessionName}:${msgIdx}:`,
+      counts: new Map(),
+    };
+
+    parseMessage(sessionName, msg, hist);
 
     // Idle detection: a gemini message WITHOUT toolCalls is the final response
-    // in a turn — the agent is done and waiting for user input.
     if (msg.type === 'gemini' && !msg.toolCalls?.length) {
       state.emittedRunning = false;
       timelineEmitter.emit(sessionName, 'session.state', { state: 'idle' });
@@ -357,7 +391,7 @@ async function emitRecentHistory(sessionName: string, filePath: string): Promise
     const hist: HistContext = {
       ts: isNaN(ts) ? Date.now() : ts,
       idPrefix: `g:${sessionName}:${msgIdx}:`,
-      counter: { n: 0 },
+      counts: new Map(),
     };
     parseMessage(sessionName, msg, hist);
   }
@@ -388,7 +422,7 @@ export async function startWatching(sessionName: string, sessionUuid: string): P
   const found = await findSessionFile(sessionUuid);
   if (found) {
     state.activeFile = found;
-    claimedFiles.add(found);
+    claimedFiles.set(found, sessionName);
     const conv = await readConversation(found);
     if (conv) {
       // Start from end so we only emit new messages going forward
@@ -474,7 +508,7 @@ export async function startWatchingNew(
     const found = await findNewFile();
     if (found) {
       state.activeFile = found;
-      claimedFiles.add(found);
+      claimedFiles.set(found, sessionName);
       logger.info({ sessionName, file: found }, 'gemini-watcher: found new session file via snapshot diff');
 
       // Read sessionId from JSON and notify caller
@@ -509,11 +543,15 @@ export function isWatching(sessionName: string): boolean {
 export function stopWatching(sessionName: string): void {
   const state = watchers.get(sessionName);
   if (!state) return;
-  if (state.activeFile) claimedFiles.delete(state.activeFile);
   state.stopped = true;
   state.abort.abort();
   if (state.pollTimer) clearInterval(state.pollTimer);
   watchers.delete(sessionName);
+
+  // Remove claims for this session
+  for (const [fp, sn] of claimedFiles) {
+    if (sn === sessionName) claimedFiles.delete(fp);
+  }
 }
 
 // ── fs.watch for faster updates ────────────────────────────────────────────────

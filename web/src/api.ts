@@ -41,7 +41,7 @@ export async function refreshSession(): Promise<boolean> {
 // ── Proactive refresh ─────────────────────────────────────────────────────
 
 let _refreshTimerId: ReturnType<typeof setInterval> | null = null;
-const PROACTIVE_REFRESH_MS = 12 * 60 * 1000; // refresh every 12 min (before 15-min expiry)
+const PROACTIVE_REFRESH_MS = 3.5 * 3600 * 1000; // refresh every 3.5 hours (before 4-hour expiry)
 
 /** Start proactive token refresh timer. Call when user logs in. */
 export function startProactiveRefresh(): void {

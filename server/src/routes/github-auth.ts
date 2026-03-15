@@ -202,8 +202,8 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
 
   const isSecure = c.env.NODE_ENV === 'production';
 
-  // Task 5: Issue 15-minute access token
-  const accessToken = signJwt({ sub: userId, type: 'web' }, c.env.JWT_SIGNING_KEY, 15 * 60);
+  // Task 5: Issue 4-hour access token
+  const accessToken = signJwt({ sub: userId, type: 'web' }, c.env.JWT_SIGNING_KEY, 4 * 3600);
 
   // Task 5: Issue refresh token and persist to DB
   const refreshRaw = randomHex(32);
@@ -220,7 +220,7 @@ githubAuthRoutes.get('/callback', async (c): Promise<Response> => {
     secure: isSecure,
     sameSite: 'Lax',
     path: '/',
-    maxAge: 900,
+    maxAge: 4 * 3600,
   });
   setCookie(c, 'rcc_refresh', refreshRaw, {
     httpOnly: true,

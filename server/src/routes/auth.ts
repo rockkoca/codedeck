@@ -269,9 +269,9 @@ authRoutes.post('/ws-ticket', async (c) => {
 
 // POST /api/auth/refresh — refresh JWT access token (cookie or JSON body)
 const refreshSchema = z.object({ refreshToken: z.string().optional() });
+const REUSE_GRACE_MS = 60 * 1000; // 60s window to allow concurrent refreshes (e.g. multi-tab)
 
 authRoutes.post('/refresh', async (c) => {
-  // Task 5: Support rcc_refresh cookie (browser) or JSON body (CLI)
   const cookieRefresh = getCookie(c, 'rcc_refresh');
   const body = await c.req.json().catch(() => null);
   const parsed = refreshSchema.safeParse(body);
@@ -281,29 +281,48 @@ authRoutes.post('/refresh', async (c) => {
   const tokenHash = sha256Hex(refreshToken);
 
   const row = await c.env.DB.prepare(
-    'SELECT * FROM refresh_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?',
+    'SELECT * FROM refresh_tokens WHERE token_hash = ? AND expires_at > ?',
   )
     .bind(tokenHash, Date.now())
-    .first<{ id: string; user_id: string; family_id: string }>();
+    .first<{ id: string; user_id: string; family_id: string; used_at: number | null }>();
 
   if (!row) {
-    // Do not count toward lockout: refresh tokens are 32-byte random values,
-    // not brute-forceable. Normal token rotation (multi-tab, page reload) causes
-    // already-used tokens to be retried, which should not trigger IP lockouts.
     return c.json({ error: 'invalid_token' }, 401);
   }
 
-  // Per-user lockout check (after token lookup succeeds so we know the user_id)
+  // Industrial Standard: Refresh Token Reuse Detection
+  if (row.used_at !== null) {
+    const elapsedSinceUse = Date.now() - row.used_at;
+    if (elapsedSinceUse > REUSE_GRACE_MS) {
+      // Potential Replay Attack! Revoke the entire token family for security.
+      await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE family_id = ?')
+        .bind(Date.now(), row.family_id).run();
+      
+      const ip = c.get('clientIp' as never) as string ?? 'unknown';
+      await logAudit({ userId: row.user_id, action: 'auth.refresh_replay_detected', ip, details: { familyId: row.family_id } }, c.env.DB);
+      
+      // Clear cookies to force re-login
+      deleteCookie(c, 'rcc_session', { path: '/' });
+      deleteCookie(c, 'rcc_refresh', { path: '/' });
+      return c.json({ error: 'security_violation_relogin_required' }, 401);
+    }
+    // Within grace period — we could return the same token, but issuing a new one 
+    // is simpler and still secure within this tiny window.
+  }
+
+  // Per-user lockout check
   const userLockout = await checkAuthLockout(c.env.DB, `user:${row.user_id}`);
   if (userLockout.locked) {
     return c.json({ error: 'too_many_attempts', retryAfterMs: userLockout.lockedUntil ? userLockout.lockedUntil - Date.now() : 0 }, 429);
   }
 
-  // Mark old token consumed (rotation)
-  await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE id = ?').bind(Date.now(), row.id).run();
+  // Mark old token consumed if it wasn't already
+  if (row.used_at === null) {
+    await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE id = ?').bind(Date.now(), row.id).run();
+  }
 
-  // Issue new access + refresh tokens
-  const accessToken = signJwt({ sub: row.user_id }, c.env.JWT_SIGNING_KEY, 15 * 60);
+  // Issue new access (4h) + refresh (30d) tokens
+  const accessToken = signJwt({ sub: row.user_id }, c.env.JWT_SIGNING_KEY, 4 * 3600);
   const newRefresh = randomHex(32);
   const newRefreshHash = sha256Hex(newRefresh);
   const newRefreshId = randomHex(16);
@@ -316,9 +335,8 @@ authRoutes.post('/refresh', async (c) => {
   const isSecure = c.env.NODE_ENV === 'production';
 
   if (cookieRefresh) {
-    // Browser cookie flow: set new cookies and rotate CSRF token
     setCookie(c, 'rcc_session', accessToken, {
-      httpOnly: true, secure: isSecure, sameSite: 'Lax', path: '/', maxAge: 900,
+      httpOnly: true, secure: isSecure, sameSite: 'Lax', path: '/', maxAge: 4 * 3600,
     });
     setCookie(c, 'rcc_refresh', newRefresh, {
       httpOnly: true, secure: isSecure, sameSite: 'Lax', path: '/', maxAge: 30 * 86400,
@@ -329,7 +347,6 @@ authRoutes.post('/refresh', async (c) => {
     return c.json({ ok: true });
   }
 
-  // CLI / API body flow: return tokens in JSON (backward-compatible)
   return c.json({ accessToken, refreshToken: newRefresh });
 });
 
