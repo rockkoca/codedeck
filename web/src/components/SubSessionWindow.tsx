@@ -46,7 +46,7 @@ function loadLocal(id: string, mobile: boolean): { geom: WindowGeometry; viewMod
   } catch { /* ignore */ }
   const cx = Math.max(0, (window.innerWidth - DEFAULT_W) / 2);
   const cy = Math.max(0, (window.innerHeight - DEFAULT_H) / 2 - 80);
-  return { geom: { x: cx, y: cy, w: DEFAULT_W, h: DEFAULT_H }, viewMode: mobile ? 'chat' : 'terminal' };
+  return { geom: { x: cx, y: cy, w: DEFAULT_W, h: DEFAULT_H }, viewMode: 'chat' };
 }
 
 function saveLocal(id: string, geom: WindowGeometry, viewMode: ViewMode) {
