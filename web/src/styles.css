@@ -513,6 +513,14 @@ body {
 .fb-preview-md ul, .fb-preview-md ol { padding-left: 1.4em; }
 .fb-preview-md blockquote { border-left: 3px solid #334155; margin: 0; padding-left: 12px; color: #94a3b8; }
 .fb-modal-wide { width: min(92vw, 900px) !important; }
+.fb-preview-back { display: none; background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 16px; padding: 2px 6px 2px 0; line-height: 1; }
+.fb-preview-back:hover { color: #e2e8f0; }
+@media (max-width: 640px) {
+  .fb-body-split .fb-tree { display: none; }
+  .fb-body-split .fb-preview { flex: 1; width: 100%; }
+  .fb-preview-back { display: block; }
+  .fb-modal-wide { width: min(96vw, 900px) !important; }
+}
 .fb-node.previewing { background: rgba(99,102,241,.15); }
 /* highlight.js token colors (github-dark compatible) */
 .hljs { background: #0f172a; color: #e2e8f0; }

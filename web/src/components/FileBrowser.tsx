@@ -390,6 +390,7 @@ export function FileBrowser({
   const previewPane = hasPreview ? (
     <div class="fb-preview">
       <div class="fb-preview-header">
+        <button class="fb-preview-back" onClick={() => setPreview({ status: 'idle' })}>←</button>
         <span class="fb-preview-name">{previewPath!.split('/').pop()}</span>
         <button class="fb-close" onClick={() => setPreview({ status: 'idle' })}>✕</button>
       </div>
