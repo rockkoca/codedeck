@@ -418,7 +418,15 @@ async function handleInput(cmd: Record<string, unknown>): Promise<void> {
   // Serialized via same per-session mutex (no commandId, no retry)
   const release = await getMutex(sessionName).acquire();
   try {
-    await sendRawInput(sessionName, data);
+    // For Codex and Gemini, ESC doesn't interrupt an ongoing task — they need Ctrl+C.
+    // Remap ESC → Ctrl+C for these agents so interrupt behavior is consistent with CC.
+    const agentType = getSession(sessionName)?.agentType;
+    const isEsc = data === '\x1b';
+    if (isEsc && (agentType === 'codex' || agentType === 'gemini')) {
+      await sendRawInput(sessionName, '\x03'); // Ctrl+C
+    } else {
+      await sendRawInput(sessionName, data);
+    }
   } catch (err) {
     logger.error({ sessionName, err }, 'session.input failed');
   } finally {
