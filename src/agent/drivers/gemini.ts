@@ -2,7 +2,6 @@ import { spawn } from 'child_process';
 import type { AgentDriver, LaunchOptions, DeleteBufferFn } from './base.js';
 import type { AgentStatus } from '../detect.js';
 import { detectStatus } from '../detect.js';
-import { readProjectMemory } from '../../daemon/memory-inject.js';
 
 // Startup prompts to auto-dismiss after launch
 const STARTUP_PROMPTS: Array<{
@@ -49,13 +48,8 @@ export class GeminiDriver implements AgentDriver {
   }
 
   private async _doResolveSessionId(cwd?: string): Promise<string> {
-    // Inject project memory as the initial prompt so the resumed session has context.
-    // Falls back to 'hi' (minimal probe) if no context file found.
-    const memory = cwd ? await readProjectMemory(cwd).catch(() => null) : null;
-    const probe = memory ?? 'hi';
-
     return new Promise((resolve, reject) => {
-      const proc = spawn('gemini', ['-y', '-p', probe, '-o', 'stream-json'], {
+      const proc = spawn('gemini', ['-y', '-p', 'hi', '-o', 'stream-json'], {
         cwd,
         env: { ...process.env },
         stdio: ['ignore', 'pipe', 'ignore'],

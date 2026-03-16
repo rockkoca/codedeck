@@ -343,6 +343,13 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
         const geminiDriver = driver as import('./drivers/gemini.js').GeminiDriver;
         geminiSessionId = await geminiDriver.resolveSessionId(projectDir);
         logger.info({ session: name, geminiSessionId }, 'Resolved Gemini session ID');
+        // Inject project memory directly into the session file (not via sent message)
+        if (geminiSessionId) {
+          const { injectGeminiMemory } = await import('../daemon/memory-inject.js');
+          injectGeminiMemory(geminiSessionId, projectDir).catch((e) =>
+            logger.warn({ err: e, session: name }, 'Gemini memory injection failed (non-fatal)'),
+          );
+        }
       } catch (e) {
         logger.warn({ err: e, session: name }, 'Failed to resolve Gemini session ID — launching without --resume');
       }
