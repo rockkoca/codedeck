@@ -3,6 +3,9 @@
  */
 
 import { newSession, killSession, sessionExists } from '../agent/tmux.js';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+const execAsync = promisify(exec);
 import { getDriver } from '../agent/session-manager.js';
 import type { AgentType } from '../agent/detect.js';
 import { timelineStore } from './timeline-store.js';
@@ -79,7 +82,22 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
   }
 }
 
+/** Kill all processes running inside a tmux session's panes before killing the session itself.
+ *  This prevents orphan agent processes that hold session UUIDs after the tmux session is gone. */
+async function killSessionProcesses(sessionName: string): Promise<void> {
+  try {
+    const { stdout } = await execAsync(`tmux list-panes -t ${sessionName} -F '#{pane_pid}'`);
+    const pids = stdout.trim().split('\n').filter(Boolean);
+    for (const pid of pids) {
+      // Kill all children of the shell (the actual agent process), then the shell itself
+      await execAsync(`pkill -9 -P ${pid}`).catch(() => {});
+      await execAsync(`kill -9 ${pid}`).catch(() => {});
+    }
+  } catch { /* session may not exist or have no panes */ }
+}
+
 export async function stopSubSession(sessionName: string): Promise<void> {
+  await killSessionProcesses(sessionName);
   await killSession(sessionName).catch(() => {});
   (await import('./jsonl-watcher.js')).stopWatching(sessionName);
   (await import('./codex-watcher.js')).stopWatching(sessionName);

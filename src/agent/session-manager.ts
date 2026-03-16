@@ -23,6 +23,7 @@ import { startWatching as startCodexWatching, startWatchingSpecificFile as start
 import { startWatching as startGeminiWatching, startWatchingLatest as startGeminiWatchingLatest, stopWatching as stopGeminiWatching, isWatching as isGeminiWatching } from '../daemon/gemini-watcher.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 
 /** Start JSONL watcher for a CC session — uses specific file if ccSessionId known, else directory scan. */
 function startCCWatcher(sessionName: string, projectDir: string, ccSessionId?: string): void {
@@ -349,7 +350,19 @@ export async function launchSession(opts: LaunchOpts): Promise<void> {
   }
 
   if (!exists) {
-    const launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh, ccSessionId, codexSessionId, geminiSessionId });
+    // For CC sessions with an existing JSONL file: use --resume instead of --session-id.
+    // Claude 2.1+ rejects --session-id when the UUID already has a JSONL on disk ("already in use").
+    let launchCmd: string;
+    if (agentType === 'claude-code' && ccSessionId && !fresh) {
+      const jsonlPath = join(claudeProjectDir(projectDir), `${ccSessionId}.jsonl`);
+      if (existsSync(jsonlPath)) {
+        launchCmd = driver.buildResumeCommand(name, { cwd: projectDir, ccSessionId }) ?? driver.buildLaunchCommand(name, { cwd: projectDir, fresh, ccSessionId, codexSessionId, geminiSessionId });
+      } else {
+        launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh, ccSessionId, codexSessionId, geminiSessionId });
+      }
+    } else {
+      launchCmd = driver.buildLaunchCommand(name, { cwd: projectDir, fresh, ccSessionId, codexSessionId, geminiSessionId });
+    }
     await newSession(name, launchCmd, { cwd: projectDir, env: extraEnv });
     logger.info({ session: name, agentType, ccSessionId, codexSessionId, geminiSessionId }, 'Launched session');
   }
