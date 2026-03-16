@@ -234,8 +234,11 @@ describe('FileBrowser', () => {
       ], '/home/user');
     });
 
-    fireEvent.click(getByText('a.ts'));
-    fireEvent.click(getByText('b.ts'));
+    // In file-multi mode, selection is via checkbox only (not row click)
+    const getCheckbox = (name: string) =>
+      getByText(name).closest('.fb-node')!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    fireEvent.click(getCheckbox('a.ts'));
+    fireEvent.click(getCheckbox('b.ts'));
 
     fireEvent.click(getByText('Insert 2'));
     expect(onConfirm).toHaveBeenCalledWith(
@@ -253,8 +256,10 @@ describe('FileBrowser', () => {
       respond([{ name: 'a.ts', isDir: false }], '/home/user');
     });
 
-    fireEvent.click(getByText('a.ts'));  // select (Insert 1)
-    fireEvent.click(getByText('a.ts'));  // deselect → back to Select
+    // In file-multi mode, selection is via checkbox only (not row click)
+    const checkbox = getByText('a.ts').closest('.fb-node')!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    fireEvent.click(checkbox);  // select (Insert 1)
+    fireEvent.click(checkbox);  // deselect → back to Select
 
     // When nothing is selected, button reverts to 'Select' label
     expect(getByText('Select')).toBeDefined();
