@@ -171,11 +171,19 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
   return items;
 }
 
+interface SelectionMenu {
+  x: number;
+  y: number;
+  text: string;
+}
+
 export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview, ws, onInsertPath }: Props) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [fileBrowserPath, setFileBrowserPath] = useState<string | null>(null);
+  const [selMenu, setSelMenu] = useState<SelectionMenu | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const autoScrollRef = useRef(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -291,6 +299,36 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     setShowScrollBtn(!atBottom);
   };
 
+  // Show selection popup menu when text is selected within the chat view
+  useEffect(() => {
+    const onSelChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) {
+        setSelMenu(null);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const container = scrollRef.current;
+      if (!container || !container.contains(range.commonAncestorContainer)) {
+        setSelMenu(null);
+        return;
+      }
+      const text = sel.toString().trim();
+      if (!text) { setSelMenu(null); return; }
+      const selRect = range.getBoundingClientRect();
+      const wrapEl = container.closest('.chat-view-wrap') as HTMLElement | null;
+      const wrapRect = (wrapEl ?? container).getBoundingClientRect();
+      setSelMenu({
+        x: selRect.left + selRect.width / 2 - wrapRect.left,
+        y: selRect.top - wrapRect.top,
+        text,
+      });
+      setCopied(false);
+    };
+    document.addEventListener('selectionchange', onSelChange);
+    return () => document.removeEventListener('selectionchange', onSelChange);
+  }, []);
+
   if (loading) {
     return <div class="chat-view"><div class="chat-loading">{t('chat.loading')}</div></div>;
   }
@@ -341,6 +379,29 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
         >
           ↓
         </button>
+      )}
+      {selMenu && !preview && (
+        <div
+          class="chat-sel-menu"
+          style={{ left: `${selMenu.x}px`, top: `${selMenu.y}px` }}
+          // Prevent mousedown from collapsing the selection before we copy
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <button
+            class={`chat-sel-btn${copied ? ' copied' : ''}`}
+            onClick={() => {
+              navigator.clipboard.writeText(selMenu.text).then(() => {
+                setCopied(true);
+                setTimeout(() => {
+                  setSelMenu(null);
+                  setCopied(false);
+                }, 1000);
+              });
+            }}
+          >
+            {copied ? t('common.copied') : t('common.copy')}
+          </button>
+        </div>
       )}
       {fileBrowserPath && ws && (
         <FileBrowser
