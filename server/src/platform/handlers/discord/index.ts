@@ -46,13 +46,13 @@ export class DiscordHandler implements PlatformHandler {
 
       const cryptoKey = await crypto.subtle.importKey(
         'raw',
-        publicKeyBytes,
+        publicKeyBytes as unknown as ArrayBuffer,
         { name: 'Ed25519' },
         false,
         ['verify'],
       );
 
-      return await crypto.subtle.verify('Ed25519', cryptoKey, signatureBytes, messageBytes);
+      return await crypto.subtle.verify('Ed25519', cryptoKey, signatureBytes as unknown as ArrayBuffer, messageBytes as unknown as ArrayBuffer);
     } catch {
       return false;
     }
