@@ -65,6 +65,7 @@ export function App() {
     () => localStorage.getItem('rcc_server_name'),
   );
   const [showMobileServerMenu, setShowMobileServerMenu] = useState(false);
+  const [showMobileFileBrowser, setShowMobileFileBrowser] = useState(false);
   const [serverCtxMenu, setServerCtxMenu] = useState<{ server: ServerInfo; x: number; y: number } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ServerInfo | null>(null);
 
@@ -958,6 +959,11 @@ export function App() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                {activeSession && (
+                  <button class="view-toggle" title="Files" onClick={() => setShowMobileFileBrowser((o) => !o)}>
+                    📁
+                  </button>
+                )}
                 <button class="view-toggle" onClick={toggleViewMode}>
                   {viewMode === 'chat' ? '⌨' : '💬'}
                 </button>
@@ -1074,7 +1080,7 @@ export function App() {
                 </div>
               );
             })()}
-            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={(_name, text) => { addOptimisticUserMessage(text); scrollActiveToBottom(); }} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={false} activeThinking={!!activeThinkingTs} />
+            <SessionControls ws={wsRef.current} activeSession={activeSessionInfo} inputRef={inputRef} onAfterAction={focusTerminal} onSend={(_name, text) => { addOptimisticUserMessage(text); scrollActiveToBottom(); }} onStopProject={handleStopProject} onRenameSession={() => activeSession && setRenameRequest(activeSession)} sessionDisplayName={activeSessionInfo?.project ?? null} quickData={quickData} detectedModel={activeSession ? detectedModels.get(activeSession) : undefined} hideShortcuts={false} activeThinking={!!activeThinkingTs} mobileFileBrowserOpen={showMobileFileBrowser} onMobileFileBrowserClose={() => setShowMobileFileBrowser(false)} />
 
             {/* Sub-session bar */}
             {selectedServerId && (

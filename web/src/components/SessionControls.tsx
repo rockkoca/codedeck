@@ -5,6 +5,7 @@ import type { WsClient } from '../ws-client.js';
 import type { SessionInfo } from '../types.js';
 import { QuickInputPanel } from './QuickInputPanel.js';
 import type { UseQuickDataResult } from './QuickInputPanel.js';
+import { FileBrowser } from './FileBrowser.js';
 
 interface Props {
   ws: WsClient | null;
@@ -32,6 +33,9 @@ interface Props {
   onSubStop?: () => void;
   /** When true, show the scan-sweep animation even if session state is not 'running'. */
   activeThinking?: boolean;
+  /** Mobile: open full-screen file browser overlay. */
+  mobileFileBrowserOpen?: boolean;
+  onMobileFileBrowserClose?: () => void;
 }
 
 type MenuAction = 'restart' | 'new' | 'stop';
@@ -71,7 +75,7 @@ function loadCodexModel(): CodexModelChoice | null {
   return null;
 }
 
-export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop, activeThinking }: Props) {
+export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop, activeThinking, mobileFileBrowserOpen, onMobileFileBrowserClose }: Props) {
   const { t } = useTranslation();
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -305,6 +309,30 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
   const placeholder = !hasSession ? t('session.no_session') : !connected ? t('session.send_queued') : t('session.send_placeholder', { name: sessionDisplayName ?? activeSession?.name ?? 'session' });
 
   return (
+    <>
+    {mobileFileBrowserOpen && ws && activeSession && (
+      <div class="mobile-fb-overlay">
+        <div class="mobile-fb-header">
+          <span style={{ fontSize: 13, fontWeight: 600 }}>📁 Files</span>
+          <button class="fb-close" onClick={onMobileFileBrowserClose}>✕</button>
+        </div>
+        <FileBrowser
+          ws={ws}
+          mode="file-multi"
+          layout="panel"
+          initialPath={activeSession.projectDir ?? '~'}
+          onConfirm={(paths) => {
+            const cwd = activeSession.projectDir;
+            const rel = cwd
+              ? paths.map((p) => p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p)
+              : paths;
+            appendToInput(rel);
+            onMobileFileBrowserClose?.();
+          }}
+          onClose={onMobileFileBrowserClose}
+        />
+      </div>
+    )}
     <div class={`controls-wrapper${(activeSession?.state === 'running' || activeThinking) ? ' controls-wrapper-running' : ''}`}>
       {/* Shortcut row — hidden in chat mode */}
       {!hideShortcuts && <div class="shortcuts-row">
@@ -484,5 +512,6 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
         </div>
       </div>
     </div>
+    </>
   );
 }
