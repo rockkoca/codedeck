@@ -126,5 +126,28 @@
     "ru": "Русский",
     "ja": "日本語",
     "ko": "한국어"
+  },
+  "login": {
+    "subtitle": "AI 코딩 에이전트를 원격 제어",
+    "passkey_signin": "패스키로 로그인",
+    "passkey_create": "패스키로 계정 만들기",
+    "passkey_register_hint": "이름을 입력하고 기기 패스키(Face ID, Touch ID, Windows Hello…)를 등록하세요",
+    "passkey_register_btn": "패스키 등록",
+    "passkey_error": "패스키 인증에 실패했습니다. 다시 시도해 주세요.",
+    "display_name_placeholder": "이름 (예: Alice)",
+    "device_name_placeholder": "기기 이름 (선택, 예: MacBook Pro)",
+    "or": "또는",
+    "github_signin": "GitHub로 로그인"
+  },
+  "passkey": {
+    "title": "패스키 관리",
+    "none": "등록된 패스키가 없습니다",
+    "add": "패스키 추가",
+    "add_error": "패스키 추가에 실패했습니다. 다시 시도해 주세요.",
+    "delete_error": "패스키 삭제에 실패했습니다.",
+    "unnamed": "이름 없는 기기",
+    "added": "추가됨",
+    "last_used": "최근 사용",
+    "device_name_placeholder": "기기 이름 (선택)"
   }
 }

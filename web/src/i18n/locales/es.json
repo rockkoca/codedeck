@@ -126,5 +126,28 @@
     "ru": "Русский",
     "ja": "日本語",
     "ko": "한국어"
+  },
+  "login": {
+    "subtitle": "Controla remotamente tus agentes de codificación IA",
+    "passkey_signin": "Iniciar sesión con Passkey",
+    "passkey_create": "Crear cuenta con Passkey",
+    "passkey_register_hint": "Ingresa tu nombre y registra la passkey de tu dispositivo (Face ID, Touch ID, Windows Hello…)",
+    "passkey_register_btn": "Registrar Passkey",
+    "passkey_error": "La autenticación con passkey falló. Por favor, inténtalo de nuevo.",
+    "display_name_placeholder": "Tu nombre (ej: Alice)",
+    "device_name_placeholder": "Nombre del dispositivo (opcional, ej: MacBook Pro)",
+    "or": "o",
+    "github_signin": "Iniciar sesión con GitHub"
+  },
+  "passkey": {
+    "title": "Passkeys",
+    "none": "No hay passkeys registradas",
+    "add": "Agregar Passkey",
+    "add_error": "Error al agregar la passkey. Por favor, inténtalo de nuevo.",
+    "delete_error": "Error al eliminar la passkey.",
+    "unnamed": "Dispositivo sin nombre",
+    "added": "Agregada",
+    "last_used": "último uso",
+    "device_name_placeholder": "Nombre del dispositivo (opcional)"
   }
 }

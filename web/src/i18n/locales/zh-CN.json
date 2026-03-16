@@ -126,5 +126,28 @@
     "ru": "Русский",
     "ja": "日本語",
     "ko": "한국어"
+  },
+  "login": {
+    "subtitle": "远程控制你的 AI 编程 Agent",
+    "passkey_signin": "使用 Passkey 登录",
+    "passkey_create": "使用 Passkey 创建账号",
+    "passkey_register_hint": "输入你的名称，然后注册设备 Passkey（面容 ID、Touch ID、Windows Hello…）",
+    "passkey_register_btn": "注册 Passkey",
+    "passkey_error": "Passkey 验证失败，请重试。",
+    "display_name_placeholder": "你的名字（如：Alice）",
+    "device_name_placeholder": "设备名称（可选，如：MacBook Pro）",
+    "or": "或",
+    "github_signin": "使用 GitHub 登录"
+  },
+  "passkey": {
+    "title": "Passkey 管理",
+    "none": "尚未注册任何 Passkey",
+    "add": "添加 Passkey",
+    "add_error": "添加 Passkey 失败，请重试。",
+    "delete_error": "移除 Passkey 失败。",
+    "unnamed": "未命名设备",
+    "added": "添加于",
+    "last_used": "最近使用",
+    "device_name_placeholder": "设备名称（可选）"
   }
 }

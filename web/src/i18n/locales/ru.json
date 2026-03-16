@@ -126,5 +126,28 @@
     "ru": "Русский",
     "ja": "日本語",
     "ko": "한국어"
+  },
+  "login": {
+    "subtitle": "Удалённое управление AI-агентами программирования",
+    "passkey_signin": "Войти с Passkey",
+    "passkey_create": "Создать аккаунт с Passkey",
+    "passkey_register_hint": "Введите имя и зарегистрируйте ключ устройства (Face ID, Touch ID, Windows Hello…)",
+    "passkey_register_btn": "Зарегистрировать Passkey",
+    "passkey_error": "Аутентификация с Passkey не удалась. Попробуйте снова.",
+    "display_name_placeholder": "Ваше имя (напр.: Alice)",
+    "device_name_placeholder": "Название устройства (необязательно, напр.: MacBook Pro)",
+    "or": "или",
+    "github_signin": "Войти через GitHub"
+  },
+  "passkey": {
+    "title": "Passkey",
+    "none": "Нет зарегистрированных Passkey",
+    "add": "Добавить Passkey",
+    "add_error": "Не удалось добавить Passkey. Попробуйте снова.",
+    "delete_error": "Не удалось удалить Passkey.",
+    "unnamed": "Безымянное устройство",
+    "added": "Добавлено",
+    "last_used": "последнее использование",
+    "device_name_placeholder": "Название устройства (необязательно)"
   }
 }

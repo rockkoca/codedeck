@@ -126,5 +126,28 @@
     "ru": "Русский",
     "ja": "日本語",
     "ko": "한국어"
+  },
+  "login": {
+    "subtitle": "AIコーディングエージェントをリモートコントロール",
+    "passkey_signin": "パスキーでサインイン",
+    "passkey_create": "パスキーでアカウント作成",
+    "passkey_register_hint": "名前を入力し、デバイスのパスキー（Face ID・Touch ID・Windows Hello…）を登録してください",
+    "passkey_register_btn": "パスキーを登録",
+    "passkey_error": "パスキー認証に失敗しました。もう一度お試しください。",
+    "display_name_placeholder": "お名前（例：Alice）",
+    "device_name_placeholder": "デバイス名（任意、例：MacBook Pro）",
+    "or": "または",
+    "github_signin": "GitHubでサインイン"
+  },
+  "passkey": {
+    "title": "パスキー管理",
+    "none": "登録済みのパスキーはありません",
+    "add": "パスキーを追加",
+    "add_error": "パスキーの追加に失敗しました。もう一度お試しください。",
+    "delete_error": "パスキーの削除に失敗しました。",
+    "unnamed": "未命名デバイス",
+    "added": "追加日",
+    "last_used": "最終使用",
+    "device_name_placeholder": "デバイス名（任意）"
   }
 }

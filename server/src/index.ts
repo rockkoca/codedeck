@@ -32,6 +32,7 @@ import { sessionMgmtRoutes } from './routes/session-mgmt.js';
 import { subSessionRoutes } from './routes/sub-sessions.js';
 import { discussionRoutes } from './routes/discussions.js';
 import { preferencesRoutes } from './routes/preferences.js';
+import { passkeyRoutes } from './routes/passkey-auth.js';
 import { healthCheckCron } from './cron/health-check.js';
 import { jobDispatchCron } from './cron/job-dispatch.js';
 import { WsBridge } from './ws/bridge.js';
@@ -116,6 +117,7 @@ export function buildApp(env: Env) {
   app.route('/api/server', subSessionRoutes);
   app.route('/api/server', discussionRoutes);
   app.route('/api/preferences', preferencesRoutes);
+  app.route('/api/auth/passkey', passkeyRoutes);
 
   app.get('/health', (c) => c.json({ ok: true, ts: Date.now() }));
 

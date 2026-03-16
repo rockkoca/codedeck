@@ -278,3 +278,45 @@ export async function saveUserPref(key: string, value: unknown): Promise<void> {
     body: JSON.stringify({ value }),
   });
 }
+
+// ── Passkey (WebAuthn) API ─────────────────────────────────────────────────
+
+export interface PasskeyCredential {
+  id: string;
+  deviceName: string | null;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+export async function passkeyRegisterBegin(displayName?: string): Promise<Record<string, unknown> & { challengeId: string }> {
+  return apiFetch('/api/auth/passkey/register/begin', {
+    method: 'POST',
+    body: JSON.stringify({ displayName }),
+  });
+}
+
+export async function passkeyRegisterComplete(challengeId: string, response: unknown, deviceName?: string): Promise<void> {
+  await apiFetch('/api/auth/passkey/register/complete', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId, response, deviceName }),
+  });
+}
+
+export async function passkeyLoginBegin(): Promise<Record<string, unknown> & { challengeId: string }> {
+  return apiFetch('/api/auth/passkey/login/begin', { method: 'POST', body: '{}' });
+}
+
+export async function passkeyLoginComplete(challengeId: string, response: unknown): Promise<void> {
+  await apiFetch('/api/auth/passkey/login/complete', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId, response }),
+  });
+}
+
+export async function listPasskeys(): Promise<{ credentials: PasskeyCredential[] }> {
+  return apiFetch('/api/auth/passkey/credentials');
+}
+
+export async function deletePasskey(credentialId: string): Promise<void> {
+  await apiFetch(`/api/auth/passkey/credentials/${credentialId}`, { method: 'DELETE' });
+}
