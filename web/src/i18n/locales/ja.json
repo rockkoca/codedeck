@@ -134,6 +134,7 @@
     "passkey_register_hint": "名前を入力し、デバイスのパスキー（Face ID・Touch ID・Windows Hello…）を登録してください",
     "passkey_register_btn": "パスキーを登録",
     "passkey_error": "パスキー認証に失敗しました。もう一度お試しください。",
+    "passkey_not_found": "このサイトのパスキーが見つかりません。先に登録するかGitHubでログインしてください。",
     "display_name_placeholder": "お名前（例：Alice）",
     "device_name_placeholder": "デバイス名（任意、例：MacBook Pro）",
     "or": "または",

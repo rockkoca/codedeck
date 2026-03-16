@@ -134,6 +134,7 @@
     "passkey_register_hint": "输入你的名称，然后注册设备 Passkey（面容 ID、Touch ID、Windows Hello…）",
     "passkey_register_btn": "注册 Passkey",
     "passkey_error": "Passkey 验证失败，请重试。",
+    "passkey_not_found": "该网站未找到 Passkey，请先注册或使用 GitHub 登录。",
     "display_name_placeholder": "你的名字（如：Alice）",
     "device_name_placeholder": "设备名称（可选，如：MacBook Pro）",
     "or": "或",

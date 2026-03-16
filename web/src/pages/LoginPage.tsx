@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 import { passkeyLoginBegin, passkeyLoginComplete, passkeyRegisterBegin, passkeyRegisterComplete } from '../api.js';
@@ -14,6 +14,16 @@ export function LoginPage({ onLogin }: Props) {
   const [deviceName, setDeviceName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [passkeySupported, setPasskeySupported] = useState(false);
+
+  useEffect(() => {
+    // Check WebAuthn + platform authenticator support
+    if (typeof window !== 'undefined' && window.PublicKeyCredential) {
+      void window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+        .then((ok) => setPasskeySupported(ok))
+        .catch(() => setPasskeySupported(false));
+    }
+  }, []);
 
   const handleGithub = () => {
     const params = new URLSearchParams({ reauth: '1', origin: window.location.origin });
@@ -32,7 +42,10 @@ export function LoginPage({ onLogin }: Props) {
       window.location.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('cancelled') && !msg.includes('NotAllowedError')) {
+      // NotAllowedError = user dismissed OR no passkey found for this site
+      if (msg.includes('NotAllowedError') || msg.toLowerCase().includes('not allowed')) {
+        setError(t('login.passkey_not_found'));
+      } else if (!msg.toLowerCase().includes('cancel')) {
         setError(t('login.passkey_error'));
       }
     } finally {
@@ -53,7 +66,7 @@ export function LoginPage({ onLogin }: Props) {
       window.location.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('cancelled') && !msg.includes('NotAllowedError')) {
+      if (!msg.toLowerCase().includes('cancel')) {
         setError(t('login.passkey_error'));
       }
     } finally {
@@ -77,37 +90,38 @@ export function LoginPage({ onLogin }: Props) {
 
         {mode === 'buttons' && (
           <>
-            {/* Passkey login */}
-            <button
-              class="btn btn-primary"
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}
-              onClick={handlePasskeyLogin}
-              disabled={loading}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 2C9.24 2 7 4.24 7 7c0 2.08 1.26 3.86 3.08 4.63L9 22h6l-1.08-10.37C15.74 10.86 17 9.08 17 7c0-2.76-2.24-5-5-5z"/>
-                <circle cx="12" cy="7" r="2"/>
-              </svg>
-              {loading ? t('common.loading') : t('login.passkey_signin')}
-            </button>
+            {passkeySupported && (
+              <>
+                <button
+                  class="btn btn-primary"
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}
+                  onClick={handlePasskeyLogin}
+                  disabled={loading}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2C9.24 2 7 4.24 7 7c0 2.08 1.26 3.86 3.08 4.63L9 22h6l-1.08-10.37C15.74 10.86 17 9.08 17 7c0-2.76-2.24-5-5-5z"/>
+                    <circle cx="12" cy="7" r="2"/>
+                  </svg>
+                  {loading ? t('common.loading') : t('login.passkey_signin')}
+                </button>
 
-            {/* Create account with passkey */}
-            <button
-              class="btn btn-secondary"
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}
-              onClick={() => { setMode('register'); setError(null); }}
-              disabled={loading}
-            >
-              {t('login.passkey_create')}
-            </button>
+                <button
+                  class="btn btn-secondary"
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}
+                  onClick={() => { setMode('register'); setError(null); }}
+                  disabled={loading}
+                >
+                  {t('login.passkey_create')}
+                </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-              <div style={{ flex: 1, height: 1, background: '#334155' }} />
-              <span style={{ color: '#64748b', fontSize: 12 }}>{t('login.or')}</span>
-              <div style={{ flex: 1, height: 1, background: '#334155' }} />
-            </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                  <div style={{ flex: 1, height: 1, background: '#334155' }} />
+                  <span style={{ color: '#64748b', fontSize: 12 }}>{t('login.or')}</span>
+                  <div style={{ flex: 1, height: 1, background: '#334155' }} />
+                </div>
+              </>
+            )}
 
-            {/* GitHub OAuth */}
             <button
               class="btn btn-ghost"
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}

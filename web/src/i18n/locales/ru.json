@@ -134,6 +134,7 @@
     "passkey_register_hint": "Введите имя и зарегистрируйте ключ устройства (Face ID, Touch ID, Windows Hello…)",
     "passkey_register_btn": "Зарегистрировать Passkey",
     "passkey_error": "Аутентификация с Passkey не удалась. Попробуйте снова.",
+    "passkey_not_found": "Passkey для этого сайта не найден. Зарегистрируйтесь или войдите через GitHub.",
     "display_name_placeholder": "Ваше имя (напр.: Alice)",
     "device_name_placeholder": "Название устройства (необязательно, напр.: MacBook Pro)",
     "or": "или",

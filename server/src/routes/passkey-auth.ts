@@ -25,31 +25,27 @@ passkeyRoutes.use('/*', async (c, next) => {
   c.header('Pragma', 'no-cache');
 });
 
-// ── In-memory challenge store ─────────────────────────────────────────────
-interface PendingChallenge {
-  challenge: string;
-  userId: string | null; // null = new user, created on complete
-  displayName: string;
-  expires: number;
-}
-
-const pendingChallenges = new Map<string, PendingChallenge>();
-
-function cleanExpiredChallenges(): void {
-  const now = Date.now();
-  for (const [key, val] of pendingChallenges) {
-    if (val.expires < now) pendingChallenges.delete(key);
-  }
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Derive rpId and expectedOrigin from the server's canonical SERVER_URL.
+ * SERVER_URL is the authoritative source (same as github-auth.ts).
+ * Falls back to the request host header if SERVER_URL is not set.
+ */
 function getRpInfo(c: Context<HonoEnv>): { rpId: string; origin: string } {
+  const serverUrl = c.env.SERVER_URL?.replace(/\/$/, '');
+  if (serverUrl && serverUrl !== 'http://localhost:3000') {
+    try {
+      const url = new URL(serverUrl);
+      return { rpId: url.hostname, origin: `${url.protocol}//${url.host}` };
+    } catch { /* fallthrough */ }
+  }
+  // Fallback: derive from request host header
   const resolvedHost = (c.get('resolvedHost' as never) as string | null) ?? '';
   const isSecure = c.env.NODE_ENV === 'production';
   const scheme = isSecure ? 'https' : 'http';
   const host = resolvedHost || 'localhost';
-  const rpId = host.split(':')[0]; // strip port — rpID must be hostname only
+  const rpId = host.split(':')[0];
   return { rpId, origin: `${scheme}://${host}` };
 }
 
@@ -78,6 +74,38 @@ async function storeRefreshToken(db: Env['DB'], userId: string, refreshHash: str
   ).bind(randomHex(16), userId, refreshHash, randomHex(16), now + 30 * 24 * 3600 * 1000, now).run();
 }
 
+// ── DB-backed challenge store (multi-instance safe) ───────────────────────
+
+interface PendingChallenge {
+  challenge: string;
+  userId: string | null;
+  displayName: string;
+}
+
+async function saveChallenge(
+  db: Env['DB'],
+  id: string,
+  challenge: string,
+  userId: string | null,
+  displayName: string,
+): Promise<void> {
+  const now = Date.now();
+  await db.prepare(
+    'INSERT INTO passkey_challenges (id, challenge, user_id, display_name, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+  ).bind(id, challenge, userId, displayName, now + 5 * 60 * 1000, now).run();
+  // Clean up expired challenges opportunistically
+  await db.prepare('DELETE FROM passkey_challenges WHERE expires_at < ?').bind(now).run();
+}
+
+async function consumeChallenge(db: Env['DB'], id: string): Promise<PendingChallenge | null> {
+  const row = await db.prepare(
+    'SELECT challenge, user_id, display_name FROM passkey_challenges WHERE id = ? AND expires_at > ?',
+  ).bind(id, Date.now()).first<{ challenge: string; user_id: string | null; display_name: string }>();
+  if (!row) return null;
+  await db.prepare('DELETE FROM passkey_challenges WHERE id = ?').bind(id).run();
+  return { challenge: row.challenge, userId: row.user_id, displayName: row.display_name };
+}
+
 // ── POST /api/auth/passkey/register/begin ─────────────────────────────────
 const registerBeginSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
@@ -99,7 +127,6 @@ passkeyRoutes.post('/register/begin', async (c) => {
     excludeCredentials = rows.results.map((r) => ({ id: r.id, type: 'public-key' as const }));
   }
 
-  // userID bytes: 16 random bytes for new users, or derive from existing userId
   const userIdBytes = existingUserId
     ? Buffer.from(existingUserId, 'hex')
     : Buffer.from(randomHex(16), 'hex');
@@ -119,13 +146,7 @@ passkeyRoutes.post('/register/begin', async (c) => {
   });
 
   const challengeId = randomHex(16);
-  cleanExpiredChallenges();
-  pendingChallenges.set(challengeId, {
-    challenge: options.challenge,
-    userId: existingUserId,
-    displayName,
-    expires: Date.now() + 5 * 60 * 1000,
-  });
+  await saveChallenge(c.env.DB, challengeId, options.challenge, existingUserId, displayName);
 
   return c.json({ ...options, challengeId });
 });
@@ -143,14 +164,12 @@ passkeyRoutes.post('/register/complete', async (c) => {
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
 
   const { challengeId, response, deviceName } = parsed.data;
-  const pending = pendingChallenges.get(challengeId);
-  if (!pending || pending.expires < Date.now()) {
-    pendingChallenges.delete(challengeId);
-    return c.json({ error: 'challenge_expired' }, 400);
-  }
-  pendingChallenges.delete(challengeId);
+  const pending = await consumeChallenge(c.env.DB, challengeId);
+  if (!pending) return c.json({ error: 'challenge_expired' }, 400);
 
   const { rpId, origin } = getRpInfo(c);
+  logger.info({ rpId, origin }, '[passkey] register/complete verification');
+
   let verification;
   try {
     verification = await verifyRegistrationResponse({
@@ -160,7 +179,7 @@ passkeyRoutes.post('/register/complete', async (c) => {
       expectedRPID: rpId,
     });
   } catch (err) {
-    logger.warn({ err }, '[passkey] registration verification failed');
+    logger.warn({ err, rpId, origin }, '[passkey] registration verification failed');
     return c.json({ error: 'verification_failed' }, 400);
   }
 
@@ -170,13 +189,11 @@ passkeyRoutes.post('/register/complete', async (c) => {
 
   const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
 
-  // Reject duplicate credentials
   const existing = await c.env.DB.prepare(
     'SELECT id FROM passkey_credentials WHERE id = ?',
   ).bind(credentialID).first<{ id: string }>();
   if (existing) return c.json({ error: 'credential_already_registered' }, 409);
 
-  // Create a new user if this is not an add-to-existing flow
   let userId = pending.userId;
   if (!userId) {
     userId = randomHex(16);
@@ -192,7 +209,7 @@ passkeyRoutes.post('/register/complete', async (c) => {
     Buffer.from(credentialPublicKey).toString('base64'),
     counter,
     deviceName ?? null,
-    null, // transports not in v10 registrationInfo at this level
+    null,
     now,
   ).run();
 
@@ -214,17 +231,10 @@ passkeyRoutes.post('/login/begin', async (c) => {
   const options = await generateAuthenticationOptions({
     rpID: rpId,
     userVerification: 'preferred',
-    // No allowCredentials → browser shows discoverable passkey selector
   });
 
   const challengeId = randomHex(16);
-  cleanExpiredChallenges();
-  pendingChallenges.set(challengeId, {
-    challenge: options.challenge,
-    userId: null,
-    displayName: '',
-    expires: Date.now() + 5 * 60 * 1000,
-  });
+  await saveChallenge(c.env.DB, challengeId, options.challenge, null, '');
 
   return c.json({ ...options, challengeId });
 });
@@ -241,16 +251,13 @@ passkeyRoutes.post('/login/complete', async (c) => {
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
 
   const { challengeId, response } = parsed.data;
-  const pending = pendingChallenges.get(challengeId);
-  if (!pending || pending.expires < Date.now()) {
-    pendingChallenges.delete(challengeId);
-    return c.json({ error: 'challenge_expired' }, 400);
-  }
-  pendingChallenges.delete(challengeId);
+  const pending = await consumeChallenge(c.env.DB, challengeId);
+  if (!pending) return c.json({ error: 'challenge_expired' }, 400);
 
   const { rpId, origin } = getRpInfo(c);
-  const credentialId = response.id as string;
+  logger.info({ rpId, origin }, '[passkey] login/complete verification');
 
+  const credentialId = response.id as string;
   const storedCred = await c.env.DB.prepare(
     'SELECT id, user_id, public_key, counter, transports FROM passkey_credentials WHERE id = ?',
   ).bind(credentialId).first<{ id: string; user_id: string; public_key: string; counter: number; transports: string | null }>();
@@ -272,7 +279,7 @@ passkeyRoutes.post('/login/complete', async (c) => {
       },
     });
   } catch (err) {
-    logger.warn({ err }, '[passkey] authentication verification failed');
+    logger.warn({ err, rpId, origin }, '[passkey] authentication verification failed');
     return c.json({ error: 'verification_failed' }, 400);
   }
 

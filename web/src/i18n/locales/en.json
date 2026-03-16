@@ -134,6 +134,7 @@
     "passkey_register_hint": "Give yourself a name and register your device passkey (Face ID, Touch ID, Windows Hello…)",
     "passkey_register_btn": "Register Passkey",
     "passkey_error": "Passkey authentication failed. Please try again.",
+    "passkey_not_found": "No passkey found for this site. Please register first or use GitHub login.",
     "display_name_placeholder": "Your name (e.g. Alice)",
     "device_name_placeholder": "Device label (optional, e.g. MacBook Pro)",
     "or": "or",
