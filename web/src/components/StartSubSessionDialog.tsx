@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import type { WsClient } from '../ws-client.js';
 import { FileBrowser } from './FileBrowser.js';
+import { getUserPref, saveUserPref } from '../api.js';
 
 interface Props {
   ws: WsClient | null;
@@ -21,18 +22,23 @@ const AGENT_TYPES = [
   { id: 'script', label: 'Script', icon: '🔄' },
 ];
 
-const DEFAULT_SHELL_KEY = 'rcc_default_shell';
-
 export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Props) {
   const [type, setType] = useState('claude-code');
   const [shells, setShells] = useState<string[]>([]);
-  const [shellBin, setShellBin] = useState<string>(() => localStorage.getItem(DEFAULT_SHELL_KEY) ?? '');
+  const [shellBin, setShellBin] = useState<string>('/bin/bash');
   const [cwd, setCwd] = useState(defaultCwd ?? '');
   const [label, setLabel] = useState('');
   const [scriptCmd, setScriptCmd] = useState('');
   const [scriptInterval, setScriptInterval] = useState('5');
   const [detectingShells, setDetectingShells] = useState(false);
   const [showDirBrowser, setShowDirBrowser] = useState(false);
+
+  // Load saved shell preference from server
+  useEffect(() => {
+    void getUserPref('default_shell').then((saved) => {
+      if (typeof saved === 'string' && saved) setShellBin(saved);
+    }).catch(() => {});
+  }, []);
 
   // Request shell detection from daemon
   useEffect(() => {
@@ -42,13 +48,7 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
       if (msg.type === 'subsession.shells') {
         setShells(msg.shells);
         setDetectingShells(false);
-        // Pre-select default shell
-        const saved = localStorage.getItem(DEFAULT_SHELL_KEY);
-        if (saved && msg.shells.includes(saved)) {
-          setShellBin(saved);
-        } else if (msg.shells.length > 0 && !shellBin) {
-          setShellBin(msg.shells[0]);
-        }
+        setShellBin((prev) => (msg.shells.includes(prev) ? prev : (msg.shells[0] ?? prev)));
       }
     });
 
@@ -69,7 +69,7 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
     }
     const selectedShell = type === 'shell' ? (shellBin || undefined) : undefined;
     if (type === 'shell' && selectedShell) {
-      localStorage.setItem(DEFAULT_SHELL_KEY, selectedShell);
+      void saveUserPref('default_shell', selectedShell);
     }
     onStart(type, selectedShell, cwd || undefined, label || undefined);
   };

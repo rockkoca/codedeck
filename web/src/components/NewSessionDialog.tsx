@@ -2,6 +2,9 @@ import { useState, useEffect } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import type { WsClient } from '../ws-client.js';
 import { FileBrowser } from './FileBrowser.js';
+import { getUserPref, saveUserPref } from '../api.js';
+
+const DEFAULT_SHELL_KEY = 'default_shell';
 
 interface Props {
   ws: WsClient | null;
@@ -19,6 +22,30 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
   const [showDirBrowser, setShowDirBrowser] = useState(false);
+  const [shells, setShells] = useState<string[]>([]);
+  const [shellBin, setShellBin] = useState<string>('/bin/bash');
+
+  // Load saved shell preference from server, then detect available shells
+  useEffect(() => {
+    void getUserPref(DEFAULT_SHELL_KEY).then((saved) => {
+      if (typeof saved === 'string' && saved) setShellBin(saved);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!ws) return;
+    const unsub = ws.onMessage((msg) => {
+      if (msg.type === 'subsession.shells') {
+        const list = msg.shells as string[];
+        setShells(list);
+        // Keep saved preference if it's available, otherwise pick first
+        setShellBin((prev) => (list.includes(prev) ? prev : (list[0] ?? prev)));
+      }
+    });
+    ws.subSessionDetectShells?.();
+    return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ws]);
 
   // Listen for session.event started/error while dialog is open
   useEffect(() => {
@@ -61,6 +88,7 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
 
     setError('');
     setStarting(true);
+    if (shellBin) void saveUserPref(DEFAULT_SHELL_KEY, shellBin);
     ws.sendSessionCommand('start', { project: project.trim(), dir: dir.trim(), agentType });
   };
 
@@ -143,6 +171,29 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
             <option value="opencode">OpenCode</option>
             <option value="gemini">Gemini CLI</option>
           </select>
+        </div>
+
+        <div class="form-group">
+          <label>Default shell (for terminal sub-session)</label>
+          {shells.length > 0 ? (
+            <select
+              value={shellBin}
+              disabled={starting}
+              onChange={(e) => setShellBin((e.target as HTMLSelectElement).value)}
+              style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', padding: '8px 12px', borderRadius: 4, fontFamily: 'inherit' }}
+            >
+              {shells.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : (
+            <input
+              type="text"
+              placeholder="/bin/bash"
+              value={shellBin}
+              disabled={starting}
+              onInput={(e) => setShellBin((e.target as HTMLInputElement).value)}
+              autoComplete="off"
+            />
+          )}
         </div>
 
         {error && (

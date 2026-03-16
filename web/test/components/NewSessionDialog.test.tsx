@@ -25,6 +25,7 @@ const makeWs = () => ({
   sendSessionCommand: vi.fn(),
   connected: true,
   onMessage: vi.fn().mockReturnValue(() => {}),
+  subSessionDetectShells: vi.fn(),
 });
 
 describe('NewSessionDialog', () => {

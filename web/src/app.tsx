@@ -337,8 +337,10 @@ export function App() {
     if (!activeSession || activeSession === prev) return;
     if (!connected || loadedServerId !== selectedServerId) return;
     if (visibleSubSessions.length > 0) return;
-    const defaultShell = localStorage.getItem('rcc_default_shell') ?? '/bin/bash';
-    void createSubSession('shell', defaultShell);
+    void getUserPref('default_shell').then((saved) => {
+      const shell = (typeof saved === 'string' && saved) ? saved : '/bin/bash';
+      void createSubSession('shell', shell);
+    });
   }, [activeSession, connected, loadedServerId, selectedServerId, visibleSubSessions.length, createSubSession]);
 
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
