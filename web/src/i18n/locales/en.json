@@ -67,7 +67,19 @@
     "placeholder_phrase": "fix this issue",
     "newer": "← Newer",
     "older": "Older →",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "tab_quick": "Quick",
+    "tab_files": "Files"
+  },
+  "file_browser": {
+    "title_dir": "Select Directory",
+    "title_file": "Select Files",
+    "select": "Select",
+    "insert": "Insert {{count}}",
+    "browse": "Browse",
+    "show_hidden": "Hidden",
+    "selected_count": "{{count}} selected",
+    "timeout": "Request timed out"
   },
   "toast": {
     "finished": "finished"

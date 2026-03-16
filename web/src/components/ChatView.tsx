@@ -3,10 +3,12 @@
  * Merges consecutive streaming assistant.text events into single blocks.
  * Supports basic Markdown rendering (code blocks, inline code, bold).
  */
+import { h } from 'preact';
 import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
-import type { TimelineEvent } from '../ws-client.js';
+import type { TimelineEvent, WsClient } from '../ws-client.js';
 import { getActiveThinkingTs } from '../thinking-utils.js';
+import { FileBrowser } from './FileBrowser.js';
 
 interface Props {
   events: TimelineEvent[];
@@ -19,6 +21,10 @@ interface Props {
   onScrollBottomFn?: (fn: () => void) => void;
   /** When true, render as a non-interactive preview (no scroll button, no status bar) */
   preview?: boolean;
+  /** When provided, clicking file paths in chat messages opens FileBrowser */
+  ws?: WsClient | null;
+  /** Called when user inserts a path via the FileBrowser opened from a chat message */
+  onInsertPath?: (path: string) => void;
 }
 
 /** A merged view item — either a single event, merged assistant text, or collapsed tool group. */
@@ -165,10 +171,11 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
   return items;
 }
 
-export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview }: Props) {
+export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview, ws, onInsertPath }: Props) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [fileBrowserPath, setFileBrowserPath] = useState<string | null>(null);
 
   const autoScrollRef = useRef(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -300,9 +307,10 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
         {viewItems.map((item, idx) => {
           const nextItem = viewItems[idx + 1];
           const nextTs = nextItem?.ts ?? nextItem?.event?.ts;
+          const onPathClick = ws && !preview ? (p: string) => setFileBrowserPath(p) : undefined;
           return item.type === 'assistant-block' ? (
             <div key={item.key} class="chat-event chat-assistant">
-              <RichText text={item.text!} />
+              <RichText text={item.text!} onPathClick={onPathClick} />
               <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
             </div>
           ) : item.type === 'tool-group' ? (
@@ -333,6 +341,20 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
         >
           ↓
         </button>
+      )}
+      {fileBrowserPath && ws && (
+        <FileBrowser
+          ws={ws}
+          mode="file-single"
+          layout="modal"
+          initialPath={fileBrowserPath.includes('.') && !fileBrowserPath.endsWith('/') ? fileBrowserPath.split('/').slice(0, -1).join('/') || '~' : fileBrowserPath}
+          highlightPath={fileBrowserPath}
+          onConfirm={(paths) => {
+            if (paths[0]) onInsertPath?.(paths[0]);
+            setFileBrowserPath(null);
+          }}
+          onClose={() => setFileBrowserPath(null)}
+        />
       )}
     </div>
   );
@@ -546,8 +568,38 @@ function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
+// Regex to detect Unix absolute paths in plain text
+const PATH_REGEX = /(\/(?:[\w.\-~][\w.\-~/]*)?)/g;
+
+/** Split a plain-text segment into runs of path and non-path text. */
+function splitPaths(text: string, onPathClick?: (p: string) => void): h.JSX.Element[] {
+  if (!onPathClick) return [<span>{text}</span>];
+  const parts: preact.JSX.Element[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  PATH_REGEX.lastIndex = 0;
+  while ((m = PATH_REGEX.exec(text)) !== null) {
+    const path = m[1];
+    if (path.length < 3) continue; // skip lone /
+    if (m.index > last) parts.push(<span key={`t${last}`}>{text.slice(last, m.index)}</span>);
+    parts.push(
+      <span
+        key={`p${m.index}`}
+        class="chat-path-link"
+        onClick={() => onPathClick(path)}
+        title={path}
+      >
+        {path}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(<span key={`t${last}`}>{text.slice(last)}</span>);
+  return parts.length ? parts : [<span>{text}</span>];
+}
+
 /** Render inline segments as JSX. */
-function InlineText({ text }: { text: string }) {
+function InlineText({ text, onPathClick }: { text: string; onPathClick?: (p: string) => void }) {
   const lines = text.split('\n');
   return (
     <span>
@@ -561,7 +613,7 @@ function InlineText({ text }: { text: string }) {
                 case 'code': return <code key={si} class="chat-inline-code">{seg.content}</code>;
                 case 'bold': return <strong key={si}>{seg.content}</strong>;
                 case 'italic': return <em key={si}>{seg.content}</em>;
-                default: return <span key={si}>{seg.content}</span>;
+                default: return <span key={si}>{splitPaths(seg.content, onPathClick)}</span>;
               }
             })}
           </span>
@@ -572,7 +624,7 @@ function InlineText({ text }: { text: string }) {
 }
 
 /** Render markdown text with code blocks and inline formatting. */
-function RichText({ text }: { text: string }) {
+function RichText({ text, onPathClick }: { text: string; onPathClick?: (p: string) => void }) {
   const blocks = parseBlocks(text);
   return (
     <div class="chat-rich-text">
@@ -583,7 +635,7 @@ function RichText({ text }: { text: string }) {
             <pre><code>{block.code}</code></pre>
           </div>
         ) : (
-          <InlineText key={i} text={block.text} />
+          <InlineText key={i} text={block.text} onPathClick={onPathClick} />
         ),
       )}
     </div>

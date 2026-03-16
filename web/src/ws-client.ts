@@ -45,7 +45,14 @@ export type ServerMessage =
   | { type: 'discussion.done'; discussionId: string; filePath: string; conclusion: string }
   | { type: 'discussion.error'; discussionId?: string; requestId?: string; error: string }
   | { type: 'discussion.list'; discussions: Array<{ id: string; topic: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; conclusion?: string; filePath?: string }> }
-  | { type: 'daemon.stats'; cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number };
+  | { type: 'daemon.stats'; cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number }
+  | { type: 'fs.ls_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; entries?: FsEntry[]; error?: string };
+
+export interface FsEntry {
+  name: string;
+  isDir: boolean;
+  hidden: boolean;
+}
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
@@ -257,6 +264,13 @@ export class WsClient {
   /** Request a terminal snapshot (fullFrame) for a session. */
   sendSnapshotRequest(sessionName: string): void {
     this.send({ type: 'terminal.snapshot_request', sessionName });
+  }
+
+  /** Request a directory listing from the daemon. Returns the requestId for matching the response. */
+  fsListDir(path: string, includeFiles = false): string {
+    const requestId = crypto.randomUUID();
+    this.send({ type: 'fs.ls', path, requestId, includeFiles });
+    return requestId;
   }
 
   /** Request full timeline history for a session (used on first load / daemon reconnect).

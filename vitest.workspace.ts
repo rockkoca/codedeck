@@ -13,7 +13,7 @@ export default defineWorkspace([
   {
     test: {
       name: 'web',
-      include: ['web/test/**/*.test.ts'],
+      include: ['web/test/**/*.test.ts', 'web/test/**/*.test.tsx'],
       exclude: ['**/node_modules/**'],
       environment: 'jsdom',
       globals: false,

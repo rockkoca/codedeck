@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import { apiFetch } from '../api.js';
+import { FileBrowser } from './FileBrowser.js';
+import type { WsClient } from '../ws-client.js';
 
 export interface QuickData {
   history: string[];                        // cross-session
@@ -153,17 +155,23 @@ interface Props {
   onRemoveSessionHistory: (sessionName: string, text: string) => void;
   onClearHistory: () => void;
   onClearSessionHistory: (sessionName: string) => void;
+  /** When provided, enables the Files tab for browsing and inserting paths */
+  ws?: WsClient | null;
+  sessionCwd?: string;
+  onAppendPaths?: (paths: string[]) => void;
 }
 
 const HISTORY_PAGE_SIZE = 10;
 type AddTarget = 'command' | 'phrase' | null;
 type HistoryScope = 'session' | 'global';
+type QpTab = 'quick' | 'files';
 
 export function QuickInputPanel({
   open, onClose, onSelect, onSend, agentType, sessionName,
   data, loaded,
   onAddCommand, onAddPhrase, onRemoveCommand, onRemovePhrase,
   onRemoveHistory, onRemoveSessionHistory, onClearHistory, onClearSessionHistory,
+  ws, sessionCwd, onAppendPaths,
 }: Props) {
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -172,6 +180,8 @@ export function QuickInputPanel({
   const [addValue, setAddValue] = useState('');
   const [historyPage, setHistoryPage] = useState(0);
   const [historyScope, setHistoryScope] = useState<HistoryScope>('session');
+  const [activeTab, setActiveTab] = useState<QpTab>('quick');
+  const [insertedPaths, setInsertedPaths] = useState<string[]>([]);
 
   // Reset page when scope or session changes
   useEffect(() => { setHistoryPage(0); }, [historyScope, sessionName]);
@@ -232,6 +242,35 @@ export function QuickInputPanel({
     <>
       <div class="qp-backdrop" onClick={onClose} />
       <div class="qp" ref={panelRef}>
+        {/* Tab bar — shown when Files feature is available */}
+        {ws && (
+          <div class="qp-tabs">
+            <button class={`qp-tab${activeTab === 'quick' ? ' active' : ''}`} onClick={() => setActiveTab('quick')}>
+              ⚡ {t('quick_input.tab_quick')}
+            </button>
+            <button class={`qp-tab${activeTab === 'files' ? ' active' : ''}`} onClick={() => setActiveTab('files')}>
+              📁 {t('quick_input.tab_files')}
+            </button>
+          </div>
+        )}
+
+        {/* Files tab */}
+        {activeTab === 'files' && ws && (
+          <FileBrowser
+            ws={ws}
+            mode="file-multi"
+            layout="panel"
+            initialPath={sessionCwd ?? '~'}
+            alreadyInserted={insertedPaths}
+            onConfirm={(paths) => {
+              setInsertedPaths((prev) => [...new Set([...prev, ...paths])]);
+              onAppendPaths?.(paths);
+            }}
+          />
+        )}
+
+        {/* Quick tab content */}
+        {activeTab === 'quick' && <>
         {/* Toolbar */}
         {addTarget ? (
           <div class="qp-add-row">
@@ -334,6 +373,7 @@ export function QuickInputPanel({
             <button class="qp-page-btn" disabled={historyPage >= totalHistoryPages - 1} onClick={() => setHistoryPage((p) => p + 1)}>{t('quick_input.older')}</button>
           </div>
         )}
+        </>}
       </div>
     </>
   );

@@ -21,6 +21,8 @@ import {
 } from './subsession-manager.js';
 import logger from '../util/logger.js';
 import { homedir } from 'os';
+import { readdir as fsReaddir, realpath as fsRealpath } from 'node:fs/promises';
+import * as nodePath from 'node:path';
 
 // ── Binary frame packing ─────────────────────────────────────────────────────
 
@@ -217,6 +219,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       break;
     case 'daemon.upgrade':
       void handleDaemonUpgrade();
+      break;
+    case 'fs.ls':
+      void handleFsList(cmd, serverLink);
       break;
     case 'auth_ok':
     case 'heartbeat':
@@ -443,6 +448,7 @@ function handleGetSessions(serverLink: ServerLink): void {
       role: s.role,
       agentType: s.agentType,
       state: s.state,
+      projectDir: s.projectDir,
     }));
   try {
     serverLink.send({ type: 'session_list', sessions });
@@ -850,6 +856,43 @@ async function handleDaemonUpgrade(): Promise<void> {
       logger.error({ err: e }, 'daemon.upgrade: restart failed');
     }
   });
+}
+
+// ── File system browser ────────────────────────────────────────────────────
+
+const FS_ALLOWED_ROOTS = [homedir()];
+
+async function handleFsList(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
+  const rawPath = cmd.path as string | undefined;
+  const requestId = cmd.requestId as string | undefined;
+  const includeFiles = cmd.includeFiles === true;
+  if (!rawPath || !requestId) return;
+
+  const expanded = rawPath.startsWith('~') ? rawPath.replace(/^~/, homedir()) : rawPath;
+  const resolved = nodePath.resolve(expanded);
+
+  try {
+    const real = await fsRealpath(resolved);
+    const allowed = FS_ALLOWED_ROOTS.some((root) => real === root || real.startsWith(root + nodePath.sep));
+    if (!allowed) {
+      try { serverLink.send({ type: 'fs.ls_response', requestId, path: rawPath, resolvedPath: real, status: 'error', error: 'forbidden_path' }); } catch { /* ignore */ }
+      return;
+    }
+
+    const dirents = await fsReaddir(real, { withFileTypes: true });
+    const entries = dirents
+      .filter((d) => d.isDirectory() || (includeFiles && d.isFile()))
+      .map((d) => ({ name: d.name, isDir: d.isDirectory(), hidden: d.name.startsWith('.') }))
+      .sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        if (a.hidden !== b.hidden) return a.hidden ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      });
+
+    try { serverLink.send({ type: 'fs.ls_response', requestId, path: rawPath, resolvedPath: real, status: 'ok', entries }); } catch { /* ignore */ }
+  } catch (err) {
+    try { serverLink.send({ type: 'fs.ls_response', requestId, path: rawPath, status: 'error', error: err instanceof Error ? err.message : String(err) }); } catch { /* ignore */ }
+  }
 }
 
 /** server.delete — remove credentials + service, then exit */

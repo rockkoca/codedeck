@@ -67,7 +67,19 @@
     "placeholder_phrase": "修复这个问题",
     "newer": "← 较新",
     "older": "较旧 →",
-    "loading": "加载中…"
+    "loading": "加载中…",
+    "tab_quick": "快捷",
+    "tab_files": "文件"
+  },
+  "file_browser": {
+    "title_dir": "选择目录",
+    "title_file": "选择文件",
+    "select": "选择",
+    "insert": "插入 {{count}} 项",
+    "browse": "浏览",
+    "show_hidden": "隐藏文件",
+    "selected_count": "已选 {{count}} 项",
+    "timeout": "请求超时"
   },
   "toast": {
     "finished": "完成了"

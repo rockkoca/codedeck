@@ -67,7 +67,19 @@
     "placeholder_phrase": "исправить эту проблему",
     "newer": "← Новее",
     "older": "Старее →",
-    "loading": "Загрузка…"
+    "loading": "Загрузка…",
+    "tab_quick": "Быстро",
+    "tab_files": "Файлы"
+  },
+  "file_browser": {
+    "title_dir": "Выбрать директорию",
+    "title_file": "Выбрать файлы",
+    "select": "Выбрать",
+    "insert": "Вставить {{count}}",
+    "browse": "Обзор",
+    "show_hidden": "Скрытые",
+    "selected_count": "Выбрано {{count}}",
+    "timeout": "Превышено время ожидания"
   },
   "toast": {
     "finished": "завершено"

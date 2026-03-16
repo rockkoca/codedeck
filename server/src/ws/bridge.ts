@@ -70,6 +70,7 @@ const BROWSER_WHITELIST = new Set([
   'discussion.status',
   'discussion.stop',
   'discussion.list',
+  'fs.ls',
 ]);
 
 // ── Terminal forwarding queue (per (session, browser)) ────────────────────────
@@ -135,6 +136,12 @@ export class WsBridge {
 
   /** db reference for session ownership checks */
   private db: PgDatabase | null = null;
+
+  /**
+   * Per-request fs.ls pending map: requestId → { socket, timer }.
+   * Used to single-cast fs.ls_response back to the requesting browser.
+   */
+  private pendingFsRequests = new Map<string, { socket: WebSocket; timer: ReturnType<typeof setTimeout> }>();
 
   /**
    * Per-session daemon subscription reference count.
@@ -315,6 +322,13 @@ export class WsBridge {
         return;
       }
 
+      // Track fs.ls requests for single-cast response routing
+      if (msg.type === 'fs.ls' && typeof msg.requestId === 'string') {
+        const reqId = msg.requestId;
+        const timer = setTimeout(() => this.pendingFsRequests.delete(reqId), 30_000);
+        this.pendingFsRequests.set(reqId, { socket: ws, timer });
+      }
+
       // Track terminal subscriptions for binary routing + ref-counted daemon forwarding
       if (msg.type === 'terminal.subscribe' && typeof msg.session === 'string') {
         const sessionName = msg.session;
@@ -361,6 +375,22 @@ export class WsBridge {
    */
   private relayToBrowsers(msg: Record<string, unknown>): void {
     const type = msg.type as string;
+
+    // ── fs.ls_response: single-cast back to requesting browser ────────────────
+    if (type === 'fs.ls_response') {
+      const requestId = msg.requestId as string | undefined;
+      if (requestId) {
+        const pending = this.pendingFsRequests.get(requestId);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pendingFsRequests.delete(requestId);
+          if (pending.socket.readyState === WebSocket.OPEN) {
+            pending.socket.send(JSON.stringify(msg));
+          }
+        }
+      }
+      return;
+    }
 
     // ── Terminal diff: session-scoped ─────────────────────────────────────────
     if (type === 'terminal_update') {

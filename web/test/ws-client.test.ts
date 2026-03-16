@@ -181,4 +181,63 @@ describe('WsClient', () => {
     const client = new WsClient('http://localhost:8787', 'srv-1');
     expect(() => client.send({ type: 'ping' })).toThrow('WebSocket not connected');
   });
+
+  // ── fsListDir ─────────────────────────────────────────────────────────
+
+  describe('fsListDir', () => {
+    async function connectClient(): Promise<WsClient> {
+      const client = new WsClient('http://localhost:8787', 'srv-1');
+      client.connect();
+      await flushAsync();
+      lastWs!.emit('open');
+      return client;
+    }
+
+    it('sends fs.ls message with path and requestId', async () => {
+      const client = await connectClient();
+      const requestId = client.fsListDir('/home/user/projects');
+      expect(lastWs!.send).toHaveBeenCalled();
+      const msg = JSON.parse(lastWs!.send.mock.calls.at(-1)[0]);
+      expect(msg.type).toBe('fs.ls');
+      expect(msg.path).toBe('/home/user/projects');
+      expect(msg.requestId).toBe(requestId);
+      expect(msg.includeFiles).toBe(false);
+      client.disconnect();
+    });
+
+    it('sets includeFiles=true when requested', async () => {
+      const client = await connectClient();
+      client.fsListDir('/home/user', true);
+      const msg = JSON.parse(lastWs!.send.mock.calls.at(-1)[0]);
+      expect(msg.includeFiles).toBe(true);
+      client.disconnect();
+    });
+
+    it('returns a unique UUID as requestId', async () => {
+      const client = await connectClient();
+      const id1 = client.fsListDir('/home/user/a');
+      const id2 = client.fsListDir('/home/user/b');
+      expect(id1).not.toBe(id2);
+      expect(typeof id1).toBe('string');
+      client.disconnect();
+    });
+
+    it('fs.ls_response is dispatched to onMessage handlers', async () => {
+      const client = await connectClient();
+      const handler = vi.fn();
+      client.onMessage(handler);
+      const requestId = client.fsListDir('/home/user');
+      const responseMsg = {
+        type: 'fs.ls_response',
+        requestId,
+        path: '/home/user',
+        resolvedPath: '/home/user',
+        status: 'ok',
+        entries: [{ name: 'projects', isDir: true, hidden: false }],
+      };
+      lastWs!.emit('message', { data: JSON.stringify(responseMsg) });
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ type: 'fs.ls_response', requestId }));
+      client.disconnect();
+    });
+  });
 });

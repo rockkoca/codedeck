@@ -67,7 +67,19 @@
     "placeholder_phrase": "この問題を修正",
     "newer": "← 新しい",
     "older": "古い →",
-    "loading": "読み込み中…"
+    "loading": "読み込み中…",
+    "tab_quick": "クイック",
+    "tab_files": "ファイル"
+  },
+  "file_browser": {
+    "title_dir": "ディレクトリを選択",
+    "title_file": "ファイルを選択",
+    "select": "選択",
+    "insert": "{{count}}件挿入",
+    "browse": "参照",
+    "show_hidden": "隠しファイル",
+    "selected_count": "{{count}}件選択中",
+    "timeout": "リクエストがタイムアウトしました"
   },
   "toast": {
     "finished": "完了"

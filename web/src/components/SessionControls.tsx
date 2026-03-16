@@ -144,6 +144,23 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     setHasText(!!text.trim());
   };
 
+  const appendToInput = (paths: string[]) => {
+    if (!paths.length) return;
+    const suffix = paths.join(' ');
+    if (divRef.current) {
+      const current = divRef.current.textContent ?? '';
+      divRef.current.textContent = current ? `${current} ${suffix}` : suffix;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(divRef.current);
+      range.collapse(false);
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      divRef.current.focus();
+    }
+    setHasText(true);
+  };
+
   const handleSend = useCallback(() => {
     const text = getText();
     if (!text || !ws || !activeSession) return;
@@ -392,6 +409,9 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
             onRemoveSessionHistory={quickData.removeSessionHistory}
             onClearHistory={quickData.clearHistory}
             onClearSessionHistory={quickData.clearSessionHistory}
+            ws={ws}
+            sessionCwd={activeSession?.projectDir}
+            onAppendPaths={appendToInput}
           />
         </div>
 

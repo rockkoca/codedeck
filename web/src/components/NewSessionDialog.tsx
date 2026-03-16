@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import type { WsClient } from '../ws-client.js';
+import { FileBrowser } from './FileBrowser.js';
 
 interface Props {
   ws: WsClient | null;
@@ -17,6 +18,7 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code');
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
+  const [showDirBrowser, setShowDirBrowser] = useState(false);
 
   // Listen for session.event started/error while dialog is open
   useEffect(() => {
@@ -97,20 +99,36 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
 
         <div class="form-group">
           <label>Working directory</label>
-          <input
-            type="text"
-            placeholder="~/projects/my-project"
-            value={dir}
-            disabled={starting}
-            onInput={(e) => setDir((e.target as HTMLInputElement).value)}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellcheck={false}
-            data-lpignore="true"
-            data-1p-ignore
-          />
+          <div class="input-with-browse">
+            <input
+              type="text"
+              placeholder="~/projects/my-project"
+              value={dir}
+              disabled={starting}
+              onInput={(e) => setDir((e.target as HTMLInputElement).value)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellcheck={false}
+              data-lpignore="true"
+              data-1p-ignore
+            />
+            {ws && (
+              <button class="btn-browse" type="button" disabled={starting} onClick={() => setShowDirBrowser(true)} title="Browse">📁</button>
+            )}
+          </div>
         </div>
+
+        {showDirBrowser && ws && (
+          <FileBrowser
+            ws={ws}
+            mode="dir-only"
+            layout="modal"
+            initialPath={dir || '~'}
+            onConfirm={(paths) => { setDir(paths[0] ?? ''); setShowDirBrowser(false); }}
+            onClose={() => setShowDirBrowser(false)}
+          />
+        )}
 
         <div class="form-group">
           <label>Agent type</label>

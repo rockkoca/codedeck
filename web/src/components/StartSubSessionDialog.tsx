@@ -3,6 +3,7 @@
  */
 import { useState, useEffect } from 'preact/hooks';
 import type { WsClient } from '../ws-client.js';
+import { FileBrowser } from './FileBrowser.js';
 
 interface Props {
   ws: WsClient | null;
@@ -31,6 +32,7 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
   const [scriptCmd, setScriptCmd] = useState('');
   const [scriptInterval, setScriptInterval] = useState('5');
   const [detectingShells, setDetectingShells] = useState(false);
+  const [showDirBrowser, setShowDirBrowser] = useState(false);
 
   // Request shell detection from daemon
   useEffect(() => {
@@ -151,14 +153,29 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
           {/* Working directory */}
           <div>
             <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>Working directory (optional)</div>
-            <input
-              class="input"
-              placeholder="~/projects/myapp"
-              value={cwd}
-              onInput={(e) => setCwd((e.target as HTMLInputElement).value)}
-              style={{ width: '100%' }}
-            />
+            <div class="input-with-browse">
+              <input
+                class="input"
+                placeholder="~/projects/myapp"
+                value={cwd}
+                onInput={(e) => setCwd((e.target as HTMLInputElement).value)}
+              />
+              {ws && (
+                <button class="btn-browse" type="button" onClick={() => setShowDirBrowser(true)} title="Browse">📁</button>
+              )}
+            </div>
           </div>
+
+          {showDirBrowser && ws && (
+            <FileBrowser
+              ws={ws}
+              mode="dir-only"
+              layout="modal"
+              initialPath={cwd || defaultCwd || '~'}
+              onConfirm={(paths) => { setCwd(paths[0] ?? ''); setShowDirBrowser(false); }}
+              onClose={() => setShowDirBrowser(false)}
+            />
+          )}
 
           {/* Label */}
           <div>

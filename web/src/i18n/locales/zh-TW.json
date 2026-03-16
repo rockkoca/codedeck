@@ -67,7 +67,19 @@
     "placeholder_phrase": "修復此問題",
     "newer": "← 較新",
     "older": "較舊 →",
-    "loading": "載入中…"
+    "loading": "載入中…",
+    "tab_quick": "快捷",
+    "tab_files": "檔案"
+  },
+  "file_browser": {
+    "title_dir": "選擇目錄",
+    "title_file": "選擇檔案",
+    "select": "選擇",
+    "insert": "插入 {{count}} 項",
+    "browse": "瀏覽",
+    "show_hidden": "隱藏檔案",
+    "selected_count": "已選 {{count}} 項",
+    "timeout": "請求逾時"
   },
   "toast": {
     "finished": "完成"

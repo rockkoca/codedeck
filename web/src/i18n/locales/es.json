@@ -67,7 +67,19 @@
     "placeholder_phrase": "corregir este problema",
     "newer": "← Más reciente",
     "older": "Más antiguo →",
-    "loading": "Cargando…"
+    "loading": "Cargando…",
+    "tab_quick": "Rápido",
+    "tab_files": "Archivos"
+  },
+  "file_browser": {
+    "title_dir": "Seleccionar directorio",
+    "title_file": "Seleccionar archivos",
+    "select": "Seleccionar",
+    "insert": "Insertar {{count}}",
+    "browse": "Explorar",
+    "show_hidden": "Ocultos",
+    "selected_count": "{{count}} seleccionados",
+    "timeout": "Tiempo de espera agotado"
   },
   "toast": {
     "finished": "completado"

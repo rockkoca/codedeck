@@ -67,7 +67,19 @@
     "placeholder_phrase": "이 문제 수정",
     "newer": "← 최신",
     "older": "이전 →",
-    "loading": "로딩 중…"
+    "loading": "로딩 중…",
+    "tab_quick": "빠른",
+    "tab_files": "파일"
+  },
+  "file_browser": {
+    "title_dir": "디렉토리 선택",
+    "title_file": "파일 선택",
+    "select": "선택",
+    "insert": "{{count}}개 삽입",
+    "browse": "찾아보기",
+    "show_hidden": "숨김 파일",
+    "selected_count": "{{count}}개 선택됨",
+    "timeout": "요청 시간 초과"
   },
   "toast": {
     "finished": "완료"
