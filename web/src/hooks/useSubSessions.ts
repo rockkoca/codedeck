@@ -120,7 +120,7 @@ export function useSubSessions(
     } catch {
       return null;
     }
-  }, [serverId, ws]);
+  }, [serverId, ws, activeSession]);
 
   const close = useCallback(async (id: string) => {
     if (!serverId) return;
