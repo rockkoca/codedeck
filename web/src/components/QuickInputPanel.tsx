@@ -266,8 +266,8 @@ export function QuickInputPanel({
               setInsertedPaths((prev) => [...new Set([...prev, ...paths])]);
               const cwd = sessionCwd;
               const rel = cwd
-                ? paths.map((p) => p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p)
-                : paths;
+                ? paths.map((p) => '@' + (p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p) + ' ')
+                : paths.map((p) => '@' + p + ' ');
               onAppendPaths?.(rel);
             }}
           />

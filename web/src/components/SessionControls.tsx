@@ -324,8 +324,8 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
           onConfirm={(paths) => {
             const cwd = activeSession.projectDir;
             const rel = cwd
-              ? paths.map((p) => p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p)
-              : paths;
+              ? paths.map((p) => '@' + (p.startsWith(cwd + '/') ? p.slice(cwd.length + 1) : p) + ' ')
+              : paths.map((p) => '@' + p + ' ');
             appendToInput(rel);
             onMobileFileBrowserClose?.();
           }}
