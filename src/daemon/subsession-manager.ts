@@ -9,6 +9,7 @@ const execAsync = promisify(exec);
 import { getDriver } from '../agent/session-manager.js';
 import type { AgentType } from '../agent/detect.js';
 import { timelineStore } from './timeline-store.js';
+import { timelineEmitter } from './timeline-emitter.js';
 import { upsertSession, getSession } from '../store/session-store.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -57,7 +58,8 @@ export async function startSubSession(sub: SubSessionRecord): Promise<void> {
   } as any);
 
   await newSession(sessionName, launchCmd, { cwd: sub.cwd ?? undefined });
-  
+  timelineEmitter.emit(sessionName, 'session.state', { state: 'started' });
+
   upsertSession({
     name: sessionName, projectName: sessionName, agentType: sub.type, role: 'w1', state: 'running',
     projectDir: sub.cwd ?? '', ccSessionId: sub.ccSessionId ?? undefined,
@@ -97,6 +99,7 @@ async function killSessionProcesses(sessionName: string): Promise<void> {
 }
 
 export async function stopSubSession(sessionName: string): Promise<void> {
+  timelineEmitter.emit(sessionName, 'session.state', { state: 'stopped' });
   await killSessionProcesses(sessionName);
   await killSession(sessionName).catch(() => {});
   (await import('./jsonl-watcher.js')).stopWatching(sessionName);
