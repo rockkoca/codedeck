@@ -34,13 +34,14 @@ const AGENT_BADGE: Record<string, { label: string; color: string }> = {
 
 export function SessionTabs({ sessions, activeSession, connected, latencyMs, idleAlerts, onAlertDismiss, activeTools, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession, sessionsLoaded }: Props) {
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
+  const [stopConfirmProject, setStopConfirmProject] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!ctx) return;
+    if (!ctx) { setStopConfirmProject(null); return; }
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setCtx(null);
     };
@@ -156,7 +157,15 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
           <button class="menu-item" onClick={() => { onRestartProject(ctx.session.project, true); setCtx(null); }}>＋ New</button>
           <button class="menu-item" onClick={() => startRename(ctx.session)}>✎ Rename</button>
           <div class="menu-divider" />
-          <button class="menu-item menu-item-danger" onClick={() => { onStopProject(ctx.session.project); setCtx(null); }}>✕ Stop</button>
+          {stopConfirmProject === ctx.session.project ? (
+            <div class="menu-stop-confirm">
+              <span class="menu-stop-confirm-label">Stop session?</span>
+              <button class="menu-item menu-item-danger" onClick={() => { onStopProject(ctx.session.project); setStopConfirmProject(null); setCtx(null); }}>✓ Confirm</button>
+              <button class="menu-item" onClick={() => setStopConfirmProject(null)}>✕ Cancel</button>
+            </div>
+          ) : (
+            <button class="menu-item menu-item-danger" onClick={() => setStopConfirmProject(ctx.session.project)}>✕ Stop</button>
+          )}
         </div>
       )}
     </div>

@@ -332,6 +332,7 @@ export interface DbSubSession {
   updated_at: number;
   cc_session_id: string | null;
   gemini_session_id: string | null;
+  parent_session: string | null;
 }
 
 export async function getSubSessionsByServer(db: PgDatabase, serverId: string): Promise<DbSubSession[]> {
@@ -359,15 +360,16 @@ export async function createSubSession(
   label: string | null,
   ccSessionId: string | null,
   geminiSessionId: string | null = null,
+  parentSession: string | null = null,
 ): Promise<DbSubSession> {
   const now = Date.now();
   await db
     .prepare(
-      'INSERT INTO sub_sessions (id, server_id, type, shell_bin, cwd, label, closed_at, cc_session_id, gemini_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
+      'INSERT INTO sub_sessions (id, server_id, type, shell_bin, cwd, label, closed_at, cc_session_id, gemini_session_id, parent_session, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)',
     )
-    .bind(id, serverId, type, shellBin, cwd, label, ccSessionId, geminiSessionId, now, now)
+    .bind(id, serverId, type, shellBin, cwd, label, ccSessionId, geminiSessionId, parentSession, now, now)
     .run();
-  return { id, server_id: serverId, type, shell_bin: shellBin, cwd, label, closed_at: null, cc_session_id: ccSessionId, gemini_session_id: geminiSessionId, created_at: now, updated_at: now };
+  return { id, server_id: serverId, type, shell_bin: shellBin, cwd, label, closed_at: null, cc_session_id: ccSessionId, gemini_session_id: geminiSessionId, parent_session: parentSession, created_at: now, updated_at: now };
 }
 
 export async function updateSubSession(

@@ -25,6 +25,7 @@ export function useSubSessions(
   serverId: string | null,
   ws: WsClient | null,
   connected: boolean,
+  activeSession?: string | null,
 ) {
   const [subSessions, setSubSessions] = useState<SubSession[]>([]);
   const [loadedServerId, setLoadedServerId] = useState<string | null>(null);
@@ -106,7 +107,7 @@ export function useSubSessions(
     if (!serverId) return null;
     try {
       const ccSessionId = type === 'claude-code' ? crypto.randomUUID() : undefined;
-      const res = await apiCreate(serverId, { type, shellBin, cwd, label, ccSessionId });
+      const res = await apiCreate(serverId, { type, shellBin, cwd, label, ccSessionId, parentSession: activeSession ?? null });
       const sub: SubSession = {
         ...res.subSession,
         sessionName: res.sessionName,
@@ -155,5 +156,10 @@ export function useSubSessions(
     ));
   }, [serverId]);
 
-  return { subSessions, loadedServerId, create, close, restart, rename };
+  // Filter sub-sessions by active main session (show only those belonging to it)
+  const visibleSubSessions = activeSession
+    ? subSessions.filter((s) => s.parentSession === activeSession)
+    : subSessions;
+
+  return { subSessions, visibleSubSessions, loadedServerId, create, close, restart, rename };
 }

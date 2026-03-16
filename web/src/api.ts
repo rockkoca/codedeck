@@ -199,6 +199,7 @@ export interface SubSessionData {
   updatedAt: number;
   ccSessionId?: string | null;
   geminiSessionId?: string | null;
+  parentSession?: string | null;
 }
 
 export async function listSubSessions(serverId: string): Promise<SubSessionData[]> {
@@ -206,7 +207,7 @@ export async function listSubSessions(serverId: string): Promise<SubSessionData[
     id: string; server_id: string; type: string; shell_bin: string | null;
     cwd: string | null; label: string | null; closed_at: number | null;
     created_at: number; updated_at: number; cc_session_id: string | null;
-    gemini_session_id: string | null;
+    gemini_session_id: string | null; parent_session: string | null;
   }> }>(`/api/server/${serverId}/sub-sessions`);
   return res.subSessions.map((s) => ({
     id: s.id, serverId: s.server_id, type: s.type,
@@ -214,20 +215,22 @@ export async function listSubSessions(serverId: string): Promise<SubSessionData[
     closedAt: s.closed_at, createdAt: s.created_at, updatedAt: s.updated_at,
     ccSessionId: s.cc_session_id,
     geminiSessionId: s.gemini_session_id,
+    parentSession: s.parent_session,
   }));
 }
 
 export async function createSubSession(
   serverId: string,
-  body: { type: string; shellBin?: string; cwd?: string; label?: string; ccSessionId?: string },
+  body: { type: string; shellBin?: string; cwd?: string; label?: string; ccSessionId?: string; parentSession?: string | null },
 ): Promise<{ id: string; sessionName: string; subSession: SubSessionData }> {
   const res = await apiFetch<{ id: string; sessionName: string; subSession: {
     id: string; server_id: string; type: string; shell_bin: string | null;
     cwd: string | null; label: string | null; closed_at: number | null;
     created_at: number; updated_at: number; cc_session_id: string | null;
+    parent_session: string | null;
   } }>(`/api/server/${serverId}/sub-sessions`, {
     method: 'POST',
-    body: JSON.stringify({ ...body, cc_session_id: body.ccSessionId ?? null }),
+    body: JSON.stringify({ ...body, cc_session_id: body.ccSessionId ?? null, parent_session: body.parentSession ?? null }),
   });
   const s = res.subSession;
   return {
@@ -238,6 +241,7 @@ export async function createSubSession(
       shellBin: s.shell_bin, cwd: s.cwd, label: s.label,
       closedAt: s.closed_at, createdAt: s.created_at, updatedAt: s.updated_at,
       ccSessionId: s.cc_session_id,
+      parentSession: s.parent_session,
     },
   };
 }

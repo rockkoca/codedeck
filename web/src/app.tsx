@@ -322,10 +322,11 @@ export function App() {
   const [daemonStats, setDaemonStats] = useState<{ cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number } | null>(null);
 
   // ── Sub-sessions ───────────────────────────────────────────────────────────
-  const { subSessions, create: createSubSession, close: closeSubSession, restart: restartSubSession, rename: renameSubSession } = useSubSessions(
+  const { subSessions, visibleSubSessions, create: createSubSession, close: closeSubSession, restart: restartSubSession, rename: renameSubSession } = useSubSessions(
     selectedServerId,
     wsRef.current,
     connected,
+    activeSession,
   );
 
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
@@ -1085,7 +1086,7 @@ export function App() {
             {/* Sub-session bar */}
             {selectedServerId && (
               <SubSessionBar
-                subSessions={subSessions}
+                subSessions={visibleSubSessions}
                 openIds={openSubIds}
                 onOpen={toggleSubSession}
                 onNew={() => setShowSubDialog(true)}
@@ -1127,7 +1128,7 @@ export function App() {
       )}
 
       {/* Sub-session windows (floating) */}
-      {subSessions.filter((s) => openSubIds.has(s.id)).map((sub) => (
+      {visibleSubSessions.filter((s) => openSubIds.has(s.id)).map((sub) => (
         <SubSessionWindow
           key={sub.id}
           sub={sub}
