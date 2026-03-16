@@ -17,12 +17,11 @@ export function LoginPage({ onLogin }: Props) {
   const [passkeySupported, setPasskeySupported] = useState(false);
 
   useEffect(() => {
-    // Check WebAuthn + platform authenticator support
-    if (typeof window !== 'undefined' && window.PublicKeyCredential) {
-      void window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-        .then((ok) => setPasskeySupported(ok))
-        .catch(() => setPasskeySupported(false));
-    }
+    // Show passkey buttons whenever the browser supports WebAuthn.
+    // We intentionally do NOT call isUserVerifyingPlatformAuthenticatorAvailable()
+    // because that only detects built-in authenticators (Touch ID, Windows Hello, etc.)
+    // and returns false for third-party managers like Bitwarden, 1Password, etc.
+    setPasskeySupported(typeof window !== 'undefined' && !!window.PublicKeyCredential);
   }, []);
 
   const handleGithub = () => {
