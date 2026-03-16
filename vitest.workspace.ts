@@ -10,15 +10,7 @@ export default defineWorkspace([
       globals: false,
     },
   },
-  {
-    test: {
-      name: 'web',
-      include: ['web/test/**/*.test.ts', 'web/test/**/*.test.tsx'],
-      exclude: ['**/node_modules/**'],
-      environment: 'jsdom',
-      globals: false,
-    },
-  },
+  './web/vitest.config.ts',
   {
     test: {
       name: 'server',
