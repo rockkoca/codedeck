@@ -6,9 +6,58 @@ import { watch, readdir, stat, open, mkdir, writeFile } from 'fs/promises';
 import type { FileChangeInfo } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+const execAsync = promisify(exec);
 import { timelineEmitter } from './timeline-emitter.js';
 import { readProjectMemory, buildCodexMemoryEntry } from './memory-inject.js';
 import logger from '../util/logger.js';
+
+// ── Codex SQLite helpers ────────────────────────────────────────────────────────
+
+/** Find the Codex state SQLite path (state_N.sqlite, take the highest N). */
+async function findCodexStateSqlite(): Promise<string | null> {
+  const codexDir = join(homedir(), '.codex');
+  let entries: string[];
+  try { entries = await readdir(codexDir); } catch { return null; }
+  const matches = entries.filter((e) => /^state_\d+\.sqlite$/.test(e)).sort();
+  if (!matches.length) return null;
+  return join(codexDir, matches[matches.length - 1]);
+}
+
+/** Upsert a row into Codex's `threads` SQLite table so `codex resume` can find it. */
+async function upsertCodexThread(uuid: string, cwd: string, rolloutPath: string, cliVersion: string): Promise<void> {
+  const dbPath = await findCodexStateSqlite();
+  if (!dbPath) {
+    logger.warn({ uuid }, 'codex-watcher: state SQLite not found, skipping thread upsert');
+    return;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  // Escape single quotes in values
+  const esc = (s: string) => s.replace(/'/g, "''");
+  const sql = [
+    `INSERT INTO threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, tokens_used, has_user_event, archived, cli_version)`,
+    `VALUES ('${esc(uuid)}', '${esc(rolloutPath)}', ${now}, ${now}, 'cli', 'openai', '${esc(cwd)}', '', '{"type":"danger-full-access"}', 'on-request', 0, 0, 0, '${esc(cliVersion)}')`,
+    `ON CONFLICT(id) DO UPDATE SET`,
+    `  cwd = '${esc(cwd)}', model_provider = 'openai', source = 'cli',`,
+    `  rollout_path = '${esc(rolloutPath)}', updated_at = ${now}, cli_version = '${esc(cliVersion)}';`,
+  ].join(' ');
+  await execAsync(`sqlite3 ${JSON.stringify(dbPath)} ${JSON.stringify(sql)}`);
+  logger.info({ uuid, cwd }, 'codex-watcher: upserted thread into SQLite');
+}
+
+/** Get the installed codex CLI version (cached). */
+let _codexVersion: string | null = null;
+async function getCodexVersion(): Promise<string> {
+  if (_codexVersion) return _codexVersion;
+  try {
+    const { stdout } = await execAsync('codex --version');
+    _codexVersion = stdout.trim().replace(/^codex-cli\s+/, '');
+  } catch {
+    _codexVersion = '0.113.0';
+  }
+  return _codexVersion;
+}
 
 // ── Path helpers ───────────────────────────────────────────────────────────────
 
@@ -251,25 +300,37 @@ export async function ensureSessionFile(uuid: string, cwd: string): Promise<stri
   const filePath = join(dir, `rollout-${ts}-${uuid}.jsonl`);
 
   const isoNow = now.toISOString();
+  const cliVersion = await getCodexVersion();
+
+  // session_meta must include source, model_provider, cli_version for `codex resume` to succeed.
   const meta = JSON.stringify({
     timestamp: isoNow,
     type: 'session_meta',
-    payload: { id: uuid, timestamp: isoNow, cwd, originator: 'codex_cli_rs' },
+    payload: {
+      id: uuid,
+      timestamp: isoNow,
+      cwd,
+      originator: 'codex_cli_rs',
+      cli_version: cliVersion,
+      source: 'cli',
+      model_provider: 'openai',
+      base_instructions: { text: '' },
+    },
   });
 
-  // Inject project memory so `codex resume` finds real content (session_meta-only fails)
-  // and the agent starts with project context loaded.
+  // Inject project memory so the agent starts with project context loaded.
+  // Also required: `codex resume` needs at least one entry beyond session_meta.
   const memory = await readProjectMemory(cwd);
-  const lines = [meta];
-  if (memory) {
-    lines.push(buildCodexMemoryEntry(memory, isoNow));
-  } else {
-    // Codex resume requires at least one entry beyond session_meta — add a minimal placeholder.
-    lines.push(buildCodexMemoryEntry('(new session)', isoNow));
-  }
+  const lines = [meta, buildCodexMemoryEntry(memory ?? '(new session)', isoNow)];
 
   await writeFile(filePath, lines.join('\n') + '\n', 'utf8');
   logger.info({ uuid, filePath, hasMemory: !!memory }, 'codex-watcher: created bootstrapped session file');
+
+  // Upsert into Codex's SQLite threads table so `codex resume <uuid>` finds proper metadata.
+  await upsertCodexThread(uuid, cwd, filePath, cliVersion).catch((e) =>
+    logger.warn({ err: e, uuid }, 'codex-watcher: SQLite thread upsert failed (non-fatal)'),
+  );
+
   return filePath;
 }
 
