@@ -88,6 +88,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION_PRIMARY }}
           cache: 'npm'
       - run: npm ci
+      - name: Install web deps (needed for tsx component tests)
+        run: npm ci
+        working-directory: web
       - run: npm run test:web
 
   # ── Server unit tests ─────────────────────────────────────────────────────
@@ -169,6 +172,9 @@ jobs:
       - name: Prime tmux server
         run: tmux new-session -d -s init && tmux kill-session -t init
       - run: npm ci
+      - name: Install web deps (needed for tsx component tests)
+        run: npm ci
+        working-directory: web
       - run: npm run test:coverage
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4

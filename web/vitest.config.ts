@@ -1,8 +1,11 @@
 import { defineConfig } from 'vitest/config';
-import preact from '@preact/preset-vite';
 
 export default defineConfig({
-  plugins: [preact()],
+  esbuild: {
+    jsx: 'automatic',
+    jsxImportSource: 'preact',
+    jsxDev: false,
+  },
   test: {
     name: 'web',
     include: ['test/**/*.test.ts', 'test/**/*.test.tsx'],
