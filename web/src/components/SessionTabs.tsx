@@ -157,15 +157,22 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
           <button class="menu-item" onClick={() => { onRestartProject(ctx.session.project, true); setCtx(null); }}>＋ New</button>
           <button class="menu-item" onClick={() => startRename(ctx.session)}>✎ Rename</button>
           <div class="menu-divider" />
-          {stopConfirmProject === ctx.session.project ? (
-            <div class="menu-stop-confirm">
-              <span class="menu-stop-confirm-label">Stop session?</span>
-              <button class="menu-item menu-item-danger" onClick={() => { onStopProject(ctx.session.project); setStopConfirmProject(null); setCtx(null); }}>✓ Confirm</button>
-              <button class="menu-item" onClick={() => setStopConfirmProject(null)}>✕ Cancel</button>
+          <button class="menu-item menu-item-danger" onClick={() => { setStopConfirmProject(ctx.session.project); setCtx(null); }}>✕ Stop</button>
+        </div>
+      )}
+      {stopConfirmProject && (
+        <div class="ask-dialog-overlay" onClick={() => setStopConfirmProject(null)}>
+          <div class="ask-dialog stop-session-dialog" onClick={(e) => e.stopPropagation()}>
+            <div class="stop-session-dialog-icon">⚠</div>
+            <div class="stop-session-dialog-title">Stop main session?</div>
+            <div class="stop-session-dialog-body">
+              <strong>{stopConfirmProject}</strong> is a main session. Stopping it will terminate all its tmux processes. This cannot be undone.
             </div>
-          ) : (
-            <button class="menu-item menu-item-danger" onClick={() => setStopConfirmProject(ctx.session.project)}>✕ Stop</button>
-          )}
+            <div class="ask-actions">
+              <button class="ask-btn-cancel" onClick={() => setStopConfirmProject(null)}>Cancel</button>
+              <button class="ask-btn-submit stop-session-confirm-btn" onClick={() => { onStopProject(stopConfirmProject); setStopConfirmProject(null); }}>Stop session</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
