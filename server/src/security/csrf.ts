@@ -15,6 +15,7 @@
 import type { Context, Next } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Env } from '../env.js';
+import logger from '../util/logger.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -48,6 +49,8 @@ export function csrfMiddleware() {
       const csrfCookie = getCookie(c, 'rcc_csrf');
       const csrfHeader = c.req.header('X-CSRF-Token');
       if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader) {
+        const path = new URL(c.req.url).pathname;
+        logger.warn({ path, hasCookie: !!csrfCookie, hasHeader: !!csrfHeader }, '[csrf] token mismatch — rejecting');
         return c.json({ error: 'csrf_rejected', reason: 'token_mismatch' }, 403);
       }
     } else if (rawOrigin) {

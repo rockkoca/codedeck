@@ -30,12 +30,27 @@ let refreshPromise: Promise<boolean> | null = null;
 let _lastRefreshAt = 0;
 
 async function doRefresh(): Promise<boolean> {
+  const hasCsrf = !!getCsrfToken();
+  const hasSession = document.cookie.includes('rcc_session');
+  const hasRefresh = document.cookie.includes('rcc_refresh');
+  console.warn(`[auth] doRefresh: cookies present: session=${hasSession} refresh=${hasRefresh} csrf=${hasCsrf}`);
+
   // Use rawFetch so the CSRF token is automatically attached
   const res = await rawFetch('/api/auth/refresh', { method: 'POST' });
   // 5xx means server is temporarily unavailable, not that the session expired.
   // Throw so callers can distinguish "no session" (false) from "server down" (throws).
-  if (res.status >= 500) throw new ApiError(res.status, await res.text().catch(() => ''));
-  if (res.ok) _lastRefreshAt = Date.now();
+  if (res.status >= 500) {
+    const body = await res.text().catch(() => '');
+    console.warn(`[auth] doRefresh: server error ${res.status}: ${body}`);
+    throw new ApiError(res.status, body);
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.warn(`[auth] doRefresh FAILED: ${res.status}: ${body}`);
+  } else {
+    _lastRefreshAt = Date.now();
+    console.warn(`[auth] doRefresh OK — token refreshed`);
+  }
   return res.ok;
 }
 
@@ -53,7 +68,7 @@ export async function refreshSession(): Promise<boolean> {
  * Use this for proactive/voluntary refreshes (startup, visibility-change) to avoid
  * unnecessary token rotation. For forced refreshes (401 responses) use refreshSession().
  */
-export async function refreshSessionIfStale(minAgeMs = 10 * 60 * 1000): Promise<boolean> {
+export async function refreshSessionIfStale(minAgeMs = 2 * 60 * 1000): Promise<boolean> {
   if (Date.now() - _lastRefreshAt < minAgeMs) return true; // recently refreshed, skip
   return refreshSession();
 }
@@ -61,7 +76,9 @@ export async function refreshSessionIfStale(minAgeMs = 10 * 60 * 1000): Promise<
 // ── Proactive refresh ─────────────────────────────────────────────────────
 
 let _refreshTimerId: ReturnType<typeof setInterval> | null = null;
-const PROACTIVE_REFRESH_MS = 3.5 * 3600 * 1000; // refresh every 3.5 hours (before 4-hour expiry)
+let _retryTimerId: ReturnType<typeof setTimeout> | null = null;
+const PROACTIVE_REFRESH_MS = 15 * 60 * 1000; // refresh every 15 min (well before 4-hour expiry)
+const RETRY_REFRESH_MS = 30 * 1000; // retry failed refresh after 30s
 
 /** Start proactive token refresh timer. Call when user logs in. */
 export function startProactiveRefresh(): void {
@@ -69,8 +86,23 @@ export function startProactiveRefresh(): void {
   // Refresh immediately, but only if we haven't refreshed recently.
   // This prevents the double-refresh when auth state updates twice on startup
   // (once from localStorage, again after /api/auth/user/me verification).
-  void refreshSessionIfStale();
-  _refreshTimerId = setInterval(() => { void refreshSession(); }, PROACTIVE_REFRESH_MS);
+  void refreshSessionIfStale().then((ok) => {
+    if (!ok) scheduleRetry();
+  });
+  _refreshTimerId = setInterval(() => {
+    void refreshSession().then((ok) => {
+      if (!ok) scheduleRetry();
+    });
+  }, PROACTIVE_REFRESH_MS);
+}
+
+/** Schedule a quick retry when proactive refresh fails (not from 401 handler). */
+function scheduleRetry(): void {
+  if (_retryTimerId !== null) return; // already scheduled
+  _retryTimerId = setTimeout(() => {
+    _retryTimerId = null;
+    void refreshSession(); // single retry, no cascade
+  }, RETRY_REFRESH_MS);
 }
 
 /** Stop proactive token refresh timer. Call when user logs out. */
@@ -78,6 +110,10 @@ export function stopProactiveRefresh(): void {
   if (_refreshTimerId !== null) {
     clearInterval(_refreshTimerId);
     _refreshTimerId = null;
+  }
+  if (_retryTimerId !== null) {
+    clearTimeout(_retryTimerId);
+    _retryTimerId = null;
   }
 }
 
@@ -101,27 +137,35 @@ export async function apiFetch<T = unknown>(
   const res = await rawFetch(path, opts);
 
   if (res.status === 401 && path !== '/api/auth/refresh') {
-    // Single-flight: multiple concurrent 401s share one refresh attempt
-    if (!refreshPromise) {
-      refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
-    }
-    let ok: boolean;
-    try {
-      ok = await refreshPromise;
-    } catch {
-      // Refresh threw (5xx or network error) — server unavailable, not session expired.
-      // Rethrow as-is so the caller sees the real error without triggering logout.
-      throw new ApiError(503, 'server_unavailable');
-    }
-    if (ok) {
-      const retryRes = await rawFetch(path, opts);
-      if (!retryRes.ok) {
-        const body = await retryRes.text().catch(() => '');
-        throw new ApiError(retryRes.status, body);
+    console.warn(`[auth] 401 on ${path} — attempting refresh`);
+    // Try to refresh the token (with one retry on failure).
+    // A single failure might be transient (e.g., CSRF mismatch after cookie rotation).
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!refreshPromise) {
+        refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
       }
-      return retryRes.json() as Promise<T>;
+      let ok: boolean;
+      try {
+        ok = await refreshPromise;
+      } catch {
+        // Refresh threw (5xx or network error) — server unavailable, not session expired.
+        throw new ApiError(503, 'server_unavailable');
+      }
+      if (ok) {
+        const retryRes = await rawFetch(path, opts);
+        if (!retryRes.ok) {
+          const body = await retryRes.text().catch(() => '');
+          throw new ApiError(retryRes.status, body);
+        }
+        return retryRes.json() as Promise<T>;
+      }
+      // First attempt failed — wait briefly and retry once (cookies may have been updated)
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 1000));
+      }
     }
-    // Refresh returned false (401/403) — session truly expired
+    // Both attempts failed — session truly expired
+    console.warn(`[auth] LOGOUT: refresh failed twice for ${path}, triggering onAuthExpired`);
     _onAuthExpired?.();
     throw new ApiError(401, 'session_expired');
   }

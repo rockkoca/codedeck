@@ -87,6 +87,7 @@ export function App() {
   // Registered once so any apiFetch 401 after refresh failure lands here.
   useEffect(() => {
     onAuthExpired(() => {
+      console.warn('[auth] onAuthExpired fired — clearing auth state');
       localStorage.removeItem('rcc_auth');
       setAuth(null);
     });
@@ -97,20 +98,19 @@ export function App() {
   useEffect(() => {
     const baseUrl = window.location.origin;
     configureApi(baseUrl);
+    console.warn('[auth] mount: verifying session via /api/auth/user/me');
     apiFetch<{ id: string }>('/api/auth/user/me').then((user) => {
+      console.warn(`[auth] /me OK: userId=${user.id}`);
       const authState: AuthState = { userId: user.id, baseUrl };
       localStorage.setItem('rcc_auth', JSON.stringify(authState));
-      // Use stable reference: if userId and baseUrl haven't changed, keep the same object
-      // so useEffect([auth]) doesn't re-run and startProactiveRefresh() isn't called twice.
       setAuth((prev) => {
         if (prev && prev.userId === authState.userId && prev.baseUrl === authState.baseUrl) return prev;
         return authState;
       });
     }).catch((err) => {
-      // Only clear auth on 401 (not authenticated).
-      // 5xx / network errors mean the server is temporarily unavailable (e.g. restart) —
-      // keep existing auth state so the user isn't logged out on every deploy.
+      console.warn(`[auth] /me FAILED:`, err instanceof ApiError ? `${err.status}: ${err.body}` : err);
       if (err instanceof ApiError && err.status === 401) {
+        console.warn('[auth] /me 401 — clearing auth (login required)');
         localStorage.removeItem('rcc_auth');
         setAuth(null);
       }
@@ -134,7 +134,7 @@ export function App() {
   // Rate-limited to avoid excessive token rotation from frequent tab switches.
   useEffect(() => {
     if (!auth) return;
-    const onVisible = () => { if (document.visibilityState === 'visible') void refreshSessionIfStale(5 * 60 * 1000); };
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshSessionIfStale(2 * 60 * 1000); };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [auth]);

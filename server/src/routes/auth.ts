@@ -9,6 +9,7 @@ import { checkAuthLockout } from '../security/lockout.js';
 import { resolveServerRole } from '../security/authorization.js';
 import { WsBridge } from '../ws/bridge.js';
 import { z } from 'zod';
+import logger from '../util/logger.js';
 
 export const authRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; role: string } }>();
 
@@ -269,14 +270,17 @@ authRoutes.post('/ws-ticket', async (c) => {
 
 // POST /api/auth/refresh — refresh JWT access token (cookie or JSON body)
 const refreshSchema = z.object({ refreshToken: z.string().optional() });
-const REUSE_GRACE_MS = 60 * 1000; // 60s window to allow concurrent refreshes (e.g. multi-tab)
+const REUSE_GRACE_MS = 5 * 60 * 1000; // 5 min window to tolerate stale cookies (multi-tab, lost Set-Cookie)
 
 authRoutes.post('/refresh', async (c) => {
   const cookieRefresh = getCookie(c, 'rcc_refresh');
   const body = await c.req.json().catch(() => null);
   const parsed = refreshSchema.safeParse(body);
   const refreshToken = cookieRefresh ?? parsed.data?.refreshToken;
-  if (!refreshToken) return c.json({ error: 'invalid_body' }, 400);
+  if (!refreshToken) {
+    logger.warn({ hasCookieRefresh: !!cookieRefresh }, '[refresh] no refresh token provided');
+    return c.json({ error: 'invalid_body' }, 400);
+  }
 
   const tokenHash = sha256Hex(refreshToken);
 
@@ -287,6 +291,7 @@ authRoutes.post('/refresh', async (c) => {
     .first<{ id: string; user_id: string; family_id: string; used_at: number | null }>();
 
   if (!row) {
+    logger.warn({ hashPrefix: tokenHash.slice(0, 8) }, '[refresh] token not found or expired');
     return c.json({ error: 'invalid_token' }, 401);
   }
 
@@ -314,6 +319,9 @@ authRoutes.post('/refresh', async (c) => {
     const usedAt = refetched?.used_at ?? row.used_at;
     const elapsedSinceUse = usedAt !== null ? now - usedAt : 0;
 
+    logger.warn({ tokenId: row.id, familyId: row.family_id, usedAt, elapsedMs: elapsedSinceUse, graceMs: REUSE_GRACE_MS },
+      '[refresh] token already consumed');
+
     if (elapsedSinceUse > REUSE_GRACE_MS) {
       // Potential Replay Attack! Revoke the entire token family for security.
       await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE family_id = ?')
@@ -322,12 +330,17 @@ authRoutes.post('/refresh', async (c) => {
       const ip = c.get('clientIp' as never) as string ?? 'unknown';
       await logAudit({ userId: row.user_id, action: 'auth.refresh_replay_detected', ip, details: { familyId: row.family_id } }, c.env.DB);
 
+      logger.warn({ familyId: row.family_id, elapsedMs: elapsedSinceUse }, '[refresh] REPLAY DETECTED — revoking family');
+
       // Clear cookies to force re-login
       deleteCookie(c, 'rcc_session', { path: '/' });
       deleteCookie(c, 'rcc_refresh', { path: '/' });
       return c.json({ error: 'security_violation_relogin_required' }, 401);
     }
     // Within grace period — another tab concurrently refreshed. Issue a new token pair.
+    logger.info({ tokenId: row.id, elapsedMs: elapsedSinceUse }, '[refresh] within grace — issuing new tokens');
+  } else {
+    logger.info({ tokenId: row.id }, '[refresh] token claimed successfully');
   }
 
   // Issue new access (4h) + refresh (30d) tokens
