@@ -517,7 +517,7 @@ body {
 .fb-preview-back:hover { color: #e2e8f0; }
 @media (max-width: 640px) {
   .fb-body-split .fb-tree { display: none; }
-  .fb-body-split .fb-preview { flex: 1; width: 100%; }
+  .fb-body-split .fb-preview { position: fixed; inset: 0; z-index: 2000; background: #0f172a; display: flex; flex-direction: column; width: 100%; height: 100%; }
   .fb-preview-back { display: block; }
   .fb-modal-wide { width: min(96vw, 900px) !important; }
 }
