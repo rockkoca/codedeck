@@ -13,6 +13,17 @@ vi.mock('xterm', () => ({
     loadAddon: vi.fn(),
     dispose: vi.fn(),
     options: {},
+    attachCustomKeyEventHandler: vi.fn(),
+    hasSelection: vi.fn().mockReturnValue(false),
+    getSelection: vi.fn().mockReturnValue(''),
+    onData: vi.fn(),
+    onResize: vi.fn(),
+    onScroll: vi.fn(),
+    focus: vi.fn(),
+    scrollToBottom: vi.fn(),
+    buffer: { active: { baseY: 0, viewportY: 0 } },
+    cols: 80,
+    rows: 24,
   })),
 }));
 
@@ -68,6 +79,17 @@ describe('TerminalView', () => {
       loadAddon: vi.fn(),
       dispose: vi.fn(),
       options: {},
+      attachCustomKeyEventHandler: vi.fn(),
+      hasSelection: vi.fn().mockReturnValue(false),
+      getSelection: vi.fn().mockReturnValue(''),
+      onData: vi.fn(),
+      onResize: vi.fn(),
+      onScroll: vi.fn(),
+      focus: vi.fn(),
+      scrollToBottom: vi.fn(),
+      buffer: { active: { baseY: 0, viewportY: 0 } },
+      cols: 80,
+      rows: 24,
     }));
 
     let capturedApplyDiff: ((diff: TerminalDiff) => void) | undefined;
@@ -79,14 +101,17 @@ describe('TerminalView', () => {
 
     expect(capturedApplyDiff).toBeDefined();
 
+    // Partial update (no fullFrame flag): component uses cursor-addressed write
     const diff: TerminalDiff = {
       rows: 2,
       lines: [[0, 'line one'], [1, 'line two']],
     };
     capturedApplyDiff!(diff);
 
-    expect(mockReset).toHaveBeenCalled();
-    expect(mockWrite).toHaveBeenCalledWith('line one\r\nline two');
+    // Component writes cursor-positioned escape sequences for partial updates
+    expect(mockWrite).toHaveBeenCalledWith(
+      '\x1b[1;1Hline one\x1b[K\x1b[2;1Hline two\x1b[K',
+    );
   });
 
   it('mounts and unmounts without throwing', () => {
@@ -108,6 +133,17 @@ describe('TerminalView', () => {
       loadAddon: vi.fn(),
       dispose: mockDispose,
       options: {},
+      attachCustomKeyEventHandler: vi.fn(),
+      hasSelection: vi.fn().mockReturnValue(false),
+      getSelection: vi.fn().mockReturnValue(''),
+      onData: vi.fn(),
+      onResize: vi.fn(),
+      onScroll: vi.fn(),
+      focus: vi.fn(),
+      scrollToBottom: vi.fn(),
+      buffer: { active: { baseY: 0, viewportY: 0 } },
+      cols: 80,
+      rows: 24,
     }));
 
     const { unmount } = render(

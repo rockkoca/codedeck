@@ -1,15 +1,46 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { h } from 'preact';
-import { render, screen, fireEvent } from '@testing-library/preact';
+import { render, screen, fireEvent, cleanup } from '@testing-library/preact';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, _opts?: Record<string, unknown>) => {
+      const parts = key.split('.');
+      return parts[parts.length - 1];
+    },
+  }),
+}));
+
+vi.mock('../../src/components/QuickInputPanel.js', () => ({
+  QuickInputPanel: () => null,
+  EMPTY_QUICK_DATA: { history: [], sessionHistory: {}, commands: [], phrases: [] },
+}));
+
 import { SessionControls } from '../../src/components/SessionControls.js';
 import type { SessionInfo } from '../../src/types.js';
 
 const makeWs = () => ({
   sendSessionCommand: vi.fn(),
+  sendInput: vi.fn(),
   connected: true,
+  subSessionSetModel: vi.fn(),
+});
+
+const makeQuickData = () => ({
+  data: { history: [], sessionHistory: {}, commands: [], phrases: [] },
+  loaded: true,
+  recordHistory: vi.fn(),
+  addCommand: vi.fn(),
+  addPhrase: vi.fn(),
+  removeCommand: vi.fn(),
+  removePhrase: vi.fn(),
+  removeHistory: vi.fn(),
+  removeSessionHistory: vi.fn(),
+  clearHistory: vi.fn(),
+  clearSessionHistory: vi.fn(),
 });
 
 const makeSession = (overrides: Partial<SessionInfo> = {}): SessionInfo => ({
@@ -22,106 +53,121 @@ const makeSession = (overrides: Partial<SessionInfo> = {}): SessionInfo => ({
 });
 
 describe('SessionControls', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('renders input and send button', () => {
-    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} />);
+    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} quickData={makeQuickData() as any} />);
     expect(screen.getByRole('textbox')).toBeDefined();
     expect(screen.getByRole('button', { name: /send/i })).toBeDefined();
   });
 
-  it('renders stop button', () => {
-    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} />);
-    expect(screen.getByRole('button', { name: /stop/i })).toBeDefined();
+  it('renders menu button (⋯)', () => {
+    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} quickData={makeQuickData() as any} />);
+    // The ⋯ menu button has title from t('session.actions') → 'actions'
+    const menuBtn = screen.getByTitle('actions');
+    expect(menuBtn).toBeDefined();
   });
 
   it('send button is disabled when input is empty', () => {
-    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} />);
+    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} quickData={makeQuickData() as any} />);
     const sendBtn = screen.getByRole('button', { name: /send/i });
     expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('send button is enabled when input has text', async () => {
-    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} />);
-    const input = screen.getByRole('textbox');
-    fireEvent.input(input, { target: { value: 'hello' } });
+  it('send button is enabled when input has text', () => {
+    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} quickData={makeQuickData() as any} />);
+    const input = screen.getByRole('textbox') as HTMLDivElement;
+    // contenteditable: set textContent and fire input event
+    input.textContent = 'hello';
+    fireEvent.input(input);
     const sendBtn = screen.getByRole('button', { name: /send/i });
     expect((sendBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('clicking send calls ws.sendSessionCommand with correct args', () => {
     const ws = makeWs();
-    render(<SessionControls ws={ws as any} activeSession={makeSession({ name: 'my-session' })} />);
-    const input = screen.getByRole('textbox');
-    fireEvent.input(input, { target: { value: 'run tests' } });
+    render(<SessionControls ws={ws as any} activeSession={makeSession({ name: 'my-session' })} quickData={makeQuickData() as any} />);
+    const input = screen.getByRole('textbox') as HTMLDivElement;
+    input.textContent = 'run tests';
+    fireEvent.input(input);
     fireEvent.click(screen.getByRole('button', { name: /send/i }));
     expect(ws.sendSessionCommand).toHaveBeenCalledOnce();
     expect(ws.sendSessionCommand).toHaveBeenCalledWith('send', {
-      session: 'my-session',
+      sessionName: 'my-session',
       text: 'run tests',
     });
   });
 
   it('clears input after send', () => {
     const ws = makeWs();
-    render(<SessionControls ws={ws as any} activeSession={makeSession()} />);
-    const input = screen.getByRole('textbox') as HTMLInputElement;
-    fireEvent.input(input, { target: { value: 'hello world' } });
+    render(<SessionControls ws={ws as any} activeSession={makeSession()} quickData={makeQuickData() as any} />);
+    const input = screen.getByRole('textbox') as HTMLDivElement;
+    input.textContent = 'hello world';
+    fireEvent.input(input);
     fireEvent.click(screen.getByRole('button', { name: /send/i }));
-    expect(input.value).toBe('');
+    expect(input.textContent).toBe('');
   });
 
-  it('stop button calls ws.sendSessionCommand with stop action', () => {
+  it('stop action appears in menu and calls ws.sendSessionCommand after two clicks', () => {
     const ws = makeWs();
-    render(<SessionControls ws={ws as any} activeSession={makeSession({ name: 'my-session' })} />);
-    fireEvent.click(screen.getByRole('button', { name: /stop/i }));
-    expect(ws.sendSessionCommand).toHaveBeenCalledOnce();
-    expect(ws.sendSessionCommand).toHaveBeenCalledWith('stop', { session: 'my-session' });
+    render(<SessionControls ws={ws as any} activeSession={makeSession({ name: 'my-session', project: 'my-project' })} quickData={makeQuickData() as any} />);
+    // Open the ⋯ menu
+    fireEvent.click(screen.getByTitle('actions'));
+    // Click stop once (triggers confirm mode — button text changes to confirm_stop)
+    const stopBtn = screen.getByRole('button', { name: /stop/i });
+    fireEvent.click(stopBtn);
+    // Click the now-confirmed stop button again
+    const confirmBtn = screen.getByRole('button', { name: /stop/i });
+    fireEvent.click(confirmBtn);
+    expect(ws.sendSessionCommand).toHaveBeenCalledWith('stop', { project: 'my-project' });
   });
 
   it('input changes on typing', () => {
-    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} />);
-    const input = screen.getByRole('textbox') as HTMLInputElement;
-    fireEvent.input(input, { target: { value: 'typed text' } });
-    expect(input.value).toBe('typed text');
+    render(<SessionControls ws={makeWs() as any} activeSession={makeSession()} quickData={makeQuickData() as any} />);
+    const input = screen.getByRole('textbox') as HTMLDivElement;
+    input.textContent = 'typed text';
+    fireEvent.input(input);
+    expect(input.textContent).toBe('typed text');
   });
 
-  it('all controls are disabled when ws is null', () => {
-    render(<SessionControls ws={null} activeSession={makeSession()} />);
-    const input = screen.getByRole('textbox') as HTMLInputElement;
-    expect(input.disabled).toBe(true);
+  it('send button is disabled when ws is null', () => {
+    render(<SessionControls ws={null} activeSession={makeSession()} quickData={makeQuickData() as any} />);
     const sendBtn = screen.getByRole('button', { name: /send/i }) as HTMLButtonElement;
     expect(sendBtn.disabled).toBe(true);
-    const stopBtn = screen.getByRole('button', { name: /stop/i }) as HTMLButtonElement;
-    expect(stopBtn.disabled).toBe(true);
   });
 
-  it('all controls are disabled when activeSession is null', () => {
+  it('input has contenteditable false when activeSession is null', () => {
     const ws = makeWs();
-    render(<SessionControls ws={ws as any} activeSession={null} />);
-    const input = screen.getByRole('textbox') as HTMLInputElement;
-    expect(input.disabled).toBe(true);
+    render(<SessionControls ws={ws as any} activeSession={null} quickData={makeQuickData() as any} />);
+    const input = screen.getByRole('textbox') as HTMLDivElement;
+    expect(input.getAttribute('contenteditable')).toBe('false');
   });
 
   it('pressing Enter submits the message', () => {
     const ws = makeWs();
-    render(<SessionControls ws={ws as any} activeSession={makeSession({ name: 'my-session' })} />);
-    const input = screen.getByRole('textbox');
-    fireEvent.input(input, { target: { value: 'enter message' } });
+    render(<SessionControls ws={ws as any} activeSession={makeSession({ name: 'my-session' })} quickData={makeQuickData() as any} />);
+    const input = screen.getByRole('textbox') as HTMLDivElement;
+    input.textContent = 'enter message';
+    fireEvent.input(input);
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
     expect(ws.sendSessionCommand).toHaveBeenCalledWith('send', {
-      session: 'my-session',
+      sessionName: 'my-session',
       text: 'enter message',
     });
   });
 
   it('pressing Shift+Enter does not submit', () => {
     const ws = makeWs();
-    render(<SessionControls ws={ws as any} activeSession={makeSession()} />);
-    const input = screen.getByRole('textbox');
-    fireEvent.input(input, { target: { value: 'multiline' } });
+    render(<SessionControls ws={ws as any} activeSession={makeSession()} quickData={makeQuickData() as any} />);
+    const input = screen.getByRole('textbox') as HTMLDivElement;
+    input.textContent = 'multiline';
+    fireEvent.input(input);
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
     expect(ws.sendSessionCommand).not.toHaveBeenCalled();
   });

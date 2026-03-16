@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { h } from 'preact';
-import { render, screen, fireEvent } from '@testing-library/preact';
+import { render, screen, fireEvent, cleanup } from '@testing-library/preact';
 import { SessionTabs } from '../../src/components/SessionTabs.js';
 import type { SessionInfo } from '../../src/types.js';
 
@@ -17,10 +17,25 @@ const makeSessions = (overrides: Partial<SessionInfo>[] = []): SessionInfo[] =>
     ...o,
   }));
 
+// Default required props for SessionTabs
+const defaultProps = {
+  onNewSession: vi.fn(),
+  onStopProject: vi.fn(),
+  onRestartProject: vi.fn(),
+};
+
 describe('SessionTabs', () => {
-  it('renders "No active sessions" when sessions array is empty', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders "No active sessions" when sessions array is empty and sessionsLoaded is true', () => {
     render(
-      <SessionTabs sessions={[]} activeSession={null} onSelect={vi.fn()} />,
+      <SessionTabs sessions={[]} activeSession={null} onSelect={vi.fn()} sessionsLoaded={true} {...defaultProps} />,
     );
     expect(screen.getByText('No active sessions')).toBeDefined();
   });
@@ -28,7 +43,7 @@ describe('SessionTabs', () => {
   it('renders a button for each session', () => {
     const sessions = makeSessions([{}, {}]);
     render(
-      <SessionTabs sessions={sessions} activeSession={null} onSelect={vi.fn()} />,
+      <SessionTabs sessions={sessions} activeSession={null} onSelect={vi.fn()} sessionsLoaded={true} {...defaultProps} />,
     );
     const buttons = screen.getAllByRole('tab');
     expect(buttons).toHaveLength(2);
@@ -37,7 +52,7 @@ describe('SessionTabs', () => {
   it('marks the active session button with aria-selected=true', () => {
     const sessions = makeSessions([{ name: 'session_w1' }, { name: 'session_w2' }]);
     render(
-      <SessionTabs sessions={sessions} activeSession="session_w1" onSelect={vi.fn()} />,
+      <SessionTabs sessions={sessions} activeSession="session_w1" onSelect={vi.fn()} sessionsLoaded={true} {...defaultProps} />,
     );
     const buttons = screen.getAllByRole('tab');
     expect(buttons[0].getAttribute('aria-selected')).toBe('true');
@@ -48,7 +63,7 @@ describe('SessionTabs', () => {
     const onSelect = vi.fn();
     const sessions = makeSessions([{ name: 'session_w1' }, { name: 'session_w2' }]);
     render(
-      <SessionTabs sessions={sessions} activeSession={null} onSelect={onSelect} />,
+      <SessionTabs sessions={sessions} activeSession={null} onSelect={onSelect} sessionsLoaded={true} {...defaultProps} />,
     );
 
     const buttons = screen.getAllByRole('tab');
@@ -67,7 +82,7 @@ describe('SessionTabs', () => {
       state: 'running',
     }];
     render(
-      <SessionTabs sessions={sessions} activeSession={null} onSelect={vi.fn()} />,
+      <SessionTabs sessions={sessions} activeSession={null} onSelect={vi.fn()} sessionsLoaded={true} {...defaultProps} />,
     );
     const button = screen.getByRole('tab');
     expect(button.className).toContain('brain');
@@ -77,7 +92,7 @@ describe('SessionTabs', () => {
   it('applies busy class for running session state', () => {
     const sessions = makeSessions([{ name: 'session_w1', state: 'running' }]);
     render(
-      <SessionTabs sessions={sessions} activeSession={null} onSelect={vi.fn()} />,
+      <SessionTabs sessions={sessions} activeSession={null} onSelect={vi.fn()} sessionsLoaded={true} {...defaultProps} />,
     );
     const button = screen.getByRole('tab');
     expect(button.className).toContain('busy');
@@ -86,7 +101,7 @@ describe('SessionTabs', () => {
   it('renders tab bar with role=tablist', () => {
     const sessions = makeSessions([{}]);
     render(
-      <SessionTabs sessions={sessions} activeSession={null} onSelect={vi.fn()} />,
+      <SessionTabs sessions={sessions} activeSession={null} onSelect={vi.fn()} sessionsLoaded={true} {...defaultProps} />,
     );
     expect(screen.getByRole('tablist')).toBeDefined();
   });
