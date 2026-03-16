@@ -270,7 +270,6 @@ authRoutes.post('/ws-ticket', async (c) => {
 
 // POST /api/auth/refresh — refresh JWT access token (cookie or JSON body)
 const refreshSchema = z.object({ refreshToken: z.string().optional() });
-const REUSE_GRACE_MS = 5 * 60 * 1000; // 5 min window to tolerate stale cookies (multi-tab, lost Set-Cookie)
 
 authRoutes.post('/refresh', async (c) => {
   const cookieRefresh = getCookie(c, 'rcc_refresh');
@@ -284,14 +283,19 @@ authRoutes.post('/refresh', async (c) => {
 
   const tokenHash = sha256Hex(refreshToken);
 
+  // Only accept unused tokens (used_at IS NULL). Already-consumed tokens are simply
+  // rejected — no family revocation. This matches the pre-security-hardening behaviour
+  // that was stable. The replay-detection pattern (revoking entire families) caused
+  // cascading logouts whenever a Set-Cookie response was lost (network glitch, browser
+  // crash, race between tabs).
   const row = await c.env.DB.prepare(
-    'SELECT * FROM refresh_tokens WHERE token_hash = ? AND expires_at > ?',
+    'SELECT * FROM refresh_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?',
   )
     .bind(tokenHash, Date.now())
-    .first<{ id: string; user_id: string; family_id: string; used_at: number | null }>();
+    .first<{ id: string; user_id: string; family_id: string }>();
 
   if (!row) {
-    logger.warn({ hashPrefix: tokenHash.slice(0, 8) }, '[refresh] token not found or expired');
+    logger.warn({ hashPrefix: tokenHash.slice(0, 8) }, '[refresh] token not found, already used, or expired');
     return c.json({ error: 'invalid_token' }, 401);
   }
 
@@ -301,47 +305,9 @@ authRoutes.post('/refresh', async (c) => {
     return c.json({ error: 'too_many_attempts', retryAfterMs: userLockout.lockedUntil ? userLockout.lockedUntil - Date.now() : 0 }, 429);
   }
 
-  // Atomically mark token as consumed (only if not already consumed).
-  // Using AND used_at IS NULL prevents a race where two concurrent requests both
-  // SELECT used_at=null, then both try to mark the token — the second UPDATE would
-  // overwrite used_at to a later timestamp, making later grace-window checks incorrect.
-  const now = Date.now();
-  const claimResult = await c.env.DB.prepare(
-    'UPDATE refresh_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL',
-  ).bind(now, row.id).run();
-
-  if (claimResult.changes === 0) {
-    // Another concurrent request already marked this token — re-read the actual used_at.
-    // This happens in legitimate multi-tab scenarios where two tabs refresh simultaneously.
-    const refetched = await c.env.DB.prepare(
-      'SELECT used_at FROM refresh_tokens WHERE id = ?',
-    ).bind(row.id).first<{ used_at: number | null }>();
-    const usedAt = refetched?.used_at ?? row.used_at;
-    const elapsedSinceUse = usedAt !== null ? now - usedAt : 0;
-
-    logger.warn({ tokenId: row.id, familyId: row.family_id, usedAt, elapsedMs: elapsedSinceUse, graceMs: REUSE_GRACE_MS },
-      '[refresh] token already consumed');
-
-    if (elapsedSinceUse > REUSE_GRACE_MS) {
-      // Potential Replay Attack! Revoke the entire token family for security.
-      await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE family_id = ?')
-        .bind(now, row.family_id).run();
-
-      const ip = c.get('clientIp' as never) as string ?? 'unknown';
-      await logAudit({ userId: row.user_id, action: 'auth.refresh_replay_detected', ip, details: { familyId: row.family_id } }, c.env.DB);
-
-      logger.warn({ familyId: row.family_id, elapsedMs: elapsedSinceUse }, '[refresh] REPLAY DETECTED — revoking family');
-
-      // Clear cookies to force re-login
-      deleteCookie(c, 'rcc_session', { path: '/' });
-      deleteCookie(c, 'rcc_refresh', { path: '/' });
-      return c.json({ error: 'security_violation_relogin_required' }, 401);
-    }
-    // Within grace period — another tab concurrently refreshed. Issue a new token pair.
-    logger.info({ tokenId: row.id, elapsedMs: elapsedSinceUse }, '[refresh] within grace — issuing new tokens');
-  } else {
-    logger.info({ tokenId: row.id }, '[refresh] token claimed successfully');
-  }
+  // Mark old token consumed (rotation)
+  await c.env.DB.prepare('UPDATE refresh_tokens SET used_at = ? WHERE id = ?').bind(Date.now(), row.id).run();
+  logger.info({ tokenId: row.id }, '[refresh] token consumed, issuing new pair');
 
   // Issue new access (4h) + refresh (30d) tokens
   const accessToken = signJwt({ sub: row.user_id }, c.env.JWT_SIGNING_KEY, 4 * 3600);
