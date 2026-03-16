@@ -48,15 +48,13 @@ interface ViewItem {
 function buildViewItems(events: TimelineEvent[]): ViewItem[] {
   // Filter out transient/noisy event types that don't belong in the chat log:
   // - agent.status, usage.update: stats, not chat content
-  // - session.state, mode.state: shown elsewhere (tabs/header), and they break
-  //   consecutive tool-call grouping when hooks fire between tool calls
+  // - mode.state: shown elsewhere (tabs/header)
   // - command.ack, terminal.snapshot: internal plumbing
   const visible = events.filter(
     (e) =>
       !e.hidden &&
       e.type !== 'agent.status' &&
       e.type !== 'usage.update' &&
-      e.type !== 'session.state' &&
       e.type !== 'mode.state' &&
       e.type !== 'command.ack' &&
       e.type !== 'terminal.snapshot',
@@ -115,6 +113,7 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
   let pendingLastTs = 0;
   let pendingKey = '';
   let pendingTools: TimelineEvent[] = [];
+  let deferredEvents: TimelineEvent[] = [];
 
   const flushPending = () => {
     if (pendingText.length > 0) {
@@ -142,6 +141,9 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
       });
     }
     pendingTools = [];
+    // Flush any session.state events that were deferred to avoid breaking the group
+    for (const ev of deferredEvents) items.push({ key: ev.eventId, type: 'event', event: ev });
+    deferredEvents = [];
   };
 
   for (const event of consolidated) {
@@ -162,6 +164,10 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
     } else if (event.type === 'assistant.thinking' && pendingTools.length > 0) {
       // Thinking events between tool calls must not break the consecutive tool group.
       // They are shown in the status bar while active; skip inline render here.
+    } else if (event.type === 'session.state' && pendingTools.length > 0) {
+      // session.state hooks can fire between tool calls (e.g. CC notification hook).
+      // Defer: render after the tool group closes.
+      deferredEvents.push(event);
     } else {
       flushPending();
       flushTools();
