@@ -88,7 +88,7 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
 
     setError('');
     setStarting(true);
-    if (shellBin) void saveUserPref(DEFAULT_SHELL_KEY, shellBin);
+    if (shellBin) void saveUserPref(DEFAULT_SHELL_KEY, shellBin).catch(() => {});
     ws.sendSessionCommand('start', { project: project.trim(), dir: dir.trim(), agentType });
   };
 

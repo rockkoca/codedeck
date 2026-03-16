@@ -69,7 +69,7 @@ export function StartSubSessionDialog({ ws, defaultCwd, onStart, onClose }: Prop
     }
     const selectedShell = type === 'shell' ? (shellBin || undefined) : undefined;
     if (type === 'shell' && selectedShell) {
-      void saveUserPref('default_shell', selectedShell);
+      void saveUserPref('default_shell', selectedShell).catch(() => {});
     }
     onStart(type, selectedShell, cwd || undefined, label || undefined);
   };
