@@ -7,6 +7,7 @@ import type { FileChangeInfo } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import { timelineEmitter } from './timeline-emitter.js';
+import { readProjectMemory, buildCodexMemoryEntry } from './memory-inject.js';
 import logger from '../util/logger.js';
 
 // ── Path helpers ───────────────────────────────────────────────────────────────
@@ -249,13 +250,26 @@ export async function ensureSessionFile(uuid: string, cwd: string): Promise<stri
   const ts = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}T${pad(now.getUTCHours())}-${pad(now.getUTCMinutes())}-${pad(now.getUTCSeconds())}`;
   const filePath = join(dir, `rollout-${ts}-${uuid}.jsonl`);
 
+  const isoNow = now.toISOString();
   const meta = JSON.stringify({
-    timestamp: now.toISOString(),
+    timestamp: isoNow,
     type: 'session_meta',
-    payload: { id: uuid, timestamp: now.toISOString(), cwd, originator: 'codex_cli_rs' },
+    payload: { id: uuid, timestamp: isoNow, cwd, originator: 'codex_cli_rs' },
   });
-  await writeFile(filePath, meta + '\n', 'utf8');
-  logger.info({ uuid, filePath }, 'codex-watcher: created session file for resume');
+
+  // Inject project memory so `codex resume` finds real content (session_meta-only fails)
+  // and the agent starts with project context loaded.
+  const memory = await readProjectMemory(cwd);
+  const lines = [meta];
+  if (memory) {
+    lines.push(buildCodexMemoryEntry(memory, isoNow));
+  } else {
+    // Codex resume requires at least one entry beyond session_meta — add a minimal placeholder.
+    lines.push(buildCodexMemoryEntry('(new session)', isoNow));
+  }
+
+  await writeFile(filePath, lines.join('\n') + '\n', 'utf8');
+  logger.info({ uuid, filePath, hasMemory: !!memory }, 'codex-watcher: created bootstrapped session file');
   return filePath;
 }
 
