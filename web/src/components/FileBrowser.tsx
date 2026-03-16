@@ -325,7 +325,7 @@ function FsTreeNode({
         class={`fb-node${isSelected ? ' selected' : ''}${isAlready ? ' already' : ''}${isDisabled ? ' disabled' : ''}`}
         style={{ paddingLeft: 8 + depth * 16 }}
         onClick={() => {
-          if (!isDisabled) onSelect(node.id, node.isDir);
+          if (!isMulti && !isDisabled) onSelect(node.id, node.isDir);
           if (node.isDir) onToggleExpand(node.id);
         }}
       >
