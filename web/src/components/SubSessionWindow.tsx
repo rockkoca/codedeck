@@ -74,9 +74,10 @@ export function SubSessionWindow({
     const id = setInterval(() => setThinkingNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [!!activeThinkingTs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const isShell = sub.type === 'shell' || sub.type === 'script';
   const initial = loadLocal(sub.id, isMobile);
   const [geom, setGeom] = useState<WindowGeometry>(initial.geom);
-  const [viewMode, setViewMode] = useState<ViewMode>(initial.viewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(isShell ? 'terminal' : initial.viewMode);
   const [confirmClose, setConfirmClose] = useState(false);
   const inputRef = useRef<HTMLDivElement>(null);
   const geomRef = useRef(geom);
@@ -255,7 +256,7 @@ export function SubSessionWindow({
         <span class="subsession-drag-icon">⠿</span>
         <span class="subsession-title">{typeLabel}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
-          <button class="subsession-mode-btn" onClick={() => { const next = viewMode === 'chat' ? 'terminal' : 'chat'; setViewMode(next); if (next === 'chat') requestAnimationFrame(() => chatScrollRef.current?.()); }} title={viewMode === 'chat' ? 'Switch to terminal' : 'Switch to chat'}>{viewMode === 'chat' ? '⌨' : '💬'}</button>
+          {!isShell && <button class="subsession-mode-btn" onClick={() => { const next = viewMode === 'chat' ? 'terminal' : 'chat'; setViewMode(next); if (next === 'chat') requestAnimationFrame(() => chatScrollRef.current?.()); }} title={viewMode === 'chat' ? 'Switch to terminal' : 'Switch to chat'}>{viewMode === 'chat' ? '⌨' : '💬'}</button>}
           <button class="subsession-minimize-btn" onClick={onMinimize} title="Minimize">─</button>
           {confirmClose ? (
             <>
