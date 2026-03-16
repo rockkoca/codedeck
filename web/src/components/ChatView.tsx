@@ -159,6 +159,9 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
     } else if (event.type === 'tool.call' || event.type === 'tool.result') {
       flushPending();
       pendingTools.push(event);
+    } else if (event.type === 'assistant.thinking' && pendingTools.length > 0) {
+      // Thinking events between tool calls must not break the consecutive tool group.
+      // They are shown in the status bar while active; skip inline render here.
     } else {
       flushPending();
       flushTools();
