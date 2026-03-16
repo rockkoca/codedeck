@@ -39,7 +39,7 @@ const DEFAULT_H = 480;
 const MIN_W = 300;
 const MIN_H = 200;
 
-function loadLocal(id: string, mobile: boolean): { geom: WindowGeometry; viewMode: ViewMode } {
+function loadLocal(id: string): { geom: WindowGeometry; viewMode: ViewMode } {
   try {
     const raw = localStorage.getItem(LOCAL_KEY(id));
     if (raw) return JSON.parse(raw) as { geom: WindowGeometry; viewMode: ViewMode };
@@ -75,7 +75,7 @@ export function SubSessionWindow({
     return () => clearInterval(id);
   }, [!!activeThinkingTs]); // eslint-disable-line react-hooks/exhaustive-deps
   const isShell = sub.type === 'shell' || sub.type === 'script';
-  const initial = loadLocal(sub.id, isMobile);
+  const initial = loadLocal(sub.id);
   const [geom, setGeom] = useState<WindowGeometry>(initial.geom);
   const [viewMode, setViewMode] = useState<ViewMode>(isShell ? 'terminal' : initial.viewMode);
   const [confirmClose, setConfirmClose] = useState(false);
