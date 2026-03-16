@@ -180,8 +180,6 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
     setShowSizePanel(false);
   };
 
-  if (subSessions.length === 0 && discussions.length === 0 && collapsed) return null;
-
   return (
     <div class="subcard-bar">
       {/* Toolbar */}
@@ -260,6 +258,13 @@ export function SubSessionBar({ subSessions, openIds, onOpen, onNew, onNewDiscus
           </label>
           <button class="subcard-toolbar-btn" onClick={applySize}>Apply</button>
           <button class="subcard-toolbar-btn" onClick={resetSize}>Reset</button>
+        </div>
+      )}
+
+      {/* Empty state: no sub-sessions and expanded */}
+      {!collapsed && subSessions.length === 0 && discussions.length === 0 && (
+        <div class="subcard-empty-state">
+          No sub-sessions — click <strong>+</strong> to add one
         </div>
       )}
 

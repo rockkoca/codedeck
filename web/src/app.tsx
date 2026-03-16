@@ -322,12 +322,24 @@ export function App() {
   const [daemonStats, setDaemonStats] = useState<{ cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number } | null>(null);
 
   // ── Sub-sessions ───────────────────────────────────────────────────────────
-  const { subSessions, visibleSubSessions, create: createSubSession, close: closeSubSession, restart: restartSubSession, rename: renameSubSession } = useSubSessions(
+  const { subSessions, visibleSubSessions, loadedServerId, create: createSubSession, close: closeSubSession, restart: restartSubSession, rename: renameSubSession } = useSubSessions(
     selectedServerId,
     wsRef.current,
     connected,
     activeSession,
   );
+
+  // Auto-create a shell sub-session when switching to a session with none
+  const prevActiveSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevActiveSessionRef.current;
+    prevActiveSessionRef.current = activeSession;
+    if (!activeSession || activeSession === prev) return;
+    if (!connected || loadedServerId !== selectedServerId) return;
+    if (visibleSubSessions.length > 0) return;
+    const defaultShell = localStorage.getItem('rcc_default_shell') ?? '/bin/bash';
+    void createSubSession('shell', defaultShell);
+  }, [activeSession, connected, loadedServerId, selectedServerId, visibleSubSessions.length, createSubSession]);
 
   const diffApplyersRef = useRef<Map<string, (diff: TerminalDiff) => void>>(new Map());
   const historyApplyersRef = useRef<Map<string, (content: string) => void>>(new Map());
