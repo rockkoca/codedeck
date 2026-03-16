@@ -71,6 +71,7 @@ const BROWSER_WHITELIST = new Set([
   'discussion.stop',
   'discussion.list',
   'fs.ls',
+  'fs.read',
 ]);
 
 // ── Terminal forwarding queue (per (session, browser)) ────────────────────────
@@ -142,6 +143,12 @@ export class WsBridge {
    * Used to single-cast fs.ls_response back to the requesting browser.
    */
   private pendingFsRequests = new Map<string, { socket: WebSocket; timer: ReturnType<typeof setTimeout> }>();
+
+  /**
+   * Per-request fs.read pending map: requestId → { socket, timer }.
+   * Used to single-cast fs.read_response back to the requesting browser.
+   */
+  private pendingFsReadRequests = new Map<string, { socket: WebSocket; timer: ReturnType<typeof setTimeout> }>();
 
   /**
    * Per-session daemon subscription reference count.
@@ -329,6 +336,13 @@ export class WsBridge {
         this.pendingFsRequests.set(reqId, { socket: ws, timer });
       }
 
+      // Track fs.read requests for single-cast response routing
+      if (msg.type === 'fs.read' && typeof msg.requestId === 'string') {
+        const reqId = msg.requestId;
+        const timer = setTimeout(() => this.pendingFsReadRequests.delete(reqId), 30_000);
+        this.pendingFsReadRequests.set(reqId, { socket: ws, timer });
+      }
+
       // Track terminal subscriptions for binary routing + ref-counted daemon forwarding
       if (msg.type === 'terminal.subscribe' && typeof msg.session === 'string') {
         const sessionName = msg.session;
@@ -384,6 +398,22 @@ export class WsBridge {
         if (pending) {
           clearTimeout(pending.timer);
           this.pendingFsRequests.delete(requestId);
+          if (pending.socket.readyState === WebSocket.OPEN) {
+            pending.socket.send(JSON.stringify(msg));
+          }
+        }
+      }
+      return;
+    }
+
+    // ── fs.read_response: single-cast back to requesting browser ─────────────
+    if (type === 'fs.read_response') {
+      const requestId = msg.requestId as string | undefined;
+      if (requestId) {
+        const pending = this.pendingFsReadRequests.get(requestId);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pendingFsReadRequests.delete(requestId);
           if (pending.socket.readyState === WebSocket.OPEN) {
             pending.socket.send(JSON.stringify(msg));
           }

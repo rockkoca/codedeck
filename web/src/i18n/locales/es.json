@@ -79,7 +79,11 @@
     "browse": "Explorar",
     "show_hidden": "Ocultos",
     "selected_count": "{{count}} seleccionados",
-    "timeout": "Tiempo de espera agotado"
+    "timeout": "Tiempo de espera agotado",
+    "preview_loading": "Cargando…",
+    "preview_too_large": "Archivo demasiado grande para previsualizar (> 512 KB)",
+    "preview_error": "Vista previa no disponible",
+    "preview_binary": "Archivo binario — vista previa no disponible"
   },
   "toast": {
     "finished": "completado"

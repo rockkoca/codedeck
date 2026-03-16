@@ -21,7 +21,7 @@ import {
 } from './subsession-manager.js';
 import logger from '../util/logger.js';
 import { homedir } from 'os';
-import { readdir as fsReaddir, realpath as fsRealpath } from 'node:fs/promises';
+import { readdir as fsReaddir, realpath as fsRealpath, readFile as fsReadFileRaw, stat as fsStat } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 
 // ── Binary frame packing ─────────────────────────────────────────────────────
@@ -222,6 +222,9 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       break;
     case 'fs.ls':
       void handleFsList(cmd, serverLink);
+      break;
+    case 'fs.read':
+      void handleFsRead(cmd, serverLink);
       break;
     case 'auth_ok':
     case 'heartbeat':
@@ -892,6 +895,37 @@ async function handleFsList(cmd: Record<string, unknown>, serverLink: ServerLink
     try { serverLink.send({ type: 'fs.ls_response', requestId, path: rawPath, resolvedPath: real, status: 'ok', entries }); } catch { /* ignore */ }
   } catch (err) {
     try { serverLink.send({ type: 'fs.ls_response', requestId, path: rawPath, status: 'error', error: err instanceof Error ? err.message : String(err) }); } catch { /* ignore */ }
+  }
+}
+
+const FS_READ_SIZE_LIMIT = 512 * 1024; // 512 KB
+
+async function handleFsRead(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
+  const rawPath = cmd.path as string | undefined;
+  const requestId = cmd.requestId as string | undefined;
+  if (!rawPath || !requestId) return;
+
+  const expanded = rawPath.startsWith('~') ? rawPath.replace(/^~/, homedir()) : rawPath;
+  const resolved = nodePath.resolve(expanded);
+
+  try {
+    const real = await fsRealpath(resolved);
+    const allowed = FS_ALLOWED_ROOTS.some((root) => real === root || real.startsWith(root + nodePath.sep));
+    if (!allowed) {
+      try { serverLink.send({ type: 'fs.read_response', requestId, path: rawPath, resolvedPath: real, status: 'error', error: 'forbidden_path' }); } catch { /* ignore */ }
+      return;
+    }
+
+    const stats = await fsStat(real);
+    if (stats.size > FS_READ_SIZE_LIMIT) {
+      try { serverLink.send({ type: 'fs.read_response', requestId, path: rawPath, resolvedPath: real, status: 'error', error: 'file_too_large' }); } catch { /* ignore */ }
+      return;
+    }
+
+    const content = await fsReadFileRaw(real, 'utf-8');
+    try { serverLink.send({ type: 'fs.read_response', requestId, path: rawPath, resolvedPath: real, status: 'ok', content }); } catch { /* ignore */ }
+  } catch (err) {
+    try { serverLink.send({ type: 'fs.read_response', requestId, path: rawPath, status: 'error', error: err instanceof Error ? err.message : String(err) }); } catch { /* ignore */ }
   }
 }
 

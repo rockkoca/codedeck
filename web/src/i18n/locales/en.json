@@ -79,7 +79,11 @@
     "browse": "Browse",
     "show_hidden": "Hidden",
     "selected_count": "{{count}} selected",
-    "timeout": "Request timed out"
+    "timeout": "Request timed out",
+    "preview_loading": "Loading…",
+    "preview_too_large": "File too large to preview (> 512 KB)",
+    "preview_error": "Preview unavailable",
+    "preview_binary": "Binary file — preview unavailable"
   },
   "toast": {
     "finished": "finished"

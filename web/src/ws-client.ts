@@ -46,7 +46,8 @@ export type ServerMessage =
   | { type: 'discussion.error'; discussionId?: string; requestId?: string; error: string }
   | { type: 'discussion.list'; discussions: Array<{ id: string; topic: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; conclusion?: string; filePath?: string }> }
   | { type: 'daemon.stats'; cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number }
-  | { type: 'fs.ls_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; entries?: FsEntry[]; error?: string };
+  | { type: 'fs.ls_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; entries?: FsEntry[]; error?: string }
+  | { type: 'fs.read_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; content?: string; error?: string };
 
 export interface FsEntry {
   name: string;
@@ -270,6 +271,13 @@ export class WsClient {
   fsListDir(path: string, includeFiles = false): string {
     const requestId = crypto.randomUUID();
     this.send({ type: 'fs.ls', path, requestId, includeFiles });
+    return requestId;
+  }
+
+  /** Request a file's content from the daemon. Returns the requestId for matching the response. */
+  fsReadFile(path: string): string {
+    const requestId = crypto.randomUUID();
+    this.send({ type: 'fs.read', path, requestId });
     return requestId;
   }
 

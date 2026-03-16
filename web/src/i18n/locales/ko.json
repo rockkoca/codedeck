@@ -79,7 +79,11 @@
     "browse": "찾아보기",
     "show_hidden": "숨김 파일",
     "selected_count": "{{count}}개 선택됨",
-    "timeout": "요청 시간 초과"
+    "timeout": "요청 시간 초과",
+    "preview_loading": "로딩 중…",
+    "preview_too_large": "파일이 너무 커서 미리볼 수 없습니다 (> 512 KB)",
+    "preview_error": "미리보기 불가",
+    "preview_binary": "바이너리 파일 — 미리보기 불가"
   },
   "toast": {
     "finished": "완료"

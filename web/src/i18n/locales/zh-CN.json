@@ -79,7 +79,11 @@
     "browse": "浏览",
     "show_hidden": "隐藏文件",
     "selected_count": "已选 {{count}} 项",
-    "timeout": "请求超时"
+    "timeout": "请求超时",
+    "preview_loading": "加载中…",
+    "preview_too_large": "文件过大，无法预览（> 512 KB）",
+    "preview_error": "预览不可用",
+    "preview_binary": "二进制文件 — 无法预览"
   },
   "toast": {
     "finished": "完成了"
