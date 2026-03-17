@@ -68,6 +68,23 @@ async function storeRefreshToken(db: Env['DB'], userId: string, refreshHash: str
   ).bind(randomHex(16), userId, refreshHash, randomHex(16), now + 30 * 24 * 3600 * 1000, now).run();
 }
 
+/**
+ * Parse request body as JSON or form-encoded (for native form submissions).
+ * Form submissions send a hidden field "json" containing the JSON payload.
+ */
+async function parseBody(c: Context<HonoEnv>): Promise<unknown> {
+  const ct = c.req.header('content-type') ?? '';
+  if (ct.includes('application/x-www-form-urlencoded')) {
+    const formData = await c.req.parseBody();
+    const raw = typeof formData.json === 'string' ? formData.json : null;
+    if (raw) {
+      try { return JSON.parse(raw); } catch { return null; }
+    }
+    return null;
+  }
+  return c.req.json().catch(() => null);
+}
+
 // ── DB-backed challenge store (multi-instance safe) ───────────────────────
 
 interface PendingChallenge {
@@ -153,7 +170,7 @@ const registerCompleteSchema = z.object({
 });
 
 passkeyRoutes.post('/register/complete', async (c) => {
-  const body = await c.req.json().catch(() => null);
+  const body = await parseBody(c);
   const parsed = registerCompleteSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
 
@@ -260,7 +277,7 @@ const loginCompleteSchema = z.object({
 });
 
 passkeyRoutes.post('/login/complete', async (c) => {
-  const body = await c.req.json().catch(() => null);
+  const body = await parseBody(c);
   const parsed = loginCompleteSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'invalid_body' }, 400);
 

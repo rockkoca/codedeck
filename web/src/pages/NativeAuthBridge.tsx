@@ -1,16 +1,14 @@
 /**
- * NativeAuthBridge — rendered when the web app is opened by the native iOS app
- * inside ASWebAuthenticationSession for passkey login/registration.
+ * NativeAuthBridge — rendered inside ASWebAuthenticationSession for passkey auth.
  *
  * URL: https://<server>/?native_callback=codedeck%3A%2F%2Fauth
  *
  * Flow:
- *   1. Native app opens this page in ASWebAuthenticationSession
- *   2. User taps "Sign in with Passkey" — Safari handles WebAuthn at correct origin
- *   3. On success, POSTs to /login/complete?native_callback=codedeck://auth
- *   4. Server issues API key + HTTP 302 redirect to codedeck://auth?key=...
- *   5. ASWebAuthenticationSession detects the custom-scheme redirect and closes
- *   6. Native app receives the URL with the API key
+ *   1. User taps passkey button → WebAuthn runs in Safari at server origin
+ *   2. On success, form-POSTs to /login/complete?native_callback=codedeck://auth
+ *   3. Server verifies, issues API key, responds with HTTP 302 → codedeck://auth?key=...
+ *   4. ASWebAuthenticationSession detects custom-scheme redirect and closes
+ *   5. Native app receives the callback URL with the API key
  */
 import { useState, useEffect } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
@@ -31,6 +29,27 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
   const [deviceName, setDeviceName] = useState('');
   const [autoTriggered, setAutoTriggered] = useState(false);
 
+  /**
+   * Submit via hidden form POST. The browser navigates to the endpoint,
+   * server responds with 302 to codedeck://auth?key=..., and
+   * ASWebAuthenticationSession detects the custom scheme redirect.
+   * (fetch() cannot follow redirects to custom URL schemes — "Load failed")
+   */
+  const submitViaForm = (endpoint: string, data: Record<string, unknown>) => {
+    setStatus('Redirecting...');
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = endpoint;
+    form.style.display = 'none';
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'json';
+    input.value = JSON.stringify(data);
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+  };
+
   const doLogin = async (source: string) => {
     setLoading(true);
     setError(null);
@@ -40,39 +59,12 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
       const { challengeId, ...options } = beginRes;
       setStatus('Authenticating...');
       const authResponse = await startAuthentication(options as never);
-      setStatus('Getting API key...');
-      // Use fetch with redirect: 'manual' so we can handle the 302 ourselves,
-      // or let the browser follow it naturally via form submission.
-      // Server will 302 redirect to codedeck://auth?key=...&userId=...&keyId=...
+      // Form POST → server 302 redirects to codedeck://auth?key=...
       const cb = encodeURIComponent(callbackUrl);
-      const res = await fetch(`/api/auth/passkey/login/complete?native_callback=${cb}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challengeId, response: authResponse }),
-        redirect: 'follow',
-      });
-      // If we get here, the redirect wasn't followed (shouldn't happen for 302).
-      // Fallback: try JS redirect with the response data.
-      if (res.ok || res.redirected) {
-        // The browser followed the redirect to codedeck:// — should have been caught
-        // by ASWebAuthenticationSession. If we're still here, try manual redirect.
-        const finalUrl = res.url;
-        if (finalUrl && finalUrl.startsWith('codedeck://')) {
-          window.location.href = finalUrl;
-          return;
-        }
-      }
-      // Response might be JSON (fallback for non-redirect case)
-      const data = await res.json().catch(() => null);
-      if (data?.apiKey) {
-        const url = new URL(callbackUrl);
-        url.searchParams.set('key', data.apiKey);
-        url.searchParams.set('userId', data.userId);
-        url.searchParams.set('keyId', data.keyId);
-        window.location.href = url.toString();
-      } else {
-        setError(`[DEBUG ${source}] ${res.status}: ${JSON.stringify(data)}`);
-      }
+      submitViaForm(
+        `/api/auth/passkey/login/complete?native_callback=${cb}`,
+        { challengeId, response: authResponse },
+      );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('NotAllowedError') || msg.toLowerCase().includes('not allowed')) {
@@ -84,12 +76,11 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
       } else if (!msg.toLowerCase().includes('cancel')) {
         setError(`[DEBUG ${source}] ${msg}`);
       }
-    } finally {
       setLoading(false);
     }
+    // No finally setLoading(false) — form submission navigates away
   };
 
-  // On mount: detect action=register, or try auto-triggering login.
   useEffect(() => {
     if (autoTriggered) return;
     setAutoTriggered(true);
@@ -112,35 +103,17 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
       const { challengeId, ...options } = beginRes;
       setStatus('Registering...');
       const regResponse = await startRegistration(options as never);
-      setStatus('Saving...');
-      // POST register/complete with native_callback — server will issue API key + 302 redirect
+      // Form POST → server issues API key + 302 redirects
       const cb = encodeURIComponent(callbackUrl);
-      const res = await fetch(`/api/auth/passkey/register/complete?native_callback=${cb}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challengeId, response: regResponse, deviceName: deviceName.trim() || undefined }),
-        redirect: 'follow',
-      });
-      // Fallback if redirect wasn't caught by ASWebAuthenticationSession
-      if (res.ok || res.redirected) {
-        const finalUrl = res.url;
-        if (finalUrl && finalUrl.startsWith('codedeck://')) {
-          window.location.href = finalUrl;
-          return;
-        }
-      }
-      const data = await res.json().catch(() => null);
-      if (data?.ok) {
-        setError(`[DEBUG] Register OK but no redirect. Response: ${JSON.stringify(data)}`);
-      } else {
-        setError(`[DEBUG reg] ${res.status}: ${JSON.stringify(data)}`);
-      }
+      submitViaForm(
+        `/api/auth/passkey/register/complete?native_callback=${cb}`,
+        { challengeId, response: regResponse, deviceName: deviceName.trim() || undefined },
+      );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.toLowerCase().includes('cancel')) {
         setError(`[DEBUG reg] ${msg}`);
       }
-    } finally {
       setLoading(false);
     }
   };
