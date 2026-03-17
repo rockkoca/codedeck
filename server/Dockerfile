@@ -8,7 +8,7 @@ COPY server/package.json server/package-lock.json* ./server/
 RUN cd server && npm ci --ignore-scripts
 
 # Install deps for web
-COPY web/package.json web/package-lock.json* ./web/
+COPY web/package.json web/package-lock.json* web/.npmrc* ./web/
 RUN cd web && npm ci --ignore-scripts
 
 # Copy source
