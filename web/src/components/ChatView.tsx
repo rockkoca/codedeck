@@ -363,9 +363,9 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
               <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
             </div>
           ) : item.type === 'tool-group' ? (
-            <ToolCallGroup key={item.key} events={item.toolEvents!} />
+            <ToolCallGroup key={item.key} events={item.toolEvents!} onPathClick={onPathClick} />
           ) : (
-            <ChatEvent key={item.key} event={item.event!} nextTs={nextTs} />
+            <ChatEvent key={item.key} event={item.event!} nextTs={nextTs} onPathClick={onPathClick} />
           );
         })}
         <div ref={bottomRef} />
@@ -441,7 +441,7 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
 }
 
 /** Collapsible group of consecutive tool events. Shows first and last, folds middle. */
-function ToolCallGroup({ events }: { events: TimelineEvent[] }) {
+function ToolCallGroup({ events, onPathClick }: { events: TimelineEvent[]; onPathClick?: (p: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const first = events[0];
   const last = events.length > 1 ? events[events.length - 1] : null;
@@ -449,18 +449,18 @@ function ToolCallGroup({ events }: { events: TimelineEvent[] }) {
 
   return (
     <div class="chat-tool-group">
-      <ChatEvent event={first} />
+      <ChatEvent event={first} onPathClick={onPathClick} />
       <div class="chat-tool-group-indent">
         {middle.length > 0 && (
           expanded ? (
-            middle.map((ev) => <ChatEvent key={ev.eventId} event={ev} />)
+            middle.map((ev) => <ChatEvent key={ev.eventId} event={ev} onPathClick={onPathClick} />)
           ) : (
             <button class="chat-tool-fold-btn" onClick={() => setExpanded(true)}>
               ··· {middle.length} more
             </button>
           )
         )}
-        {last && <ChatEvent event={last} />}
+        {last && <ChatEvent event={last} onPathClick={onPathClick} />}
         {expanded && middle.length > 0 && (
           <button class="chat-tool-fold-btn" onClick={() => setExpanded(false)}>
             ▲ collapse
@@ -471,22 +471,24 @@ function ToolCallGroup({ events }: { events: TimelineEvent[] }) {
   );
 }
 
-function ChatEvent({ event, nextTs }: { event: TimelineEvent; nextTs?: number }) {
+function ChatEvent({ event, nextTs, onPathClick }: { event: TimelineEvent; nextTs?: number; onPathClick?: (p: string) => void }) {
   switch (event.type) {
-    case 'user.message':
+    case 'user.message': {
+      const userText = String(event.payload.text ?? '');
       return (
         <div class={`chat-event chat-user${event.payload.pending ? ' chat-pending' : ''}`}>
-          <div class="chat-bubble-content">{String(event.payload.text ?? '')}</div>
+          <div class="chat-bubble-content">{splitPaths(userText, onPathClick)}</div>
           {!event.payload.pending && <ChatTime ts={event.ts} />}
         </div>
       );
+    }
 
     case 'tool.call':
       return (
         <div class="chat-event chat-tool">
           <span class="chat-tool-icon">{'>'}</span>
           <span class="chat-tool-name">{String(event.payload.tool ?? 'tool')}</span>
-          {event.payload.input ? <span class="chat-tool-input">{' '}{String(event.payload.input)}</span> : null}
+          {event.payload.input ? <span class="chat-tool-input">{' '}{splitPaths(String(event.payload.input), onPathClick)}</span> : null}
         </div>
       );
 
