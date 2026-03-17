@@ -109,19 +109,81 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** Render a unified diff string to HTML with +/- line classes */
+type DiffSide = { ln: number | null; code: string; type: 'add' | 'del' | 'ctx' | 'hunk' | 'file' };
+
+/** Render a unified diff as a split (side-by-side) HTML table, GitHub-style */
 function renderDiff(diff: string): string {
   const lines = diff.split('\n');
-  return lines.map((line) => {
-    const esc = escapeHtml(line);
-    if (line.startsWith('+++') || line.startsWith('---')) {
-      return `<span class="diff-file">${esc}</span>`;
+  let oldLine = 0;
+  let newLine = 0;
+
+  // Collect raw parsed lines
+  type RawLine = { kind: 'file' | 'hunk' | 'add' | 'del' | 'ctx'; text: string; oldLn?: number; newLn?: number };
+  const parsed: RawLine[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (i === lines.length - 1 && line === '') continue;
+    if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++') || line.startsWith('old mode') || line.startsWith('new mode')) {
+      parsed.push({ kind: 'file', text: line });
+    } else if (line.startsWith('@@')) {
+      const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (m) { oldLine = parseInt(m[1]) - 1; newLine = parseInt(m[2]) - 1; }
+      parsed.push({ kind: 'hunk', text: line });
+    } else if (line.startsWith('+')) {
+      newLine++;
+      parsed.push({ kind: 'add', text: line.slice(1), newLn: newLine });
+    } else if (line.startsWith('-')) {
+      oldLine++;
+      parsed.push({ kind: 'del', text: line.slice(1), oldLn: oldLine });
+    } else {
+      oldLine++; newLine++;
+      parsed.push({ kind: 'ctx', text: line.startsWith(' ') ? line.slice(1) : line, oldLn: oldLine, newLn: newLine });
     }
-    if (line.startsWith('+')) return `<span class="diff-add">${esc}</span>`;
-    if (line.startsWith('-')) return `<span class="diff-del">${esc}</span>`;
-    if (line.startsWith('@@')) return `<span class="diff-hunk">${esc}</span>`;
-    return `<span class="diff-ctx">${esc}</span>`;
-  }).join('\n');
+  }
+
+  // Build split rows: pair del+add lines from same hunk for side-by-side
+  const rows: string[] = [];
+  let i = 0;
+  while (i < parsed.length) {
+    const p = parsed[i];
+    if (p.kind === 'file') {
+      rows.push(`<tr class="diff-row-file"><td colspan="4" class="diff-file-header">${escapeHtml(p.text)}</td></tr>`);
+      i++;
+    } else if (p.kind === 'hunk') {
+      rows.push(`<tr class="diff-row-hunk"><td colspan="4" class="diff-hunk-header">${escapeHtml(p.text)}</td></tr>`);
+      i++;
+    } else if (p.kind === 'ctx') {
+      const ln = p.oldLn ?? '';
+      rows.push(`<tr class="diff-row-ctx"><td class="diff-ln">${ln}</td><td class="diff-cell diff-ctx">${escapeHtml(p.text)}</td><td class="diff-ln">${p.newLn ?? ''}</td><td class="diff-cell diff-ctx">${escapeHtml(p.text)}</td></tr>`);
+      i++;
+    } else if (p.kind === 'del') {
+      // Collect consecutive del/add pairs
+      const dels: RawLine[] = [];
+      const adds: RawLine[] = [];
+      while (i < parsed.length && parsed[i].kind === 'del') { dels.push(parsed[i]); i++; }
+      while (i < parsed.length && parsed[i].kind === 'add') { adds.push(parsed[i]); i++; }
+      const maxLen = Math.max(dels.length, adds.length);
+      for (let j = 0; j < maxLen; j++) {
+        const d = dels[j];
+        const a = adds[j];
+        const oldLn = d ? String(d.oldLn ?? '') : '';
+        const newLn = a ? String(a.newLn ?? '') : '';
+        const oldCode = d ? escapeHtml(d.text) : '';
+        const newCode = a ? escapeHtml(a.text) : '';
+        const leftCls = d ? 'diff-cell diff-del' : 'diff-cell diff-empty';
+        const rightCls = a ? 'diff-cell diff-add' : 'diff-cell diff-empty';
+        rows.push(`<tr class="diff-row-change"><td class="diff-ln diff-ln-del">${oldLn}</td><td class="${leftCls}">${oldCode}</td><td class="diff-ln diff-ln-add">${newLn}</td><td class="${rightCls}">${newCode}</td></tr>`);
+      }
+    } else if (p.kind === 'add') {
+      rows.push(`<tr class="diff-row-change"><td class="diff-ln"></td><td class="diff-cell diff-empty"></td><td class="diff-ln diff-ln-add">${p.newLn ?? ''}</td><td class="diff-cell diff-add">${escapeHtml(p.text)}</td></tr>`);
+      i++;
+    } else {
+      i++;
+    }
+  }
+
+  return `<table class="diff-table"><tbody>${rows.join('')}</tbody></table>`;
 }
 
 function isBinaryContent(content: string): boolean {
@@ -610,7 +672,7 @@ export function FileBrowser({
             : <pre class="fb-preview-code hljs"><code dangerouslySetInnerHTML={{ __html: preview.html }} /></pre>
         )}
         {preview.status === 'ok' && showDiff && preview.diffHtml && (
-          <pre class="fb-preview-code fb-diff"><code dangerouslySetInnerHTML={{ __html: preview.diffHtml }} /></pre>
+          <div class="fb-diff" dangerouslySetInnerHTML={{ __html: preview.diffHtml }} />
         )}
       </div>
     </div>
