@@ -92,8 +92,9 @@ export function buildApp(env: Env) {
     // Resolve trusted host: only honour x-forwarded-host when the request
     // arrived through a trusted proxy (clientIp differs from socketIp).
     const fromTrustedProxy = clientIp !== socketIp;
-    // X-Forwarded-Host is stripped by Cloudflare; fall back to X-Original-Host set by upstream proxies
-    const fwdHost = c.req.header('x-forwarded-host') ?? c.req.header('x-original-host');
+    // Cloudflare overwrites X-Forwarded-Host with its own hostname; use X-Original-Host (set by
+    // upstream Caddy proxy) which CF passes through unchanged.
+    const fwdHost = c.req.header('x-original-host') ?? c.req.header('x-forwarded-host');
     const resolvedHost = (fromTrustedProxy && fwdHost) ? fwdHost : (c.req.header('host') ?? null);
     c.set('resolvedHost' as never, resolvedHost);
 
