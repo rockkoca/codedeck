@@ -31,21 +31,43 @@ export function useSubSessions(
   const [loadedServerId, setLoadedServerId] = useState<string | null>(null);
   const rebuiltRef = useRef(false);
 
-  // Load from PG when server changes
+  // Load from PG — retries indefinitely with backoff until successful.
+  // Re-triggers when serverId changes or WS connection state changes (which
+  // signals the API key / network may now be ready).
+  const loadGenRef = useRef(0);
   useEffect(() => {
     if (!serverId) { setSubSessions([]); setLoadedServerId(null); return; }
     rebuiltRef.current = false;
-    listSubSessions(serverId)
-      .then((list) => {
-        setSubSessions(list.map((s) => ({
-          ...s,
-          sessionName: toSessionName(s.id),
-          state: 'unknown' as const,
-        })));
-        setLoadedServerId(serverId);
-      })
-      .catch(() => {});
-  }, [serverId]);
+    const gen = ++loadGenRef.current;
+    let attempt = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    function load() {
+      if (gen !== loadGenRef.current) return; // stale
+      listSubSessions(serverId!)
+        .then((list) => {
+          if (gen !== loadGenRef.current) return;
+          console.warn(`[sub-sessions] loaded ${list.length} for server ${serverId}`);
+          setSubSessions(list.map((s) => ({
+            ...s,
+            sessionName: toSessionName(s.id),
+            state: 'unknown' as const,
+          })));
+          setLoadedServerId(serverId);
+        })
+        .catch((err) => {
+          if (gen !== loadGenRef.current) return;
+          attempt++;
+          // Backoff: 1s, 2s, 3s, then cap at 5s
+          const delay = Math.min(attempt * 1000, 5000);
+          console.warn(`[sub-sessions] load failed (attempt ${attempt}, retry in ${delay}ms):`, err);
+          timer = setTimeout(load, delay);
+        });
+    }
+    load();
+
+    return () => { if (timer) clearTimeout(timer); };
+  }, [serverId, connected]);
 
   // Rebuild all when daemon connects (once per connection)
   useEffect(() => {
@@ -156,9 +178,11 @@ export function useSubSessions(
     ));
   }, [serverId]);
 
-  // Filter sub-sessions by active main session (show only those belonging to it)
+  // Filter sub-sessions by active main session (show only those belonging to it).
+  // Sub-sessions with no parentSession (null) are always visible — they were created
+  // before the parentSession feature or from a context without an active session.
   const visibleSubSessions = activeSession
-    ? subSessions.filter((s) => s.parentSession === activeSession)
+    ? subSessions.filter((s) => !s.parentSession || s.parentSession === activeSession)
     : subSessions;
 
   return { subSessions, visibleSubSessions, loadedServerId, create, close, restart, rename };

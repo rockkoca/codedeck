@@ -10,6 +10,7 @@ import { TerminalView } from './TerminalView.js';
 import { ChatView } from './ChatView.js';
 import { SessionControls } from './SessionControls.js';
 import { useTimeline } from '../hooks/useTimeline.js';
+import { useSwipeBack } from '../hooks/useSwipeBack.js';
 import { useQuickData } from './QuickInputPanel.js';
 import type { WsClient } from '../ws-client.js';
 import type { TerminalDiff, SessionInfo } from '../types.js';
@@ -59,6 +60,7 @@ export function SubSessionWindow({
   sub, ws, connected, onDiff, onHistory, onMinimize, onClose, onRestart, onRename, zIndex, onFocus,
 }: Props) {
   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const swipeBackRef = useSwipeBack(isMobile ? onMinimize : null);
 
   const { t } = useTranslation();
   const { events, refreshing } = useTimeline(sub.sessionName, ws);
@@ -241,11 +243,11 @@ export function SubSessionWindow({
   }, [isMobile]);
 
   const style: Record<string, string | number> = isMobile
-    ? { position: 'fixed', top: 0, left: 0, right: 0, height: vvh - barHeight, zIndex }
+    ? { position: 'fixed', top: 'var(--sat, 0px)', left: 0, right: 0, height: `calc(${vvh - barHeight}px - var(--sat, 0px))`, zIndex }
     : { position: 'fixed', left: geom.x, top: geom.y, width: geom.w, height: geom.h, zIndex };
 
   return (
-    <div class={`subsession-window${(sub.state !== 'idle' && sub.state !== 'stopped' && (sub.state === 'running' || activeThinkingTs)) ? ' subcard-running-pulse' : ''}`} style={style} onMouseDown={onFocus}>
+    <div ref={swipeBackRef} class={`subsession-window${(sub.state !== 'idle' && sub.state !== 'stopped' && (sub.state === 'running' || activeThinkingTs)) ? ' subcard-running-pulse' : ''}`} style={style} onMouseDown={onFocus}>
       {/* 8-direction resize handles (desktop only) */}
       {!isMobile && (['n','s','e','w','ne','nw','se','sw'] as ResizeDir[]).map((dir) => (
         <div key={dir} class={`resize-handle resize-${dir}`} onMouseDown={onResizeMouseDown(dir)} />

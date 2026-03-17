@@ -2,21 +2,20 @@
 .spinner { width: 28px; height: 28px; border: 3px solid #334155; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 html, body, #app { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; touch-action: pan-x pan-y; }
+:root { --sat: env(safe-area-inset-top, 0px); }
+/* Global: all fixed full-screen overlays respect iOS safe area (status bar/notch) */
+.dialog-overlay, .ask-dialog-overlay, .fb-overlay, .mobile-fb-overlay, .discussions-page { padding-top: var(--sat); }
+@media (max-width: 640px) { .fb-body-split .fb-preview { padding-top: var(--sat); } }
 body {
   background: #0f172a;
   color: #e2e8f0;
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 14px;
   overflow: hidden;
-  /* Safe area insets for iOS notch/status bar */
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
 }
 
-/* Layout — 100dvh accounts for mobile URL bar; --vvh set by JS for keyboard */
-.layout { display: flex; height: 100vh; height: var(--vvh, 100dvh); }
+/* Layout — accounts for iOS safe area (status bar/notch) and mobile keyboard (--vvh) */
+.layout { display: flex; height: calc(100vh - env(safe-area-inset-top, 0px)); height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px)); margin-top: env(safe-area-inset-top); }
 .sidebar { width: 220px; min-width: 180px; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; overflow-y: auto; }
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -192,7 +191,7 @@ body {
 }
 
 /* Login */
-.login-page { display: flex; align-items: center; justify-content: center; height: 100vh; height: 100dvh; }
+.login-page { display: flex; align-items: center; justify-content: center; height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
 .login-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 32px; width: 360px; max-width: calc(100vw - 32px); }
 .login-card h1 { margin: 0 0 24px; font-size: 20px; color: #f1f5f9; }
 .form-group { margin-bottom: 16px; }
@@ -521,6 +520,7 @@ body {
 .fb-body-split .fb-files-and-changes { border-right: 1px solid #334155; }
 /* Git changes section */
 .fb-changes-section { border-top: 1px solid #1e293b; flex-shrink: 0; max-height: 40%; overflow: hidden; display: flex; flex-direction: column; }
+.fb-body > .fb-changes-section { max-height: none; flex: 1; border-top: none; }
 .fb-changes-header { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; background: #0f172a; flex-shrink: 0; }
 .fb-changes-title { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
 .fb-changes-refresh { background: none; border: none; color: #64748b; cursor: pointer; font-size: 14px; padding: 0 4px; }

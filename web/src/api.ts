@@ -8,10 +8,24 @@ let _baseUrl = '';
 let _onAuthExpired: ((reason?: string) => void) | null = null;
 let _apiKey: string | null = null;
 
+// Hydrate API key from localStorage on module load so it's available before
+// any async Capacitor Preferences read completes. This prevents race conditions
+// where apiFetch is called before configureApiKey() in the native init effect.
+try {
+  const stored = localStorage.getItem('rcc_api_key');
+  if (stored) _apiKey = stored;
+} catch { /* SSR or restricted storage */ }
+
 /** Set a Bearer API key for native app auth (replaces cookie+CSRF). */
-export function configureApiKey(key: string): void { _apiKey = key; }
+export function configureApiKey(key: string): void {
+  _apiKey = key;
+  try { localStorage.setItem('rcc_api_key', key); } catch { /* ignore */ }
+}
 /** Clear the Bearer API key (reverts to cookie auth). */
-export function clearApiKey(): void { _apiKey = null; }
+export function clearApiKey(): void {
+  _apiKey = null;
+  try { localStorage.removeItem('rcc_api_key'); } catch { /* ignore */ }
+}
 
 export function configure(baseUrl: string): void {
   _baseUrl = baseUrl.replace(/\/$/, '');

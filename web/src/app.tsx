@@ -18,6 +18,7 @@ import { ServerContextMenu, DeleteServerDialog } from './components/ServerContex
 import { DiscussionsPage } from './pages/DiscussionsPage.js';
 import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
+import { useSwipeBack } from './hooks/useSwipeBack.js';
 import { getActiveThinkingTs } from './thinking-utils.js';
 import { WsClient } from './ws-client.js';
 import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSessionIfStale, ApiError, configureApiKey, clearApiKey } from './api.js';
@@ -120,8 +121,7 @@ export function App() {
             localStorage.setItem('rcc_auth', JSON.stringify(authState));
             setAuth(authState);
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            alert(`[DEBUG init] /me failed: ${msg}`);
+            console.warn('[native] /me failed:', err);
             clearApiKey();
             await clearAuthKey();
           }
@@ -150,10 +150,6 @@ export function App() {
   useEffect(() => {
     onAuthExpired((reason?: string) => {
       console.warn('[auth] onAuthExpired fired — clearing auth state, reason:', reason);
-      // DEBUG: show alert so we can see why logout happens on native
-      if (isNative()) {
-        alert(`[DEBUG LOGOUT] ${reason ?? 'unknown reason'}`);
-      }
       localStorage.removeItem('rcc_auth');
       setAuth(null);
     });
@@ -334,6 +330,7 @@ export function App() {
 
   // ── Discussions ─────────────────────────────────────────────────────────────
   const [showDiscussionsPage, setShowDiscussionsPage] = useState(false);
+  const discussionsSwipeRef = useSwipeBack(useCallback(() => setShowDiscussionsPage(false), []));
   const [showDiscussionDialog, setShowDiscussionDialog] = useState(false);
   const [discussionPrefs, setDiscussionPrefs] = useState<DiscussionPrefs | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
@@ -391,7 +388,7 @@ export function App() {
 
   // ── Sub-sessions ───────────────────────────────────────────────────────────
   const { subSessions, visibleSubSessions, loadedServerId, create: createSubSession, close: closeSubSession, restart: restartSubSession, rename: renameSubSession } = useSubSessions(
-    selectedServerId,
+    (nativeReady && auth) ? selectedServerId : null,
     wsRef.current,
     connected,
     activeSession,
@@ -1237,7 +1234,7 @@ export function App() {
       </main>
 
       {showDiscussionsPage && selectedServerId && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#0a0e1a' }}>
+        <div ref={discussionsSwipeRef} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#0a0e1a', paddingTop: 'var(--sat, 0px)' }}>
           <DiscussionsPage
             serverId={selectedServerId}
             ws={wsRef.current}

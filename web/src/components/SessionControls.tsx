@@ -6,6 +6,7 @@ import type { SessionInfo } from '../types.js';
 import { QuickInputPanel } from './QuickInputPanel.js';
 import type { UseQuickDataResult } from './QuickInputPanel.js';
 import { FileBrowser } from './FileBrowser.js';
+import { useSwipeBack } from '../hooks/useSwipeBack.js';
 
 interface Props {
   ws: WsClient | null;
@@ -77,6 +78,7 @@ function loadCodexModel(): CodexModelChoice | null {
 
 export function SessionControls({ ws, activeSession, inputRef, onAfterAction, onStopProject, onRenameSession, sessionDisplayName, quickData, detectedModel, hideShortcuts, onSend, onSubRestart, onSubNew, onSubStop, activeThinking, mobileFileBrowserOpen, onMobileFileBrowserClose }: Props) {
   const { t } = useTranslation();
+  const swipeBackRef = useSwipeBack(onMobileFileBrowserClose);
   const [hasText, setHasText] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -311,7 +313,7 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
   return (
     <>
     {mobileFileBrowserOpen && ws && activeSession && (
-      <div class="mobile-fb-overlay">
+      <div class="mobile-fb-overlay" ref={swipeBackRef}>
         <div class="mobile-fb-header">
           <span style={{ fontSize: 13, fontWeight: 600 }}>📁 Files</span>
           <button class="fb-close" onClick={onMobileFileBrowserClose}>✕</button>

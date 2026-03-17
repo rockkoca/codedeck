@@ -3,7 +3,7 @@
  * Handles auth, reconnect, and message dispatch.
  */
 import type { TerminalDiff } from './types.js';
-import { refreshSession } from './api.js';
+import { apiFetch } from './api.js';
 
 export type MessageHandler = (msg: ServerMessage) => void;
 
@@ -321,37 +321,12 @@ export class WsClient {
       .replace(/\/$/, '');
 
     // Get a short-lived ws-ticket before connecting.
-    // IMPORTANT: timeout the fetch — without it, a hung TCP connection keeps
-    // _connecting=true forever and all subsequent reconnect timers are no-ops.
     let ticket: string;
     try {
-      const csrfMatch = document.cookie.match(/(?:^|;\s*)rcc_csrf=([^;]+)/);
-      const csrf = csrfMatch ? decodeURIComponent(csrfMatch[1]) : null;
-      const res = await fetch(`${this.baseUrl}/api/auth/ws-ticket`, {
+      const data = await apiFetch<{ ticket: string }>('/api/auth/ws-ticket', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
-        },
-        credentials: 'include',
         body: JSON.stringify({ serverId: this.serverId }),
-        signal: AbortSignal.timeout(10_000),
       });
-      if (!res.ok) {
-        if (res.status === 401) {
-          // Access token expired — try to refresh before giving up
-          const refreshed = await refreshSession().catch(() => false);
-          if (refreshed) {
-            this._connecting = false;
-            void this.openSocket();
-            return;
-          }
-        }
-        this._connecting = false;
-        this.scheduleReconnect();
-        return;
-      }
-      const data = await res.json() as { ticket: string };
       ticket = data.ticket;
     } catch {
       this._connecting = false;
