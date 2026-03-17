@@ -38,6 +38,13 @@ function getRpInfo(c: Context<HonoEnv>): { rpId: string; origin: string } {
   const scheme = isSecure ? 'https' : 'http';
   const host = resolvedHost || 'localhost';
   const rpId = host.split(':')[0]; // strip port — rpID is hostname only
+  logger.info({
+    resolvedHost,
+    host: c.req.header('host'),
+    xForwardedHost: c.req.header('x-forwarded-host'),
+    xOriginalHost: c.req.header('x-original-host'),
+    cfConnectingIp: c.req.header('cf-connecting-ip'),
+  }, '[passkey] getRpInfo headers');
   return { rpId, origin: `${scheme}://${host}` };
 }
 
