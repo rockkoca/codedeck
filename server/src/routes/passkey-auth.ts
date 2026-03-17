@@ -28,24 +28,16 @@ passkeyRoutes.use('/*', async (c, next) => {
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 /**
- * Derive rpId and expectedOrigin from the server's canonical SERVER_URL.
- * SERVER_URL is the authoritative source (same as github-auth.ts).
- * Falls back to the request host header if SERVER_URL is not set.
+ * Derive rpId and expectedOrigin from the actual request host.
+ * WebAuthn rpId MUST match the domain the user is actually on — SERVER_URL is
+ * irrelevant here (it's for webhooks/callbacks, not for WebAuthn).
  */
 function getRpInfo(c: Context<HonoEnv>): { rpId: string; origin: string } {
-  const serverUrl = c.env.SERVER_URL?.replace(/\/$/, '');
-  if (serverUrl && serverUrl !== 'http://localhost:3000') {
-    try {
-      const url = new URL(serverUrl);
-      return { rpId: url.hostname, origin: `${url.protocol}//${url.host}` };
-    } catch { /* fallthrough */ }
-  }
-  // Fallback: derive from request host header
   const resolvedHost = (c.get('resolvedHost' as never) as string | null) ?? '';
   const isSecure = c.env.NODE_ENV === 'production';
   const scheme = isSecure ? 'https' : 'http';
   const host = resolvedHost || 'localhost';
-  const rpId = host.split(':')[0];
+  const rpId = host.split(':')[0]; // strip port — rpID is hostname only
   return { rpId, origin: `${scheme}://${host}` };
 }
 
