@@ -35,6 +35,12 @@ export interface EnvConfig {
    * header (set by e.g. Caddy) is needed to preserve the real domain. */
   ORIGINAL_HOST_HEADER?: string;
 
+  /** Fixed WebAuthn rpId to use for all passkey operations.
+   * Must be a registrable domain suffix of every origin that will use passkeys.
+   * Example: set to "codedeck.org" so both app.codedeck.org and hk.codedeck.org share passkeys.
+   * If unset, rpId is derived from the request host. */
+  WEBAUTHN_RP_ID?: string;
+
   // Network
   /** Host to bind the HTTP server on. Default: 0.0.0.0 (logs a warning). */
   BIND_HOST?: string;
@@ -73,6 +79,7 @@ export function loadEnv(): EnvConfig {
     TRUSTED_PROXIES: process.env.TRUSTED_PROXIES,
     REAL_IP_HEADER: process.env.REAL_IP_HEADER,
     ORIGINAL_HOST_HEADER: process.env.ORIGINAL_HOST_HEADER,
+    WEBAUTHN_RP_ID: process.env.WEBAUTHN_RP_ID,
     BIND_HOST: process.env.BIND_HOST,
     PORT: process.env.PORT,
     NODE_ENV: process.env.NODE_ENV,

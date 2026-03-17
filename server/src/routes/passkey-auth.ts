@@ -37,14 +37,9 @@ function getRpInfo(c: Context<HonoEnv>): { rpId: string; origin: string } {
   const isSecure = c.env.NODE_ENV === 'production';
   const scheme = isSecure ? 'https' : 'http';
   const host = resolvedHost || 'localhost';
-  const rpId = host.split(':')[0]; // strip port — rpID is hostname only
-  logger.info({
-    resolvedHost,
-    host: c.req.header('host'),
-    xForwardedHost: c.req.header('x-forwarded-host'),
-    xOriginalHost: c.req.header('x-original-host'),
-    cfConnectingIp: c.req.header('cf-connecting-ip'),
-  }, '[passkey] getRpInfo headers');
+  // WEBAUTHN_RP_ID lets multiple subdomains share passkeys (e.g. codedeck.org for
+  // both app.codedeck.org and hk.codedeck.org). Must be a suffix of the visiting origin.
+  const rpId = c.env.WEBAUTHN_RP_ID ?? host.split(':')[0];
   return { rpId, origin: `${scheme}://${host}` };
 }
 
