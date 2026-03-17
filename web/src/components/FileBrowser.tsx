@@ -421,13 +421,15 @@ export function FileBrowser({
         pendingGitDiffRef.current.delete(msg.requestId);
         if (msg.status === 'ok') {
           const diff = msg.diff ?? '';
-          const diffHtml = renderDiff(diff);
+          const diffHtml = diff ? renderDiff(diff) : '';
           setPreview((prev) => {
             if (prev.status === 'ok' && prev.path === filePath) {
               return { ...prev, diff, diffHtml };
             }
             return prev;
           });
+          // Auto-switch to diff view if there's a diff
+          if (diff) setShowDiff(true);
         }
         return;
       }
