@@ -22,7 +22,9 @@
     "no_events": "イベントはまだありません",
     "session_state": "セッション {{state}}",
     "thinking_running": "考え中 · {{sec}}s",
-    "thinking_done": "{{sec}}s 考えた"
+    "thinking_done": "{{sec}}s 考えた",
+    "show_file_panel": "ファイルパネルを開く",
+    "hide_file_panel": "ファイルパネルを閉じる"
   },
   "session": {
     "restart": "↺ 再起動",
@@ -83,7 +85,13 @@
     "preview_loading": "読み込み中…",
     "preview_too_large": "ファイルが大きすぎてプレビューできません（> 512 KB）",
     "preview_error": "プレビュー不可",
-    "preview_binary": "バイナリファイル — プレビュー不可"
+    "preview_binary": "バイナリファイル — プレビュー不可",
+    "view_diff": "差分",
+    "view_source": "ソース",
+    "tab_files": "ファイル",
+    "tab_changes": "変更",
+    "changes_title": "変更 ({{count}})",
+    "no_changes": "変更なし"
   },
   "toast": {
     "finished": "完了"

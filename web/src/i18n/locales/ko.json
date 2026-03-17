@@ -22,7 +22,9 @@
     "no_events": "아직 이벤트 없음",
     "session_state": "세션 {{state}}",
     "thinking_running": "생각 중 · {{sec}}s",
-    "thinking_done": "{{sec}}s 동안 생각함"
+    "thinking_done": "{{sec}}s 동안 생각함",
+    "show_file_panel": "파일 패널 열기",
+    "hide_file_panel": "파일 패널 닫기"
   },
   "session": {
     "restart": "↺ 재시작",
@@ -83,7 +85,13 @@
     "preview_loading": "로딩 중…",
     "preview_too_large": "파일이 너무 커서 미리볼 수 없습니다 (> 512 KB)",
     "preview_error": "미리보기 불가",
-    "preview_binary": "바이너리 파일 — 미리보기 불가"
+    "preview_binary": "바이너리 파일 — 미리보기 불가",
+    "view_diff": "차이",
+    "view_source": "소스",
+    "tab_files": "파일",
+    "tab_changes": "변경",
+    "changes_title": "변경 ({{count}})",
+    "no_changes": "변경 없음"
   },
   "toast": {
     "finished": "완료"

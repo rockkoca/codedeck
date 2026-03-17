@@ -53,6 +53,9 @@ function makeWsFactory() {
       return () => { messageHandler = null; };
     },
     fsListDir,
+    fsReadFile: vi.fn(() => 'mock-read-id'),
+    fsGitStatus: vi.fn(() => 'mock-git-status-id'),
+    fsGitDiff: vi.fn(() => 'mock-git-diff-id'),
   } as unknown as WsClient;
 
   const respond = (entries: Array<{ name: string; isDir: boolean; hidden?: boolean }>, resolvedPath?: string) => {
@@ -76,7 +79,9 @@ function makeWsFactory() {
     });
   };
 
-  return { ws, fsListDir, respond, respondError, getLastPath: () => lastSentPath, getIncludeFiles: () => lastSentIncludeFiles };
+  const sendMsg = (msg: ServerMessage) => messageHandler?.(msg);
+
+  return { ws, fsListDir, respond, respondError, sendMsg, getLastPath: () => lastSentPath, getIncludeFiles: () => lastSentIncludeFiles };
 }
 
 describe('FileBrowser', () => {
@@ -283,6 +288,80 @@ describe('FileBrowser', () => {
     });
 
     expect(getByText('↑')).toBeDefined();
+  });
+
+  // ── Git status & diff ─────────────────────────────────────────────────
+
+  it('calls fsGitStatus when loading a directory', async () => {
+    const { ws, respond } = makeWsFactory();
+    render(<FileBrowser ws={ws} mode="file-single" layout="panel" initialPath="/home/user" onConfirm={vi.fn()} />);
+    await act(async () => { respond([{ name: 'foo.ts', isDir: false }], '/home/user'); });
+    expect(ws.fsGitStatus).toHaveBeenCalled();
+  });
+
+  it('shows git badge on modified file after git_status_response', async () => {
+    const { ws, respond, sendMsg } = makeWsFactory();
+    render(<FileBrowser ws={ws} mode="file-single" layout="panel" initialPath="/home/user" onConfirm={vi.fn()} />);
+    await act(async () => { respond([{ name: 'foo.ts', isDir: false }], '/home/user'); });
+    // Simulate git status response marking foo.ts as Modified
+    await act(async () => {
+      sendMsg({
+        type: 'fs.git_status_response',
+        requestId: 'mock-git-status-id',
+        path: '/home/user',
+        resolvedPath: '/home/user',
+        status: 'ok',
+        files: [{ path: '/home/user/foo.ts', code: 'M' }],
+      });
+    });
+    expect(document.querySelector('.fb-node-git-badge')).not.toBeNull();
+  });
+
+  it('shows panel tabs when changesRootPath is provided', async () => {
+    const { ws, respond } = makeWsFactory();
+    render(
+      <FileBrowser ws={ws} mode="file-single" layout="panel" initialPath="/home/user"
+        changesRootPath="/home/user" onConfirm={vi.fn()} />,
+    );
+    await act(async () => { respond([], '/home/user'); });
+    expect(document.querySelector('.fb-panel-tabs')).not.toBeNull();
+  });
+
+  it('shows changes list after clicking Changes tab', async () => {
+    const { ws, respond, sendMsg } = makeWsFactory();
+    render(
+      <FileBrowser ws={ws} mode="file-single" layout="panel" initialPath="/home/user"
+        changesRootPath="/home/user" onConfirm={vi.fn()} />,
+    );
+    await act(async () => { respond([], '/home/user'); });
+    // Simulate git changes response
+    await act(async () => {
+      sendMsg({
+        type: 'fs.git_status_response',
+        requestId: 'mock-git-status-id',
+        path: '/home/user',
+        resolvedPath: '/home/user',
+        status: 'ok',
+        files: [{ path: '/home/user/bar.ts', code: 'M' }],
+      });
+    });
+    // Click Changes tab (in .fb-panel-tabs)
+    const changesTab = document.querySelector('.fb-panel-tab:last-child') as HTMLElement;
+    await act(async () => { fireEvent.click(changesTab); });
+    expect(document.querySelector('.fb-changes-section')).not.toBeNull();
+  });
+
+  it('shows diff toggle button when diff is available', async () => {
+    const { ws, respond, sendMsg } = makeWsFactory();
+    render(<FileBrowser ws={ws} mode="file-single" layout="panel" initialPath="/home/user"
+      autoPreviewPath="/home/user/foo.ts" onConfirm={vi.fn()} />);
+    await act(async () => { respond([{ name: 'foo.ts', isDir: false }], '/home/user'); });
+    // Simulate read + diff responses
+    await act(async () => {
+      sendMsg({ type: 'fs.read_response', requestId: 'mock-read-id', path: '/home/user/foo.ts', status: 'ok', content: 'const x = 1;' });
+      sendMsg({ type: 'fs.git_diff_response', requestId: 'mock-git-diff-id', path: '/home/user/foo.ts', status: 'ok', diff: '+const x = 1;\n-const x = 0;' });
+    });
+    expect(document.querySelector('.fb-diff-toggle')).not.toBeNull();
   });
 
   // ── Expand ────────────────────────────────────────────────────────────

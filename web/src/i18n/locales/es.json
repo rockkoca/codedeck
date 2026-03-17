@@ -22,7 +22,9 @@
     "no_events": "Sin eventos aún",
     "session_state": "Sesión {{state}}",
     "thinking_running": "Pensando · {{sec}}s",
-    "thinking_done": "Pensó {{sec}}s"
+    "thinking_done": "Pensó {{sec}}s",
+    "show_file_panel": "Abrir panel de archivos",
+    "hide_file_panel": "Cerrar panel de archivos"
   },
   "session": {
     "restart": "↺ Reiniciar",
@@ -83,7 +85,13 @@
     "preview_loading": "Cargando…",
     "preview_too_large": "Archivo demasiado grande para previsualizar (> 512 KB)",
     "preview_error": "Vista previa no disponible",
-    "preview_binary": "Archivo binario — vista previa no disponible"
+    "preview_binary": "Archivo binario — vista previa no disponible",
+    "view_diff": "Diff",
+    "view_source": "Fuente",
+    "tab_files": "Archivos",
+    "tab_changes": "Cambios",
+    "changes_title": "Cambios ({{count}})",
+    "no_changes": "Sin cambios"
   },
   "toast": {
     "finished": "completado"

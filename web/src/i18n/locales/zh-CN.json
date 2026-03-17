@@ -22,7 +22,9 @@
     "no_events": "暂无消息",
     "session_state": "会话 {{state}}",
     "thinking_running": "思考中 · {{sec}}s",
-    "thinking_done": "思考了 {{sec}}s"
+    "thinking_done": "思考了 {{sec}}s",
+    "show_file_panel": "打开文件面板",
+    "hide_file_panel": "关闭文件面板"
   },
   "session": {
     "restart": "↺ 重启",
@@ -83,7 +85,13 @@
     "preview_loading": "加载中…",
     "preview_too_large": "文件过大，无法预览（> 512 KB）",
     "preview_error": "预览不可用",
-    "preview_binary": "二进制文件 — 无法预览"
+    "preview_binary": "二进制文件 — 无法预览",
+    "view_diff": "差异",
+    "view_source": "源码",
+    "tab_files": "文件",
+    "tab_changes": "变更",
+    "changes_title": "变更 ({{count}})",
+    "no_changes": "无变更"
   },
   "toast": {
     "finished": "完成了"

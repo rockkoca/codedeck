@@ -23,6 +23,9 @@ import logger from '../util/logger.js';
 import { homedir } from 'os';
 import { readdir as fsReaddir, realpath as fsRealpath, readFile as fsReadFileRaw, stat as fsStat } from 'node:fs/promises';
 import * as nodePath from 'node:path';
+import { exec as execCb } from 'node:child_process';
+import { promisify } from 'node:util';
+const execAsync = promisify(execCb);
 
 // ── Binary frame packing ─────────────────────────────────────────────────────
 
@@ -225,6 +228,12 @@ export function handleWebCommand(msg: unknown, serverLink: ServerLink): void {
       break;
     case 'fs.read':
       void handleFsRead(cmd, serverLink);
+      break;
+    case 'fs.git_status':
+      void handleFsGitStatus(cmd, serverLink);
+      break;
+    case 'fs.git_diff':
+      void handleFsGitDiff(cmd, serverLink);
       break;
     case 'auth_ok':
     case 'heartbeat':
@@ -934,6 +943,75 @@ async function handleFsRead(cmd: Record<string, unknown>, serverLink: ServerLink
     try { serverLink.send({ type: 'fs.read_response', requestId, path: rawPath, resolvedPath: real, status: 'ok', content }); } catch { /* ignore */ }
   } catch (err) {
     try { serverLink.send({ type: 'fs.read_response', requestId, path: rawPath, status: 'error', error: err instanceof Error ? err.message : String(err) }); } catch { /* ignore */ }
+  }
+}
+
+/** fs.git_status — return git modified file list for a directory */
+async function handleFsGitStatus(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
+  const rawPath = cmd.path as string | undefined;
+  const requestId = cmd.requestId as string | undefined;
+  if (!rawPath || !requestId) return;
+
+  const expanded = rawPath.startsWith('~') ? rawPath.replace(/^~/, homedir()) : rawPath;
+  const resolved = nodePath.resolve(expanded);
+
+  try {
+    const real = await fsRealpath(resolved);
+    const allowed = FS_ALLOWED_ROOTS.some((root) => real === root || real.startsWith(root + nodePath.sep));
+    if (!allowed) {
+      try { serverLink.send({ type: 'fs.git_status_response', requestId, path: rawPath, status: 'error', error: 'forbidden_path' }); } catch { /* ignore */ }
+      return;
+    }
+
+    const { stdout } = await execAsync('git status --porcelain -u', { cwd: real, timeout: 5000 });
+    const files: Array<{ path: string; code: string }> = [];
+    for (const line of stdout.split('\n')) {
+      if (!line.trim()) continue;
+      const code = line.slice(0, 2).trim();
+      const filePath = line.slice(3).trim().replace(/^"(.*)"$/, '$1'); // unquote if needed
+      files.push({ path: nodePath.join(real, filePath), code });
+    }
+    try { serverLink.send({ type: 'fs.git_status_response', requestId, path: rawPath, resolvedPath: real, status: 'ok', files }); } catch { /* ignore */ }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // git not available or not a repo — return empty ok (not an error for the UI)
+    const isNotRepo = msg.includes('not a git repository') || msg.includes('128');
+    try { serverLink.send({ type: 'fs.git_status_response', requestId, path: rawPath, status: isNotRepo ? 'ok' : 'error', files: [], error: isNotRepo ? undefined : msg }); } catch { /* ignore */ }
+  }
+}
+
+/** fs.git_diff — return git diff for a specific file */
+async function handleFsGitDiff(cmd: Record<string, unknown>, serverLink: ServerLink): Promise<void> {
+  const rawPath = cmd.path as string | undefined;
+  const requestId = cmd.requestId as string | undefined;
+  if (!rawPath || !requestId) return;
+
+  const expanded = rawPath.startsWith('~') ? rawPath.replace(/^~/, homedir()) : rawPath;
+  const resolved = nodePath.resolve(expanded);
+
+  try {
+    const real = await fsRealpath(resolved);
+    const allowed = FS_ALLOWED_ROOTS.some((root) => real === root || real.startsWith(root + nodePath.sep));
+    if (!allowed) {
+      try { serverLink.send({ type: 'fs.git_diff_response', requestId, path: rawPath, status: 'error', error: 'forbidden_path' }); } catch { /* ignore */ }
+      return;
+    }
+
+    const dir = nodePath.dirname(real);
+    // Try staged+unstaged diff vs HEAD; fall back to index diff
+    let diff = '';
+    try {
+      const { stdout } = await execAsync(`git diff HEAD -- ${JSON.stringify(real)}`, { cwd: dir, timeout: 5000 });
+      diff = stdout;
+    } catch {
+      try {
+        const { stdout } = await execAsync(`git diff -- ${JSON.stringify(real)}`, { cwd: dir, timeout: 5000 });
+        diff = stdout;
+      } catch { /* empty diff */ }
+    }
+    try { serverLink.send({ type: 'fs.git_diff_response', requestId, path: rawPath, resolvedPath: real, status: 'ok', diff }); } catch { /* ignore */ }
+  } catch (err) {
+    try { serverLink.send({ type: 'fs.git_diff_response', requestId, path: rawPath, status: 'error', error: err instanceof Error ? err.message : String(err) }); } catch { /* ignore */ }
   }
 }
 

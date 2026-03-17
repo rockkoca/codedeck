@@ -22,7 +22,9 @@
     "no_events": "尚無事件",
     "session_state": "Session {{state}}",
     "thinking_running": "思考中 · {{sec}}s",
-    "thinking_done": "思考了 {{sec}}s"
+    "thinking_done": "思考了 {{sec}}s",
+    "show_file_panel": "開啟檔案面板",
+    "hide_file_panel": "關閉檔案面板"
   },
   "session": {
     "restart": "↺ 重新啟動",
@@ -83,7 +85,13 @@
     "preview_loading": "載入中…",
     "preview_too_large": "檔案過大，無法預覽（> 512 KB）",
     "preview_error": "預覽不可用",
-    "preview_binary": "二進位檔案 — 無法預覽"
+    "preview_binary": "二進位檔案 — 無法預覽",
+    "view_diff": "差異",
+    "view_source": "原始碼",
+    "tab_files": "檔案",
+    "tab_changes": "變更",
+    "changes_title": "變更 ({{count}})",
+    "no_changes": "無變更"
   },
   "toast": {
     "finished": "完成"

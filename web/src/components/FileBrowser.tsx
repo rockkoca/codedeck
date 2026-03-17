@@ -10,7 +10,7 @@
  *   'modal' — rendered as a full-screen overlay dialog
  *   'panel' — rendered inline (no overlay), fits inside a parent container
  */
-import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import type { WsClient, ServerMessage } from '../ws-client.js';
 import hljs from 'highlight.js/lib/core';
@@ -109,6 +109,21 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** Render a unified diff string to HTML with +/- line classes */
+function renderDiff(diff: string): string {
+  const lines = diff.split('\n');
+  return lines.map((line) => {
+    const esc = escapeHtml(line);
+    if (line.startsWith('+++') || line.startsWith('---')) {
+      return `<span class="diff-file">${esc}</span>`;
+    }
+    if (line.startsWith('+')) return `<span class="diff-add">${esc}</span>`;
+    if (line.startsWith('-')) return `<span class="diff-del">${esc}</span>`;
+    if (line.startsWith('@@')) return `<span class="diff-hunk">${esc}</span>`;
+    return `<span class="diff-ctx">${esc}</span>`;
+  }).join('\n');
+}
+
 function isBinaryContent(content: string): boolean {
   // Check first 8KB for null bytes (binary indicator)
   const sample = content.slice(0, 8192);
@@ -128,6 +143,10 @@ export interface FileBrowserProps {
   autoPreviewPath?: string;
   /** Paths already inserted — shown with a badge to avoid duplicates */
   alreadyInserted?: string[];
+  /** Hide the footer (select/confirm buttons) — for embedded panel views */
+  hideFooter?: boolean;
+  /** When set, show a git-changes section at bottom of Files view and a Changes tab */
+  changesRootPath?: string;
   onConfirm: (paths: string[]) => void;
   onClose?: () => void;
 }
@@ -144,7 +163,7 @@ type FsNode = {
 type PreviewState =
   | { status: 'idle' }
   | { status: 'loading'; path: string }
-  | { status: 'ok'; path: string; content: string; html: string; isMarkdown: boolean }
+  | { status: 'ok'; path: string; content: string; html: string; isMarkdown: boolean; diff?: string; diffHtml?: string }
   | { status: 'error'; path: string; error: string };
 
 const REQUEST_TIMEOUT_MS = 5_000;
@@ -166,6 +185,8 @@ export function FileBrowser({
   highlightPath,
   autoPreviewPath,
   alreadyInserted = [],
+  hideFooter = false,
+  changesRootPath,
   onConfirm,
   onClose,
 }: FileBrowserProps) {
@@ -184,12 +205,25 @@ export function FileBrowser({
   const [error, setError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [preview, setPreview] = useState<PreviewState>({ status: 'idle' });
+  const [showDiff, setShowDiff] = useState(false);
+  const [modifiedFiles, setModifiedFiles] = useState<Map<string, string>>(new Map()); // path → git code
+  // Panel view: 'files' shows tree + changes section; 'changes' shows only changed files
+  const [panelView, setPanelView] = useState<'files' | 'changes'>('files');
+  const [changesFiles, setChangesFiles] = useState<Array<{ path: string; code: string }>>([]);
+  const pendingChangesRef = useRef<string | null>(null); // requestId for changesRootPath git status
 
   const loadedRef = useRef(new Set<string>());
   const pendingRef = useRef(new Map<string, string>()); // requestId → nodeId
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const pendingReadRef = useRef(new Map<string, string>()); // requestId → filePath
+  const pendingGitStatusRef = useRef(new Map<string, string>()); // requestId → dirPath
+  const pendingGitDiffRef = useRef(new Map<string, string>()); // requestId → filePath
   const mountedRef = useRef(true);
+
+  // History navigation
+  const historyRef = useRef<string[]>([startPath]);
+  const historyIdxRef = useRef(0);
+  const [canGoBack, setCanGoBack] = useState(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -197,6 +231,8 @@ export function FileBrowser({
       mountedRef.current = false;
       pendingRef.current.clear();
       pendingReadRef.current.clear();
+      pendingGitStatusRef.current.clear();
+      pendingGitDiffRef.current.clear();
       for (const timer of timersRef.current.values()) clearTimeout(timer);
       timersRef.current.clear();
     };
@@ -270,7 +306,62 @@ export function FileBrowser({
 
         const filename = filePath.split('/').pop() ?? '';
         const { html, isMarkdown } = highlightCode(content, filename);
-        setPreview({ status: 'ok', path: filePath, content, html, isMarkdown });
+        setPreview((prev) => {
+          // Merge diff if already fetched
+          const existing = prev.status === 'ok' && prev.path === filePath ? prev : null;
+          return { status: 'ok', path: filePath, content, html, isMarkdown, diff: existing?.diff, diffHtml: existing?.diffHtml };
+        });
+        return;
+      }
+
+      if (msg.type === 'fs.git_status_response') {
+        // Check if this is the changesRootPath request
+        if (pendingChangesRef.current === msg.requestId) {
+          pendingChangesRef.current = null;
+          if (msg.status === 'ok' && msg.files) {
+            setChangesFiles(msg.files);
+            // Also update modifiedFiles map for tree indicators
+            setModifiedFiles((prev) => {
+              const next = new Map(prev);
+              for (const f of msg.files!) next.set(f.path, f.code);
+              return next;
+            });
+          }
+          return;
+        }
+        const dirPath = pendingGitStatusRef.current.get(msg.requestId);
+        if (!dirPath) return;
+        pendingGitStatusRef.current.delete(msg.requestId);
+        if (msg.status === 'ok' && msg.files) {
+          setModifiedFiles((prev) => {
+            const next = new Map(prev);
+            // Remove stale entries for this dir
+            for (const [k] of next) {
+              if (k.startsWith(dirPath + '/')) next.delete(k);
+            }
+            for (const f of msg.files!) {
+              next.set(f.path, f.code);
+            }
+            return next;
+          });
+        }
+        return;
+      }
+
+      if (msg.type === 'fs.git_diff_response') {
+        const filePath = pendingGitDiffRef.current.get(msg.requestId);
+        if (!filePath) return;
+        pendingGitDiffRef.current.delete(msg.requestId);
+        if (msg.status === 'ok') {
+          const diff = msg.diff ?? '';
+          const diffHtml = renderDiff(diff);
+          setPreview((prev) => {
+            if (prev.status === 'ok' && prev.path === filePath) {
+              return { ...prev, diff, diffHtml };
+            }
+            return prev;
+          });
+        }
         return;
       }
     });
@@ -284,6 +375,9 @@ export function FileBrowser({
     setData((prev) => updateNode(prev, nodePath, { isLoading: true }));
     const requestId = ws.fsListDir(nodePath, includeFiles);
     pendingRef.current.set(requestId, nodePath);
+    // Fetch git status for this directory
+    const gitId = ws.fsGitStatus(nodePath);
+    pendingGitStatusRef.current.set(gitId, nodePath);
 
     const timer = setTimeout(() => {
       if (!mountedRef.current) return;
@@ -299,9 +393,49 @@ export function FileBrowser({
 
   const fetchPreview = useCallback((filePath: string) => {
     setPreview({ status: 'loading', path: filePath });
+    setShowDiff(false);
     const requestId = ws.fsReadFile(filePath);
     pendingReadRef.current.set(requestId, filePath);
+    // Also fetch git diff in parallel
+    const diffId = ws.fsGitDiff(filePath);
+    pendingGitDiffRef.current.set(diffId, filePath);
   }, [ws]);
+
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set([startPath]));
+
+  // Navigate to a path and push to history
+  const jumpTo = useCallback((newPath: string) => {
+    loadedRef.current.clear();
+    setData([{ id: newPath, name: newPath, isDir: true, children: [] }]);
+    setExpandedPaths(new Set([newPath]));
+    setSelectedPaths(new Set());
+    setCurrentLabel(newPath);
+    fetchDir(newPath);
+  }, [fetchDir]);
+
+  const navigateTo = useCallback((newPath: string) => {
+    // Trim forward entries if we navigated back before
+    historyRef.current = historyRef.current.slice(0, historyIdxRef.current + 1);
+    historyRef.current.push(newPath);
+    historyIdxRef.current = historyRef.current.length - 1;
+    setCanGoBack(historyIdxRef.current > 0);
+    jumpTo(newPath);
+  }, [jumpTo]);
+
+  const goBack = useCallback(() => {
+    if (historyIdxRef.current <= 0) return;
+    historyIdxRef.current -= 1;
+    setCanGoBack(historyIdxRef.current > 0);
+    jumpTo(historyRef.current[historyIdxRef.current]);
+  }, [jumpTo]);
+
+  const goUp = useCallback(() => {
+    const parts = currentLabel.replace(/\/$/, '').split('/');
+    if (parts.length > 1) {
+      const parent = parts.slice(0, -1).join('/') || '/';
+      navigateTo(parent);
+    }
+  }, [currentLabel, navigateTo]);
 
   // Load root on mount
   useEffect(() => { fetchDir(startPath); }, [startPath]);
@@ -311,14 +445,19 @@ export function FileBrowser({
     if (autoPreviewPath) fetchPreview(autoPreviewPath);
   }, [autoPreviewPath, fetchPreview]);
 
+  // Fetch git status for the changes panel
+  useEffect(() => {
+    if (!changesRootPath) return;
+    const requestId = ws.fsGitStatus(changesRootPath);
+    pendingChangesRef.current = requestId;
+  }, [changesRootPath, ws]);
+
   // Reload tree when showHidden changes
   useEffect(() => {
     loadedRef.current.clear();
     setData([{ id: startPath, name: startPath, isDir: true, children: [] }]);
     fetchDir(startPath);
   }, [showHidden]);
-
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set([startPath]));
 
   const toggleExpand = useCallback((nodeId: string) => {
     setExpandedPaths((prev) => {
@@ -386,6 +525,7 @@ export function FileBrowser({
           alreadySet={alreadySet}
           mode={mode}
           showHidden={showHidden}
+          modifiedFiles={modifiedFiles}
           onToggleExpand={toggleExpand}
           onSelect={handleSelect}
           onPreview={handlePreview}
@@ -395,11 +535,22 @@ export function FileBrowser({
     </div>
   );
 
+  const hasDiff = preview.status === 'ok' && !!preview.diff;
+
   const previewPane = hasPreview ? (
     <div class="fb-preview">
       <div class="fb-preview-header">
         <button class="fb-preview-back" onClick={() => setPreview({ status: 'idle' })}>←</button>
         <span class="fb-preview-name">{previewPath!.split('/').pop()}</span>
+        {hasDiff && (
+          <button
+            class={`fb-diff-toggle${showDiff ? ' active' : ''}`}
+            onClick={() => setShowDiff((v) => !v)}
+            title="Toggle diff view"
+          >
+            {showDiff ? t('file_browser.view_source') : t('file_browser.view_diff')}
+          </button>
+        )}
         <button class="fb-close" onClick={() => setPreview({ status: 'idle' })}>✕</button>
       </div>
       <div class="fb-preview-content">
@@ -409,16 +560,19 @@ export function FileBrowser({
         {preview.status === 'error' && (
           <div class="fb-preview-msg fb-preview-error">{preview.error}</div>
         )}
-        {preview.status === 'ok' && (
+        {preview.status === 'ok' && !showDiff && (
           preview.isMarkdown
             ? <div class="fb-preview-md" dangerouslySetInnerHTML={{ __html: preview.html }} />
             : <pre class="fb-preview-code hljs"><code dangerouslySetInnerHTML={{ __html: preview.html }} /></pre>
+        )}
+        {preview.status === 'ok' && showDiff && preview.diffHtml && (
+          <pre class="fb-preview-code fb-diff"><code dangerouslySetInnerHTML={{ __html: preview.diffHtml }} /></pre>
         )}
       </div>
     </div>
   ) : null;
 
-  const footer = (
+  const footer = hideFooter ? null : (
     <div class="fb-footer">
       <label class="fb-hidden-toggle">
         <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden((e.target as HTMLInputElement).checked)} />
@@ -441,19 +595,141 @@ export function FileBrowser({
     </div>
   );
 
+  // Git changes section (shown at bottom of Files view or as standalone Changes view)
+  const STATUS_LABEL: Record<string, string> = {
+    M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', '??': 'Untracked', '!!': 'Ignored',
+  };
+  const groupedChanges = useMemo(() => {
+    const groups: Record<string, Array<{ path: string; code: string }>> = {};
+    for (const f of changesFiles) {
+      const label = STATUS_LABEL[f.code] ?? f.code;
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(f);
+    }
+    return groups;
+  }, [changesFiles]);
+
+  const changesSection = changesFiles.length > 0 ? (
+    <div class="fb-changes-section">
+      <div class="fb-changes-header">
+        <span class="fb-changes-title">{t('file_browser.changes_title', { count: changesFiles.length })}</span>
+        {changesRootPath && (
+          <button class="fb-changes-refresh" onClick={() => {
+            const requestId = ws.fsGitStatus(changesRootPath!);
+            pendingChangesRef.current = requestId;
+          }} title="Refresh">↻</button>
+        )}
+      </div>
+      <div class="fb-changes-list">
+        {Object.entries(groupedChanges).map(([label, files]) => (
+          <div key={label} class="fb-changes-group">
+            <div class="fb-changes-group-label">{label} ({files.length})</div>
+            {files.map((f) => {
+              const name = f.path.split('/').pop() ?? f.path;
+              const relPath = changesRootPath ? f.path.replace(changesRootPath + '/', '') : f.path;
+              return (
+                <div
+                  key={f.path}
+                  class={`fb-changes-item${previewPath === f.path ? ' active' : ''}`}
+                  onClick={() => fetchPreview(f.path)}
+                  title={f.path}
+                >
+                  <span class="fb-changes-item-badge">{f.code === '??' ? 'U' : f.code}</span>
+                  <span class="fb-changes-item-name">{name}</span>
+                  <span class="fb-changes-item-dir">{relPath !== name ? relPath.replace('/' + name, '') : ''}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
+  // Build breadcrumb segments from currentLabel
+  const breadcrumbSegments = useMemo(() => {
+    const label = currentLabel;
+    if (label === '~' || (!label.startsWith('/') && !label.startsWith('~'))) {
+      // Treat as single root segment
+      return [{ label, path: label }];
+    }
+    if (label.startsWith('~/')) {
+      const rest = label.slice(2).split('/').filter(Boolean);
+      const segs: { label: string; path: string }[] = [{ label: '~', path: '~' }];
+      for (let i = 0; i < rest.length; i++) {
+        segs.push({ label: rest[i], path: '~/' + rest.slice(0, i + 1).join('/') });
+      }
+      return segs;
+    }
+    // Absolute path starting with /
+    const parts = label.replace(/\/$/, '').split('/');
+    // parts[0] === '' for absolute paths
+    const segs: { label: string; path: string }[] = [{ label: '/', path: '/' }];
+    for (let i = 1; i < parts.length; i++) {
+      if (!parts[i]) continue;
+      segs.push({ label: parts[i], path: parts.slice(0, i + 1).join('/') || '/' });
+    }
+    return segs;
+  }, [currentLabel]);
+
   const breadcrumb = (
-    <div class="fb-breadcrumb">
-      <span class="fb-breadcrumb-path">{currentLabel}</span>
+    <div class="fb-nav">
+      <button class="fb-nav-btn" disabled={!canGoBack} onClick={goBack}>←</button>
+      <button class="fb-nav-btn" onClick={goUp} title="Go up">⬆</button>
+      <div class="fb-breadcrumb-segments">
+        {breadcrumbSegments.map((seg, i) => {
+          const isLast = i === breadcrumbSegments.length - 1;
+          return (
+            <>
+              {i > 0 && <span class="fb-breadcrumb-sep">›</span>}
+              <span
+                class={`fb-breadcrumb-seg${isLast ? ' active' : ''}`}
+                onClick={isLast ? undefined : () => navigateTo(seg.path)}
+              >{seg.label}</span>
+            </>
+          );
+        })}
+      </div>
       {error && <span class="fb-error-inline">{error}</span>}
     </div>
   );
 
   if (layout === 'panel') {
+    const tabs = changesRootPath ? (
+      <div class="fb-panel-tabs">
+        <button class={`fb-panel-tab${panelView === 'files' ? ' active' : ''}`} onClick={() => setPanelView('files')}>{t('file_browser.tab_files')}</button>
+        <button class={`fb-panel-tab${panelView === 'changes' ? ' active' : ''}`} onClick={() => setPanelView('changes')}>
+          {t('file_browser.tab_changes')}
+          {changesFiles.length > 0 && <span class="fb-panel-tab-badge">{changesFiles.length}</span>}
+        </button>
+      </div>
+    ) : null;
+
+    if (panelView === 'changes' && changesRootPath) {
+      return (
+        <div class="fb-panel">
+          {tabs}
+          {previewPane ? (
+            <div class="fb-body fb-body-split">
+              <div class="fb-tree fb-tree-split">{changesSection}</div>
+              {previewPane}
+            </div>
+          ) : (
+            <div class="fb-body">{changesSection ?? <div class="fb-preview-msg">{t('file_browser.no_changes')}</div>}</div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div class="fb-panel">
+        {tabs}
         {breadcrumb}
-        <div class={`fb-body${hasPreview ? ' fb-body-split' : ''}`}>
-          {tree}
+        <div class={`fb-body${hasPreview ? ' fb-body-split' : ''}${changesRootPath && changesFiles.length > 0 ? ' fb-body-with-changes' : ''}`}>
+          <div class={`fb-files-and-changes${hasPreview ? ' fb-tree-split' : ''}`}>
+            {tree}
+            {changesSection}
+          </div>
           {previewPane}
         </div>
         {footer}
@@ -488,6 +764,7 @@ function FsTreeNode({
   alreadySet,
   mode,
   showHidden,
+  modifiedFiles,
   onToggleExpand,
   onSelect,
   onPreview,
@@ -500,6 +777,7 @@ function FsTreeNode({
   alreadySet: Set<string>;
   mode: FileBrowserMode;
   showHidden: boolean;
+  modifiedFiles: Map<string, string>;
   onToggleExpand: (id: string) => void;
   onSelect: (id: string, isDir: boolean) => void;
   onPreview: (id: string) => void;
@@ -512,13 +790,14 @@ function FsTreeNode({
   const isMulti = mode === 'file-multi';
   const isDisabled = mode === 'dir-only' && !node.isDir;
   const isPreviewing = previewPath === node.id;
+  const gitCode = modifiedFiles.get(node.id);
 
   if (!showHidden && node.hidden) return null;
 
   return (
     <div>
       <div
-        class={`fb-node${isSelected ? ' selected' : ''}${isAlready ? ' already' : ''}${isDisabled ? ' disabled' : ''}${isPreviewing ? ' previewing' : ''}`}
+        class={`fb-node${isSelected ? ' selected' : ''}${isAlready ? ' already' : ''}${isDisabled ? ' disabled' : ''}${isPreviewing ? ' previewing' : ''}${gitCode ? ' git-modified' : ''}`}
         style={{ paddingLeft: 8 + depth * 16 }}
         onClick={() => {
           if (!isMulti && !isDisabled) onSelect(node.id, node.isDir);
@@ -545,6 +824,7 @@ function FsTreeNode({
             : '📄'}
         </span>
         <span class="fb-node-name">{node.name}</span>
+        {gitCode && <span class="fb-node-git-badge" title={`git: ${gitCode}`}>{gitCode === '??' ? 'U' : gitCode}</span>}
         {isAlready && <span class="fb-node-badge">↑</span>}
       </div>
       {node.isDir && isExpanded && node.children && (
@@ -561,6 +841,7 @@ function FsTreeNode({
               alreadySet={alreadySet}
               mode={mode}
               showHidden={showHidden}
+              modifiedFiles={modifiedFiles}
               onToggleExpand={onToggleExpand}
               onSelect={onSelect}
               onPreview={onPreview}

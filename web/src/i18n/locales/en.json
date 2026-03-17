@@ -22,7 +22,9 @@
     "no_events": "No events yet",
     "session_state": "Session {{state}}",
     "thinking_running": "Thinking · {{sec}}s",
-    "thinking_done": "Thought for {{sec}}s"
+    "thinking_done": "Thought for {{sec}}s",
+    "show_file_panel": "Open file panel",
+    "hide_file_panel": "Close file panel"
   },
   "session": {
     "restart": "↺ Restart",
@@ -83,7 +85,13 @@
     "preview_loading": "Loading…",
     "preview_too_large": "File too large to preview (> 512 KB)",
     "preview_error": "Preview unavailable",
-    "preview_binary": "Binary file — preview unavailable"
+    "preview_binary": "Binary file — preview unavailable",
+    "view_diff": "Diff",
+    "view_source": "Source",
+    "tab_files": "Files",
+    "tab_changes": "Changes",
+    "changes_title": "Changes ({{count}})",
+    "no_changes": "No changes"
   },
   "toast": {
     "finished": "finished"

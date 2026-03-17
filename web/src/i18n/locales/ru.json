@@ -22,7 +22,9 @@
     "no_events": "Событий пока нет",
     "session_state": "Сессия {{state}}",
     "thinking_running": "Думаю · {{sec}}s",
-    "thinking_done": "Думал {{sec}}s"
+    "thinking_done": "Думал {{sec}}s",
+    "show_file_panel": "Открыть панель файлов",
+    "hide_file_panel": "Закрыть панель файлов"
   },
   "session": {
     "restart": "↺ Перезапустить",
@@ -83,7 +85,13 @@
     "preview_loading": "Загрузка…",
     "preview_too_large": "Файл слишком большой для предпросмотра (> 512 КБ)",
     "preview_error": "Предпросмотр недоступен",
-    "preview_binary": "Двоичный файл — предпросмотр недоступен"
+    "preview_binary": "Двоичный файл — предпросмотр недоступен",
+    "view_diff": "Diff",
+    "view_source": "Источник",
+    "tab_files": "Файлы",
+    "tab_changes": "Изменения",
+    "changes_title": "Изменения ({{count}})",
+    "no_changes": "Нет изменений"
   },
   "toast": {
     "finished": "завершено"

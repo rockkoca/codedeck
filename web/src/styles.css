@@ -225,8 +225,18 @@ body {
 }
 
 /* ── Chat view ──────────────────────────────────────────────────── */
-.chat-view-wrap { flex: 1; position: relative; overflow: hidden; }
-.chat-view { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.chat-view-wrap { flex: 1; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+.chat-split { flex-direction: row !important; }
+.chat-main { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+.chat-view { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+/* File panel toggle button */
+.chat-panel-toggle { position: absolute; top: 6px; right: 8px; z-index: 10; background: rgba(15,23,42,.85); border: 1px solid #334155; border-radius: 5px; color: #64748b; cursor: pointer; padding: 3px 7px; font-size: 14px; line-height: 1; transition: color .15s, border-color .15s; }
+.chat-panel-toggle:hover, .chat-panel-toggle.active { color: #818cf8; border-color: #6366f1; }
+/* Drag handle between chat and file panel */
+.chat-panel-drag { width: 4px; flex-shrink: 0; cursor: col-resize; background: #1e293b; transition: background .15s; }
+.chat-panel-drag:hover { background: #6366f1; }
+/* Split file panel container */
+.chat-file-panel { display: flex; flex-direction: column; border-left: 1px solid #334155; background: #0f172a; overflow: hidden; min-width: 220px; }
 .chat-event { margin: 2px 0; min-width: 0; }
 .chat-user { background: #1e3a5f; border-radius: 8px; padding: 6px 12px; align-self: flex-end; max-width: 80%; width: fit-content; text-align: left; word-break: break-all; overflow-wrap: break-word; }
 .chat-user.chat-pending { background: #1e3a5f80; color: #94a3b8; }
@@ -491,14 +501,49 @@ body {
 
 /* ── FileBrowser ─────────────────────────────────────────────────────────── */
 .fb-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; }
-.fb-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px; width: min(92vw, 520px); max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,.5); overflow: hidden; }
+.fb-modal { background: #1e293b; border: 1px solid #334155; border-radius: 10px; width: min(92vw, 680px); max-height: 84vh; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,.5); overflow: hidden; }
 .fb-panel { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+/* Panel tabs (Files | Changes) */
+.fb-panel-tabs { display: flex; border-bottom: 1px solid #334155; flex-shrink: 0; }
+.fb-panel-tab { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; color: #64748b; cursor: pointer; padding: 6px 10px; font-size: 12px; font-weight: 500; transition: color .15s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.fb-panel-tab:hover { color: #e2e8f0; }
+.fb-panel-tab.active { color: #e2e8f0; border-bottom-color: #6366f1; }
+.fb-panel-tab-badge { background: #6366f1; color: #fff; border-radius: 10px; font-size: 10px; padding: 0 5px; min-width: 16px; text-align: center; }
+/* Files-and-changes wrapper in panel mode */
+.fb-files-and-changes { display: flex; flex-direction: column; overflow: hidden; min-height: 0; flex: 1; min-width: 0; }
+.fb-files-and-changes.fb-tree-split { flex: 0 0 38%; min-width: 180px; max-width: 260px; border-right: 1px solid #334155; overflow: hidden; }
+.fb-files-and-changes .fb-tree { flex: 1; overflow-y: auto; }
+.fb-body-split .fb-files-and-changes { border-right: 1px solid #334155; }
+/* Git changes section */
+.fb-changes-section { border-top: 1px solid #1e293b; flex-shrink: 0; max-height: 40%; overflow: hidden; display: flex; flex-direction: column; }
+.fb-changes-header { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; background: #0f172a; flex-shrink: 0; }
+.fb-changes-title { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+.fb-changes-refresh { background: none; border: none; color: #64748b; cursor: pointer; font-size: 14px; padding: 0 4px; }
+.fb-changes-refresh:hover { color: #e2e8f0; }
+.fb-changes-list { overflow-y: auto; flex: 1; }
+.fb-changes-group { }
+.fb-changes-group-label { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: .05em; padding: 4px 10px 2px; font-weight: 600; }
+.fb-changes-item { display: flex; align-items: center; gap: 5px; padding: 3px 10px; cursor: pointer; font-size: 12px; user-select: none; }
+.fb-changes-item:hover { background: rgba(255,255,255,.05); }
+.fb-changes-item.active { background: rgba(99,102,241,.15); }
+.fb-changes-item-badge { font-size: 9px; font-weight: 700; padding: 0 3px; border-radius: 3px; background: rgba(251,191,36,.15); color: #fbbf24; flex-shrink: 0; font-family: monospace; }
+.fb-changes-item-name { color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.fb-changes-item-dir { font-size: 10px; color: #475569; flex-shrink: 0; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fb-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #334155; font-weight: 600; font-size: 13px; flex-shrink: 0; }
 .fb-close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 4px; }
 .fb-close:hover { color: #e2e8f0; }
 .fb-breadcrumb { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #1e293b; font-size: 11px; color: #64748b; font-family: monospace; overflow: hidden; flex-shrink: 0; }
 .fb-breadcrumb-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .fb-error-inline { color: #f87171; font-size: 11px; flex-shrink: 0; }
+.fb-nav { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid #1e293b; background: #0f172a; flex-shrink: 0; }
+.fb-nav-btn { background: none; border: 1px solid #334155; border-radius: 4px; color: #64748b; cursor: pointer; padding: 2px 7px; font-size: 13px; line-height: 1.4; }
+.fb-nav-btn:hover:not(:disabled) { color: #e2e8f0; border-color: #475569; }
+.fb-nav-btn:disabled { opacity: 0.3; cursor: default; }
+.fb-breadcrumb-segments { display: flex; align-items: center; gap: 2px; overflow: hidden; flex: 1; min-width: 0; }
+.fb-breadcrumb-seg { color: #94a3b8; cursor: pointer; padding: 1px 4px; border-radius: 3px; font-size: 12px; white-space: nowrap; }
+.fb-breadcrumb-seg:hover { color: #e2e8f0; background: #1e293b; }
+.fb-breadcrumb-seg.active { color: #e2e8f0; cursor: default; }
+.fb-breadcrumb-sep { color: #334155; font-size: 11px; flex-shrink: 0; }
 .fb-tree { flex: 1; overflow-y: auto; padding: 4px 0; min-height: 0; }
 .fb-footer { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid #334155; flex-shrink: 0; flex-wrap: wrap; }
 .fb-hidden-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #64748b; cursor: pointer; user-select: none; }
@@ -519,7 +564,7 @@ body {
 .fb-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .fb-body-split .fb-tree { flex: 0 0 38%; min-width: 180px; max-width: 260px; border-right: 1px solid #334155; overflow-y: auto; }
 .fb-body-split .fb-preview { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-.fb-tree-split { flex: 0 0 38%; }
+.fb-tree-split { flex: 0 0 38%; min-width: 180px; max-width: 260px; }
 .fb-preview { display: flex; flex-direction: column; flex: 1; min-width: 0; overflow: hidden; }
 .fb-preview-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid #334155; font-size: 12px; font-weight: 600; color: #94a3b8; flex-shrink: 0; font-family: monospace; }
 .fb-preview-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
@@ -548,6 +593,18 @@ body {
   .fb-modal-wide { width: min(96vw, 900px) !important; }
 }
 .fb-node.previewing { background: rgba(99,102,241,.15); }
+.fb-node.git-modified .fb-node-name { color: #fbbf24; }
+.fb-node-git-badge { font-size: 9px; font-weight: 700; padding: 0 4px; border-radius: 3px; background: rgba(251,191,36,.15); color: #fbbf24; flex-shrink: 0; font-family: monospace; }
+.fb-diff-toggle { background: none; border: 1px solid #475569; border-radius: 4px; color: #94a3b8; cursor: pointer; padding: 1px 8px; font-size: 11px; margin-left: auto; }
+.fb-diff-toggle:hover { border-color: #94a3b8; color: #e2e8f0; }
+.fb-diff-toggle.active { border-color: #f59e0b; color: #f59e0b; }
+/* Diff view */
+.fb-diff { background: #0f172a; }
+.diff-add { background: rgba(34,197,94,.12); color: #86efac; display: block; }
+.diff-del { background: rgba(239,68,68,.12); color: #fca5a5; display: block; }
+.diff-hunk { color: #60a5fa; display: block; background: rgba(96,165,250,.05); }
+.diff-file { color: #94a3b8; display: block; }
+.diff-ctx { color: #94a3b8; display: block; }
 /* highlight.js token colors (github-dark compatible) */
 .hljs { background: #0f172a; color: #e2e8f0; }
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #c792ea; }

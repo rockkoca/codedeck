@@ -47,12 +47,21 @@ export type ServerMessage =
   | { type: 'discussion.list'; discussions: Array<{ id: string; topic: string; state: string; currentRound: number; maxRounds: number; currentSpeaker?: string; conclusion?: string; filePath?: string }> }
   | { type: 'daemon.stats'; cpu: number; memUsed: number; memTotal: number; load1: number; load5: number; load15: number; uptime: number }
   | { type: 'fs.ls_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; entries?: FsEntry[]; error?: string }
-  | { type: 'fs.read_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; content?: string; error?: string };
+  | { type: 'fs.read_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; content?: string; error?: string }
+  | { type: 'fs.git_status_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; files?: GitStatusEntry[]; error?: string }
+  | { type: 'fs.git_diff_response'; requestId: string; path: string; resolvedPath?: string; status: 'ok' | 'error'; diff?: string; error?: string };
 
 export interface FsEntry {
   name: string;
   isDir: boolean;
   hidden: boolean;
+}
+
+export interface GitStatusEntry {
+  /** Absolute resolved path */
+  path: string;
+  /** Git porcelain status code: M, A, D, ??, etc. */
+  code: string;
 }
 
 const RECONNECT_BASE_MS = 1000;
@@ -278,6 +287,20 @@ export class WsClient {
   fsReadFile(path: string): string {
     const requestId = crypto.randomUUID();
     this.send({ type: 'fs.read', path, requestId });
+    return requestId;
+  }
+
+  /** Request git status for a directory. Returns requestId. */
+  fsGitStatus(path: string): string {
+    const requestId = crypto.randomUUID();
+    this.send({ type: 'fs.git_status', path, requestId });
+    return requestId;
+  }
+
+  /** Request git diff for a file. Returns requestId. */
+  fsGitDiff(path: string): string {
+    const requestId = crypto.randomUUID();
+    this.send({ type: 'fs.git_diff', path, requestId });
     return requestId;
   }
 

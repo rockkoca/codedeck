@@ -4,7 +4,7 @@
  * Supports basic Markdown rendering (code blocks, inline code, bold).
  */
 import { h } from 'preact';
-import { useEffect, useRef, useState, useMemo } from 'preact/hooks';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import type { TimelineEvent, WsClient } from '../ws-client.js';
 import { getActiveThinkingTs } from '../thinking-utils.js';
@@ -188,6 +188,12 @@ interface SelectionMenu {
   text: string;
 }
 
+const FILE_PANEL_WIDTH_KEY = 'chatFilePanelWidth';
+const FILE_PANEL_OPEN_KEY = 'chatFilePanelOpen';
+const FILE_PANEL_MIN = 220;
+const FILE_PANEL_MAX = 900;
+const FILE_PANEL_DEFAULT = 340;
+
 export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview, ws, onInsertPath, workdir }: Props) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -198,6 +204,44 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
 
   const autoScrollRef = useRef(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+
+  // Split-screen file panel
+  const [showFilePanel, setShowFilePanel] = useState(() => {
+    try { return localStorage.getItem(FILE_PANEL_OPEN_KEY) === '1'; } catch { return false; }
+  });
+  const [filePanelWidth, setFilePanelWidth] = useState(() => {
+    try { return parseInt(localStorage.getItem(FILE_PANEL_WIDTH_KEY) ?? String(FILE_PANEL_DEFAULT), 10); } catch { return FILE_PANEL_DEFAULT; }
+  });
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const filePanelWidthRef = useRef(filePanelWidth);
+  filePanelWidthRef.current = filePanelWidth;
+
+  const toggleFilePanel = useCallback(() => {
+    setShowFilePanel((v) => {
+      const next = !v;
+      try { localStorage.setItem(FILE_PANEL_OPEN_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const onDragStart = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    dragStateRef.current = { startX: e.clientX, startWidth: filePanelWidthRef.current };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragStateRef.current) return;
+      const delta = dragStateRef.current.startX - ev.clientX;
+      const newW = Math.max(FILE_PANEL_MIN, Math.min(FILE_PANEL_MAX, dragStateRef.current.startWidth + delta));
+      setFilePanelWidth(newW);
+    };
+    const onUp = () => {
+      try { localStorage.setItem(FILE_PANEL_WIDTH_KEY, String(filePanelWidthRef.current)); } catch { /* ignore */ }
+      dragStateRef.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
 
   const viewItems = useMemo(() => buildViewItems(events), [events]);
 
@@ -344,75 +388,105 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     return <div class="chat-view"><div class="chat-loading">{t('chat.loading')}</div></div>;
   }
 
+  const canShowFilePanel = !preview && !!ws;
+
   return (
-    <div class="chat-view-wrap">
-      {refreshing && <div class="chat-refreshing">{t('chat.syncing')}</div>}
-      <div class="chat-view" ref={scrollRef} onScroll={preview ? undefined : handleScroll}>
-        {viewItems.length === 0 && (
-          <div class="chat-loading">
-            {sessionState ? t('chat.session_state', { state: sessionState }) : t('chat.no_events')}
-          </div>
-        )}
-        {viewItems.map((item, idx) => {
-          const nextItem = viewItems[idx + 1];
-          const nextTs = nextItem?.ts ?? nextItem?.event?.ts;
-          const onPathClick = ws && !preview ? (p: string) => setFileBrowserPath(p) : undefined;
-          return item.type === 'assistant-block' ? (
-            <div key={item.key} class="chat-event chat-assistant">
-              <RichText text={item.text!} onPathClick={onPathClick} />
-              <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
-            </div>
-          ) : item.type === 'tool-group' ? (
-            <ToolCallGroup key={item.key} events={item.toolEvents!} onPathClick={onPathClick} />
-          ) : (
-            <ChatEvent key={item.key} event={item.event!} nextTs={nextTs} onPathClick={onPathClick} />
-          );
-        })}
-        <div ref={bottomRef} />
-      </div>
-      {/* Status / thinking bar — fixed at bottom */}
-      {!preview && (statusText || activeThinkingTs) && (
-        <div class="chat-thinking-bar">
-          <span class="chat-thinking-dots">●●●</span>
-          {' '}{activeThinkingTs
-            ? <ActiveThinkingLabel startTs={activeThinkingTs} />
-            : statusText}
-        </div>
-      )}
-      {!preview && showScrollBtn && (
+    <div class={`chat-view-wrap${canShowFilePanel && showFilePanel ? ' chat-split' : ''}`}>
+      {canShowFilePanel && (
         <button
-          class="chat-scroll-btn"
-          onClick={() => {
-            autoScrollRef.current = true;
-            setShowScrollBtn(false);
-            scrollToBottom();
-          }}
+          class={`chat-panel-toggle${showFilePanel ? ' active' : ''}`}
+          onClick={toggleFilePanel}
+          title={showFilePanel ? t('chat.hide_file_panel') : t('chat.show_file_panel')}
         >
-          ↓
+          ⊞
         </button>
       )}
-      {selMenu && !preview && (
-        <div
-          class="chat-sel-menu"
-          style={{ left: `${selMenu.x}px`, top: `${selMenu.y}px` }}
-          // Prevent mousedown from collapsing the selection before we copy
-          onMouseDown={(e) => e.preventDefault()}
-        >
+      {refreshing && <div class="chat-refreshing">{t('chat.syncing')}</div>}
+      <div class="chat-main">
+        <div class="chat-view" ref={scrollRef} onScroll={preview ? undefined : handleScroll}>
+          {viewItems.length === 0 && (
+            <div class="chat-loading">
+              {sessionState ? t('chat.session_state', { state: sessionState }) : t('chat.no_events')}
+            </div>
+          )}
+          {viewItems.map((item, idx) => {
+            const nextItem = viewItems[idx + 1];
+            const nextTs = nextItem?.ts ?? nextItem?.event?.ts;
+            const onPathClick = ws && !preview ? (p: string) => setFileBrowserPath(p) : undefined;
+            return item.type === 'assistant-block' ? (
+              <div key={item.key} class="chat-event chat-assistant">
+                <RichText text={item.text!} onPathClick={onPathClick} />
+                <ChatTime ts={item.lastTs ?? item.ts ?? 0} />
+              </div>
+            ) : item.type === 'tool-group' ? (
+              <ToolCallGroup key={item.key} events={item.toolEvents!} onPathClick={onPathClick} />
+            ) : (
+              <ChatEvent key={item.key} event={item.event!} nextTs={nextTs} onPathClick={onPathClick} />
+            );
+          })}
+          <div ref={bottomRef} />
+        </div>
+        {/* Status / thinking bar — fixed at bottom */}
+        {!preview && (statusText || activeThinkingTs) && (
+          <div class="chat-thinking-bar">
+            <span class="chat-thinking-dots">●●●</span>
+            {' '}{activeThinkingTs
+              ? <ActiveThinkingLabel startTs={activeThinkingTs} />
+              : statusText}
+          </div>
+        )}
+        {!preview && showScrollBtn && (
           <button
-            class={`chat-sel-btn${copied ? ' copied' : ''}`}
+            class="chat-scroll-btn"
             onClick={() => {
-              navigator.clipboard.writeText(selMenu.text).then(() => {
-                setCopied(true);
-                setTimeout(() => {
-                  setSelMenu(null);
-                  setCopied(false);
-                }, 1000);
-              });
+              autoScrollRef.current = true;
+              setShowScrollBtn(false);
+              scrollToBottom();
             }}
           >
-            {copied ? t('common.copied') : t('common.copy')}
+            ↓
           </button>
-        </div>
+        )}
+        {selMenu && !preview && (
+          <div
+            class="chat-sel-menu"
+            style={{ left: `${selMenu.x}px`, top: `${selMenu.y}px` }}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <button
+              class={`chat-sel-btn${copied ? ' copied' : ''}`}
+              onClick={() => {
+                navigator.clipboard.writeText(selMenu.text).then(() => {
+                  setCopied(true);
+                  setTimeout(() => {
+                    setSelMenu(null);
+                    setCopied(false);
+                  }, 1000);
+                });
+              }}
+            >
+              {copied ? t('common.copied') : t('common.copy')}
+            </button>
+          </div>
+        )}
+      </div>
+      {canShowFilePanel && showFilePanel && ws && (
+        <>
+          <div class="chat-panel-drag" onMouseDown={onDragStart} />
+          <div class="chat-file-panel" style={{ width: `${filePanelWidth}px`, flexShrink: 0 }}>
+            <FileBrowser
+              ws={ws}
+              mode="file-single"
+              layout="panel"
+              initialPath={workdir ?? '~'}
+              hideFooter
+              changesRootPath={workdir ?? undefined}
+              onConfirm={(paths) => {
+                if (paths[0]) onInsertPath?.(paths[0]);
+              }}
+            />
+          </div>
+        </>
       )}
       {fileBrowserPath && ws && (
         <FileBrowser
