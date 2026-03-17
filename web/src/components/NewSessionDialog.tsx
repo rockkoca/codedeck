@@ -99,7 +99,7 @@ export function NewSessionDialog({ ws, onClose, onSessionStarted }: Props) {
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: '#00000080', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
+      style={{ position: 'fixed', inset: 0, background: '#00000080', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}
       onClick={(e) => { if (e.target === e.currentTarget && !starting) onClose(); }}
       onKeyDown={handleKey}
       role="dialog"
