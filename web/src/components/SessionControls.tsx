@@ -7,6 +7,7 @@ import { QuickInputPanel } from './QuickInputPanel.js';
 import type { UseQuickDataResult } from './QuickInputPanel.js';
 import { FileBrowser } from './FileBrowser.js';
 import { useSwipeBack } from '../hooks/useSwipeBack.js';
+import * as VoiceInput from './VoiceInput.js';
 
 interface Props {
   ws: WsClient | null;
@@ -80,6 +81,8 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
   const { t } = useTranslation();
   const swipeBackRef = useSwipeBack(onMobileFileBrowserClose);
   const [hasText, setHasText] = useState(false);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const voiceBaseTextRef = useRef(''); // text before voice started
   const [menuOpen, setMenuOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -183,6 +186,56 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     histIdxRef.current = -1;
     draftRef.current = '';
   }, [ws, activeSession, quickData, onSend]);
+
+  // Voice input — toggle on/off, streams partial results into the input.
+  // voiceBaseTextRef tracks the user-typed text before voice started.
+  // When user manually edits the input during voice, we update the base.
+  const voiceLastResultRef = useRef(''); // last voice-produced text, to detect manual edits
+
+  const handleVoiceToggle = useCallback(async () => {
+    if (voiceActive) {
+      await VoiceInput.stopListening();
+      setVoiceActive(false);
+      voiceLastResultRef.current = '';
+    } else {
+      voiceBaseTextRef.current = divRef.current?.textContent?.trim() ?? '';
+      voiceLastResultRef.current = '';
+      try {
+        const ok = await VoiceInput.startListening((text, _isFinal) => {
+          if (!divRef.current) return;
+          // If user manually edited the input, update the base text
+          const current = divRef.current.textContent ?? '';
+          const expectedWithOldResult = voiceBaseTextRef.current
+            ? `${voiceBaseTextRef.current} ${voiceLastResultRef.current}`
+            : voiceLastResultRef.current;
+          if (current !== expectedWithOldResult && voiceLastResultRef.current) {
+            // User edited — recalculate base (strip old voice result from end)
+            voiceBaseTextRef.current = current.trim();
+          }
+          voiceLastResultRef.current = text;
+          const base = voiceBaseTextRef.current;
+          divRef.current.textContent = base ? `${base} ${text}` : text;
+          setHasText(true);
+          // Scroll input to show latest text (multiline: scroll to bottom)
+          divRef.current.scrollTop = divRef.current.scrollHeight;
+          // Move cursor to end so caret is visible
+          const sel = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(divRef.current);
+          range.collapse(false);
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+        });
+        if (ok) {
+          setVoiceActive(true);
+        } else {
+          alert('[Voice] Failed to start — check microphone/speech permissions in Settings');
+        }
+      } catch (err) {
+        alert(`[Voice] Error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }, [voiceActive]);
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -465,6 +518,34 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
         />
+        <div class="voice-btn-wrap">
+          {hasText && (divRef.current?.scrollHeight ?? 0) > (divRef.current?.clientHeight ?? 999) && (
+            <button
+              class="btn-input-clear"
+              onClick={() => {
+                if (divRef.current) {
+                  divRef.current.textContent = '';
+                  setHasText(false);
+                  voiceBaseTextRef.current = '';
+                  voiceLastResultRef.current = '';
+                }
+              }}
+              title="Clear"
+            >
+              ✕
+            </button>
+          )}
+          {VoiceInput.isAvailable() && (
+            <button
+              class={`btn btn-voice${voiceActive ? ' btn-voice-active' : ''}`}
+              onClick={handleVoiceToggle}
+              disabled={inputDisabled}
+              title={voiceActive ? 'Stop voice input' : 'Voice input'}
+            >
+              {voiceActive ? '⏹' : '🎙'}
+            </button>
+          )}
+        </div>
         <button
           class="btn btn-primary"
           onClick={handleSend}

@@ -109,8 +109,6 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-type DiffSide = { ln: number | null; code: string; type: 'add' | 'del' | 'ctx' | 'hunk' | 'file' };
-
 /** Render a unified diff as a split (side-by-side) HTML table, GitHub-style */
 function renderDiff(diff: string): string {
   const lines = diff.split('\n');

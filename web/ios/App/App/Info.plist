@@ -47,6 +47,10 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>CodeDeck uses speech recognition to convert your voice to text commands.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>CodeDeck needs microphone access for voice input.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
