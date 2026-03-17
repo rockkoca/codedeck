@@ -951,6 +951,7 @@ export function App() {
           localStorage.setItem('rcc_auth', JSON.stringify(authState));
           setAuth(authState);
         }}
+        onChangeServer={isNative() ? () => setNativeServerUrl(null) : undefined}
       />
     );
   }

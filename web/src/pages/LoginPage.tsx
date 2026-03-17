@@ -9,9 +9,10 @@ interface Props {
   onLogin?: () => void;
   serverUrl?: string | null;
   onLoginSuccess?: (userId: string, serverUrl: string) => void;
+  onChangeServer?: () => void;
 }
 
-export function LoginPage({ onLogin, serverUrl, onLoginSuccess }: Props) {
+export function LoginPage({ onLogin, serverUrl, onLoginSuccess, onChangeServer }: Props) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<'buttons' | 'register'>('buttons');
   const [displayName, setDisplayName] = useState('');
@@ -194,6 +195,19 @@ export function LoginPage({ onLogin, serverUrl, onLoginSuccess }: Props) {
             </button>
           </>
         )}
+      {onChangeServer && (
+        <div style={{ marginTop: 20, textAlign: 'center' }}>
+          <span style={{ fontSize: 12, color: '#475569' }}>
+            {serverUrl}&nbsp;
+          </span>
+          <button
+            style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 12, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+            onClick={onChangeServer}
+          >
+            {t('serverSetup.changeServer')}
+          </button>
+        </div>
+      )}
       </div>
     </div>
   );
