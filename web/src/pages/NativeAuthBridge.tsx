@@ -1,22 +1,39 @@
 /**
  * NativeAuthBridge — rendered inside ASWebAuthenticationSession for passkey auth.
  *
- * URL: https://<server>/?native_callback=codedeck%3A%2F%2Fauth
- *
  * Flow:
- *   1. User taps passkey button → WebAuthn runs in Safari at server origin
- *   2. On success, form-POSTs to /login/complete?native_callback=codedeck://auth
- *   3. Server verifies, issues API key, responds with HTTP 302 → codedeck://auth?key=...
- *   4. ASWebAuthenticationSession detects custom-scheme redirect and closes
- *   5. Native app receives the callback URL with the API key
+ *   1. Passkey WebAuthn at server origin (same-origin, no CORS issues)
+ *   2. Fetch API key from server (JSON)
+ *   3. Navigate to codedeck://auth?key=... to trigger ASWebAuthenticationSession callback
  */
 import { useState, useEffect } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { passkeyLoginBegin, passkeyRegisterBegin } from '../api.js';
+import { passkeyLoginBegin, passkeyLoginCompleteNative, passkeyRegisterBegin, passkeyRegisterComplete } from '../api.js';
 
 interface Props {
-  callbackUrl: string; // e.g. "codedeck://auth"
+  callbackUrl: string;
+}
+
+/**
+ * Try multiple methods to navigate to custom URL scheme.
+ * ASWebAuthenticationSession should detect at least one of these.
+ */
+function navigateToCallback(url: string) {
+  // Method 1: direct assignment
+  window.location.href = url;
+  // Method 2: replace (in case href doesn't work)
+  setTimeout(() => { try { window.location.replace(url); } catch { /* ignore */ } }, 200);
+  // Method 3: anchor click
+  setTimeout(() => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+  }, 400);
+  // Method 4: open
+  setTimeout(() => { try { window.open(url, '_self'); } catch { /* ignore */ } }, 600);
 }
 
 export function NativeAuthBridge({ callbackUrl }: Props) {
@@ -28,26 +45,14 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
   const [displayName, setDisplayName] = useState('');
   const [deviceName, setDeviceName] = useState('');
   const [autoTriggered, setAutoTriggered] = useState(false);
+  const [callbackLink, setCallbackLink] = useState<string | null>(null);
 
-  /**
-   * Submit via hidden form POST. The browser navigates to the endpoint,
-   * server responds with 302 to codedeck://auth?key=..., and
-   * ASWebAuthenticationSession detects the custom scheme redirect.
-   * (fetch() cannot follow redirects to custom URL schemes — "Load failed")
-   */
-  const submitViaForm = (endpoint: string, data: Record<string, unknown>) => {
-    setStatus('Redirecting...');
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = endpoint;
-    form.style.display = 'none';
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'json';
-    input.value = JSON.stringify(data);
-    form.appendChild(input);
-    document.body.appendChild(form);
-    form.submit();
+  const buildCallbackUrl = (apiKey: string, userId: string, keyId: string): string => {
+    const url = new URL(callbackUrl);
+    url.searchParams.set('key', apiKey);
+    url.searchParams.set('userId', userId);
+    url.searchParams.set('keyId', keyId);
+    return url.toString();
   };
 
   const doLogin = async (source: string) => {
@@ -59,12 +64,12 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
       const { challengeId, ...options } = beginRes;
       setStatus('Authenticating...');
       const authResponse = await startAuthentication(options as never);
-      // Form POST → server 302 redirects to codedeck://auth?key=...
-      const cb = encodeURIComponent(callbackUrl);
-      submitViaForm(
-        `/api/auth/passkey/login/complete?native_callback=${cb}`,
-        { challengeId, response: authResponse },
-      );
+      setStatus('Getting API key...');
+      const res = await passkeyLoginCompleteNative(challengeId, authResponse);
+      setStatus('Redirecting...');
+      const url = buildCallbackUrl(res.apiKey, res.userId, res.keyId);
+      setCallbackLink(url);
+      navigateToCallback(url);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('NotAllowedError') || msg.toLowerCase().includes('not allowed')) {
@@ -78,7 +83,6 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
       }
       setLoading(false);
     }
-    // No finally setLoading(false) — form submission navigates away
   };
 
   useEffect(() => {
@@ -103,12 +107,20 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
       const { challengeId, ...options } = beginRes;
       setStatus('Registering...');
       const regResponse = await startRegistration(options as never);
-      // Form POST → server issues API key + 302 redirects
-      const cb = encodeURIComponent(callbackUrl);
-      submitViaForm(
-        `/api/auth/passkey/register/complete?native_callback=${cb}`,
-        { challengeId, response: regResponse, deviceName: deviceName.trim() || undefined },
-      );
+      setStatus('Saving...');
+      await passkeyRegisterComplete(challengeId, regResponse, deviceName.trim() || undefined);
+      // After registration, login to get API key
+      setStatus('Logging in...');
+      const beginRes2 = await passkeyLoginBegin();
+      const { challengeId: cid2, ...opts2 } = beginRes2;
+      setStatus('Authenticating...');
+      const authResponse = await startAuthentication(opts2 as never);
+      setStatus('Getting API key...');
+      const res = await passkeyLoginCompleteNative(cid2, authResponse);
+      setStatus('Redirecting...');
+      const url = buildCallbackUrl(res.apiKey, res.userId, res.keyId);
+      setCallbackLink(url);
+      navigateToCallback(url);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.toLowerCase().includes('cancel')) {
@@ -135,6 +147,18 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
         {error && (
           <div style={{ color: '#f87171', marginBottom: 16, textAlign: 'center', fontSize: 14, wordBreak: 'break-all' }}>
             {error}
+          </div>
+        )}
+
+        {/* Fallback: visible link if automatic redirect doesn't trigger callback */}
+        {callbackLink && (
+          <div style={{ marginBottom: 16, textAlign: 'center' }}>
+            <a
+              href={callbackLink}
+              style={{ color: '#60a5fa', fontSize: 14, textDecoration: 'underline' }}
+            >
+              Tap here if not redirected automatically
+            </a>
           </div>
         )}
 
