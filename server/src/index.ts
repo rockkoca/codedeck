@@ -108,7 +108,7 @@ export function buildApp(env: Env) {
   // Applied to both /api/* and /health so the native app can verify server reachability.
   const corsMiddleware = cors({
     origin: (origin) => {
-      const nativeOrigins = ['capacitor://localhost', 'http://localhost'];
+      const nativeOrigins = ['capacitor://localhost', 'https://localhost', 'http://localhost'];
       const configuredOrigins = [
         env.SERVER_URL,
         ...(env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
@@ -145,6 +145,16 @@ export function buildApp(env: Env) {
   app.route('/api/auth/passkey', passkeyRoutes);
 
   app.get('/health', (c) => c.json({ ok: true, ts: Date.now() }));
+
+  // Apple App Site Association — required for iOS Associated Domains (webcredentials) to work.
+  // Allows the Capacitor app (M675E26Q67.app.codedeck) to use passkeys in WKWebView.
+  app.get('/.well-known/apple-app-site-association', (c) => {
+    return c.json({
+      webcredentials: {
+        apps: ['M675E26Q67.app.codedeck'],
+      },
+    });
+  });
 
   // Security headers for HTML responses — added here since Caddy is a transparent proxy, not an edge.
   const SECURITY_HEADERS: Record<string, string> = {

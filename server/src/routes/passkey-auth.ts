@@ -44,14 +44,35 @@ function getRpInfo(c: Context<HonoEnv>): { rpId: string; origin: string } {
 }
 
 async function resolveAuthedUserId(c: Context<HonoEnv>): Promise<string | null> {
+  // Try rcc_session cookie first (browser)
   const cookieHeader = c.req.header('cookie') ?? '';
   const cookieMatch = cookieHeader.match(/(?:^|;\s*)rcc_session=([^;]+)/);
   const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : null;
-  if (!cookieToken || !c.env.JWT_SIGNING_KEY) return null;
-  const jwt = verifyJwt(cookieToken, c.env.JWT_SIGNING_KEY);
-  if (!jwt || typeof jwt.sub !== 'string' || jwt.type === 'ws-ticket') return null;
-  const user = await getUserById(c.env.DB, jwt.sub);
-  return user?.id ?? null;
+  if (cookieToken && c.env.JWT_SIGNING_KEY) {
+    const jwt = verifyJwt(cookieToken, c.env.JWT_SIGNING_KEY);
+    if (jwt && typeof jwt.sub === 'string' && jwt.type !== 'ws-ticket') {
+      const user = await getUserById(c.env.DB, jwt.sub);
+      if (user) return user.id;
+    }
+  }
+
+  // Try Bearer token (native app API key / CLI)
+  const auth = c.req.header('Authorization');
+  if (auth?.startsWith('Bearer ')) {
+    const bearerToken = auth.slice(7);
+    const jwt = verifyJwt(bearerToken, c.env.JWT_SIGNING_KEY);
+    if (jwt && typeof jwt.sub === 'string' && jwt.type !== 'ws-ticket') {
+      const user = await getUserById(c.env.DB, jwt.sub);
+      if (user) return user.id;
+    }
+    const keyHash = sha256Hex(bearerToken);
+    const row = await c.env.DB.prepare(
+      'SELECT user_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL',
+    ).bind(keyHash).first<{ user_id: string }>();
+    if (row) return row.user_id;
+  }
+
+  return null;
 }
 
 function setSessionCookies(c: Context<HonoEnv>, accessToken: string, refreshToken: string): void {
