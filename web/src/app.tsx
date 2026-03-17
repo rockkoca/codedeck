@@ -22,10 +22,16 @@ import { getActiveThinkingTs } from './thinking-utils.js';
 import { WsClient } from './ws-client.js';
 import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSessionIfStale, ApiError, configureApiKey, clearApiKey } from './api.js';
 import { isNative, getServerUrl } from './native.js';
-import { getAuthKey, clearAuthKey } from './biometric-auth.js';
+import { storeAuthKey, getAuthKey, clearAuthKey } from './biometric-auth.js';
 import { initPushNotifications } from './push-notifications.js';
 import { ServerSetupPage } from './pages/ServerSetupPage.js';
+import { NativeAuthBridge } from './pages/NativeAuthBridge.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
+
+// On web: if opened by the native app for passkey auth, render the bridge page.
+const nativeCallback = typeof window !== 'undefined'
+  ? new URLSearchParams(window.location.search).get('native_callback')
+  : null;
 
 type ViewMode = 'terminal' | 'chat';
 
@@ -128,6 +134,29 @@ export function App() {
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Native: listen for codedeck://auth?key=... callback from Safari passkey login.
+  useEffect(() => {
+    if (!isNative()) return;
+    let listener: { remove: () => void } | null = null;
+    import('@capacitor/app').then(({ App }) => {
+      App.addListener('appUrlOpen', async ({ url }) => {
+        if (!url.startsWith('codedeck://auth')) return;
+        const params = new URL(url).searchParams;
+        const key = params.get('key');
+        const userId = params.get('userId');
+        const baseUrl = nativeServerUrl;
+        if (!key || !userId || !baseUrl) return;
+        await storeAuthKey(key);
+        configureApiKey(key);
+        const authState: AuthState = { userId, baseUrl };
+        localStorage.setItem('rcc_auth', JSON.stringify(authState));
+        setAuth(authState);
+      }).then((l) => { listener = l; });
+    });
+    return () => { listener?.remove(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nativeServerUrl]);
 
   // Native: init push notifications after login
   useEffect(() => {
@@ -927,6 +956,12 @@ export function App() {
     historyApplyersRef.current.set(sessionName, apply);
   }, []);
 
+  // Web page opened by native app via ASWebAuthenticationSession for passkey login.
+  // Only allow codedeck:// callback to prevent open redirect attacks.
+  if (nativeCallback && nativeCallback.startsWith('codedeck://') && !isNative()) {
+    return <NativeAuthBridge callbackUrl={nativeCallback} />;
+  }
+
   if (!nativeReady) {
     return null; // Splash screen while reading biometric storage
   }
@@ -946,11 +981,6 @@ export function App() {
     return (
       <LoginPage
         serverUrl={nativeServerUrl}
-        onLoginSuccess={(userId, url) => {
-          const authState: AuthState = { userId, baseUrl: url };
-          localStorage.setItem('rcc_auth', JSON.stringify(authState));
-          setAuth(authState);
-        }}
         onChangeServer={isNative() ? () => setNativeServerUrl(null) : undefined}
       />
     );

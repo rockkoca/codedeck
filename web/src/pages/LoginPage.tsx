@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
 import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
-import { passkeyLoginBegin, passkeyLoginComplete, passkeyLoginCompleteNative, passkeyRegisterBegin, passkeyRegisterComplete, configureApiKey } from '../api.js';
+import { passkeyLoginBegin, passkeyLoginComplete, passkeyRegisterBegin, passkeyRegisterComplete } from '../api.js';
 import { isNative } from '../native.js';
-import { storeAuthKey } from '../biometric-auth.js';
+
+const NATIVE_CALLBACK = 'codedeck://auth';
 
 interface Props {
   onLogin?: () => void;
   serverUrl?: string | null;
-  onLoginSuccess?: (userId: string, serverUrl: string) => void;
   onChangeServer?: () => void;
 }
 
-export function LoginPage({ onLogin, serverUrl, onLoginSuccess, onChangeServer }: Props) {
+export function LoginPage({ onLogin, serverUrl, onChangeServer }: Props) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<'buttons' | 'register'>('buttons');
   const [displayName, setDisplayName] = useState('');
@@ -35,30 +35,26 @@ export function LoginPage({ onLogin, serverUrl, onLoginSuccess, onChangeServer }
   };
 
   const handlePasskeyLogin = async () => {
+    if (isNative() && serverUrl) {
+      // Native: open server login page in Safari (ASWebAuthenticationSession).
+      // Safari has the correct origin so passkeys work for any server domain.
+      // The result comes back via appUrlOpen listener in app.tsx.
+      const { Browser } = await import('@capacitor/browser');
+      const url = `${serverUrl}?native_callback=${encodeURIComponent(NATIVE_CALLBACK)}`;
+      await Browser.open({ url, windowName: '_self' });
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const beginRes = await passkeyLoginBegin();
       const { challengeId, ...options } = beginRes;
       const authResponse = await startAuthentication(options as never);
-
-      if (isNative() && serverUrl) {
-        // Native: get API key from server, store in biometric-protected storage
-        const res = await passkeyLoginCompleteNative(challengeId, authResponse);
-        await storeAuthKey(res.apiKey);
-        configureApiKey(res.apiKey);
-        const { Preferences } = await import('@capacitor/preferences');
-        await Preferences.set({ key: 'deck_api_key_id', value: res.keyId });
-        onLoginSuccess?.(res.userId, serverUrl);
-      } else {
-        // Web: server sets session cookie, reload to pick it up
-        await passkeyLoginComplete(challengeId, authResponse);
-        onLogin?.();
-        window.location.reload();
-      }
+      await passkeyLoginComplete(challengeId, authResponse);
+      onLogin?.();
+      window.location.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      // NotAllowedError = user dismissed OR no passkey found for this site
       if (msg.includes('NotAllowedError') || msg.toLowerCase().includes('not allowed')) {
         setError(t('login.passkey_not_found'));
       } else if (!msg.toLowerCase().includes('cancel')) {
@@ -124,7 +120,14 @@ export function LoginPage({ onLogin, serverUrl, onLoginSuccess, onChangeServer }
                 <button
                   class="btn btn-secondary"
                   style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}
-                  onClick={() => { setMode('register'); setError(null); }}
+                  onClick={async () => {
+                    if (isNative() && serverUrl) {
+                      const { Browser } = await import('@capacitor/browser');
+                      await Browser.open({ url: `${serverUrl}?native_callback=${encodeURIComponent(NATIVE_CALLBACK)}`, windowName: '_self' });
+                    } else {
+                      setMode('register'); setError(null);
+                    }
+                  }}
                   disabled={loading}
                 >
                   {t('login.passkey_create')}
