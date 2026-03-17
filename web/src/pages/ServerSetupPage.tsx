@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
 import { useTranslation } from 'react-i18next';
-import { DEFAULT_SERVER_URL, isValidServerUrl, setServerUrl, getServerList, addServerToList, removeServerFromList } from '../native.js';
+import { DEFAULT_SERVER_URL, isNative, isValidServerUrl, setServerUrl, getServerList, addServerToList, removeServerFromList } from '../native.js';
 
 interface Props {
   onConnect: (serverUrl: string) => void;
@@ -25,8 +25,14 @@ export function ServerSetupPage({ onConnect }: Props) {
     setConnecting(url);
     setError(null);
     try {
-      const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) throw new Error('not_ok');
+      if (isNative()) {
+        // Native: use no-cors to bypass CORS restrictions (cross-origin self-hosted servers).
+        // Response is opaque but a successful fetch confirms reachability.
+        await fetch(`${url}/health`, { signal: AbortSignal.timeout(8000), mode: 'no-cors' });
+      } else {
+        const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(8000) });
+        if (!res.ok) throw new Error('not_ok');
+      }
       await addServerToList(url);
       await setServerUrl(url);
       onConnect(url);

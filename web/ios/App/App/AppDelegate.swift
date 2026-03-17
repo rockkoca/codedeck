@@ -7,7 +7,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Register local Capacitor plugins after the bridge initializes
+        DispatchQueue.main.async {
+            if let vc = self.window?.rootViewController as? CAPBridgeViewController {
+                vc.bridge?.registerPluginInstance(AuthSessionPlugin())
+            }
+        }
         return true
     }
 
