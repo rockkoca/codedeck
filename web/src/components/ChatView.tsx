@@ -25,6 +25,8 @@ interface Props {
   ws?: WsClient | null;
   /** Called when user inserts a path via the FileBrowser opened from a chat message */
   onInsertPath?: (path: string) => void;
+  /** Session working directory — used to resolve relative paths clicked in chat */
+  workdir?: string | null;
 }
 
 /** A merged view item — either a single event, merged assistant text, or collapsed tool group. */
@@ -186,7 +188,7 @@ interface SelectionMenu {
   text: string;
 }
 
-export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview, ws, onInsertPath }: Props) {
+export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview, ws, onInsertPath, workdir }: Props) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -417,8 +419,16 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
           ws={ws}
           mode="file-single"
           layout="modal"
-          initialPath={fileBrowserPath.includes('.') && !fileBrowserPath.endsWith('/') ? fileBrowserPath.split('/').slice(0, -1).join('/') || '~' : fileBrowserPath}
-          highlightPath={fileBrowserPath}
+          initialPath={(() => {
+            const isAbsolute = fileBrowserPath.startsWith('/') || fileBrowserPath.startsWith('~');
+            const resolved = isAbsolute ? fileBrowserPath : `${workdir ?? '~'}/${fileBrowserPath}`;
+            return resolved.includes('.') && !resolved.endsWith('/')
+              ? resolved.split('/').slice(0, -1).join('/') || '~'
+              : resolved;
+          })()}
+          highlightPath={fileBrowserPath.startsWith('/') || fileBrowserPath.startsWith('~')
+            ? fileBrowserPath
+            : `${workdir ?? '~'}/${fileBrowserPath}`}
           onConfirm={(paths) => {
             if (paths[0]) onInsertPath?.(paths[0]);
             setFileBrowserPath(null);
@@ -638,8 +648,10 @@ function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
-// Regex to detect Unix absolute paths in plain text
-const PATH_REGEX = /(\/(?:[\w.\-~][\w.\-~/]*)?)/g;
+// Matches absolute paths (/foo/bar) and relative paths (docs/file.md, src/components/Foo.tsx).
+// Relative paths must start with a letter/underscore/tilde and contain at least one slash segment.
+// Negative lookbehind avoids matching inside URLs (http://...) or after other path chars.
+const PATH_REGEX = /(\/[\w.\-~][\w.\-~/]*|(?<![:/\w])[a-zA-Z_~][\w.\-~]*(?:\/[\w.\-~]+)+)/g;
 
 /** Split a plain-text segment into runs of path and non-path text. */
 function splitPaths(text: string, onPathClick?: (p: string) => void): h.JSX.Element[] {
