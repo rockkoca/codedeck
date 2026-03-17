@@ -188,11 +188,18 @@ interface SelectionMenu {
   text: string;
 }
 
-const FILE_PANEL_WIDTH_KEY = 'chatFilePanelWidth';
-const FILE_PANEL_OPEN_KEY = 'chatFilePanelOpen';
 const FILE_PANEL_MIN = 220;
 const FILE_PANEL_MAX = 900;
 const FILE_PANEL_DEFAULT = 340;
+const panelWidthKey = (id: string | null | undefined) => `chatFilePanelWidth:${id ?? '_'}`;
+const panelOpenKey  = (id: string | null | undefined) => `chatFilePanelOpen:${id ?? '_'}`;
+
+function readPanelWidth(id: string | null | undefined): number {
+  try { return parseInt(localStorage.getItem(panelWidthKey(id)) ?? String(FILE_PANEL_DEFAULT), 10); } catch { return FILE_PANEL_DEFAULT; }
+}
+function readPanelOpen(id: string | null | undefined): boolean {
+  try { return localStorage.getItem(panelOpenKey(id)) === '1'; } catch { return false; }
+}
 
 export function ChatView({ events, loading, refreshing, sessionState, sessionId, onScrollBottomFn, preview, ws, onInsertPath, workdir }: Props) {
   const { t } = useTranslation();
@@ -209,13 +216,11 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   const [filePanelRefreshTrigger, setFilePanelRefreshTrigger] = useState(0);
   const lastToolCallTsRef = useRef(0);
   useEffect(() => {
-    // Find the latest tool.call event timestamp
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i];
       if (e.type === 'tool.call') {
         if (e.ts > lastToolCallTsRef.current) {
           lastToolCallTsRef.current = e.ts;
-          // Delay 1s to let the tool finish before refreshing git status
           const id = setTimeout(() => setFilePanelRefreshTrigger((n) => n + 1), 1000);
           return () => clearTimeout(id);
         }
@@ -224,24 +229,29 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
     }
   }, [events]);
 
-  // Split-screen file panel
-  const [showFilePanel, setShowFilePanel] = useState(() => {
-    try { return localStorage.getItem(FILE_PANEL_OPEN_KEY) === '1'; } catch { return false; }
-  });
-  const [filePanelWidth, setFilePanelWidth] = useState(() => {
-    try { return parseInt(localStorage.getItem(FILE_PANEL_WIDTH_KEY) ?? String(FILE_PANEL_DEFAULT), 10); } catch { return FILE_PANEL_DEFAULT; }
-  });
+  // Split-screen file panel — width and open state are per-session
+  const [showFilePanel, setShowFilePanel] = useState(() => readPanelOpen(sessionId));
+  const [filePanelWidth, setFilePanelWidth] = useState(() => readPanelWidth(sessionId));
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const filePanelWidthRef = useRef(filePanelWidth);
   filePanelWidthRef.current = filePanelWidth;
 
+  // Re-load per-session values when sessionId changes
+  const prevSessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    if (sessionId === prevSessionIdRef.current) return;
+    prevSessionIdRef.current = sessionId;
+    setShowFilePanel(readPanelOpen(sessionId));
+    setFilePanelWidth(readPanelWidth(sessionId));
+  }, [sessionId]);
+
   const toggleFilePanel = useCallback(() => {
     setShowFilePanel((v) => {
       const next = !v;
-      try { localStorage.setItem(FILE_PANEL_OPEN_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+      try { localStorage.setItem(panelOpenKey(sessionId), next ? '1' : '0'); } catch { /* ignore */ }
       return next;
     });
-  }, []);
+  }, [sessionId]);
 
   const onDragStart = useCallback((e: MouseEvent) => {
     e.preventDefault();
@@ -253,14 +263,14 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
       setFilePanelWidth(newW);
     };
     const onUp = () => {
-      try { localStorage.setItem(FILE_PANEL_WIDTH_KEY, String(filePanelWidthRef.current)); } catch { /* ignore */ }
+      try { localStorage.setItem(panelWidthKey(sessionId), String(filePanelWidthRef.current)); } catch { /* ignore */ }
       dragStateRef.current = null;
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  }, []);
+  }, [sessionId]);
 
   const viewItems = useMemo(() => buildViewItems(events), [events]);
 
