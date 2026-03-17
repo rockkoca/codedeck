@@ -429,6 +429,9 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
           highlightPath={fileBrowserPath.startsWith('/') || fileBrowserPath.startsWith('~')
             ? fileBrowserPath
             : `${workdir ?? '~'}/${fileBrowserPath}`}
+          autoPreviewPath={fileBrowserPath.startsWith('/') || fileBrowserPath.startsWith('~')
+            ? fileBrowserPath
+            : `${workdir ?? '~'}/${fileBrowserPath}`}
           onConfirm={(paths) => {
             if (paths[0]) onInsertPath?.(paths[0]);
             setFileBrowserPath(null);

@@ -124,6 +124,8 @@ export interface FileBrowserProps {
   initialPath?: string;
   /** When set, pre-select this path on open (file-single / dir-only) */
   highlightPath?: string;
+  /** When set, automatically open the file preview on mount (skips manual click) */
+  autoPreviewPath?: string;
   /** Paths already inserted — shown with a badge to avoid duplicates */
   alreadyInserted?: string[];
   onConfirm: (paths: string[]) => void;
@@ -162,6 +164,7 @@ export function FileBrowser({
   layout,
   initialPath,
   highlightPath,
+  autoPreviewPath,
   alreadyInserted = [],
   onConfirm,
   onClose,
@@ -302,6 +305,11 @@ export function FileBrowser({
 
   // Load root on mount
   useEffect(() => { fetchDir(startPath); }, [startPath]);
+
+  // Auto-preview file on open (e.g. when clicking a path link in chat)
+  useEffect(() => {
+    if (autoPreviewPath) fetchPreview(autoPreviewPath);
+  }, [autoPreviewPath, fetchPreview]);
 
   // Reload tree when showHidden changes
   useEffect(() => {
