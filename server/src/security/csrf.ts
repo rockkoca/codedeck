@@ -53,12 +53,9 @@ export function csrfMiddleware() {
         logger.warn({ path, hasCookie: !!csrfCookie, hasHeader: !!csrfHeader }, '[csrf] token mismatch — rejecting');
         return c.json({ error: 'csrf_rejected', reason: 'token_mismatch' }, 403);
       }
-    } else if (rawOrigin) {
-      // No cookie session but Origin present — still validate it
-      if (!validateOrigin(rawOrigin, c.env)) {
-        return c.json({ error: 'csrf_rejected', reason: 'invalid_origin' }, 403);
-      }
     }
+    // No session cookie → nothing to CSRF-attack. Skip origin validation.
+    // Endpoints like passkey auth use challenge-response which is stronger than CSRF.
 
     await next();
   };
