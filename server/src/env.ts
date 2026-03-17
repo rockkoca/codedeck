@@ -26,6 +26,15 @@ export interface EnvConfig {
    * Example: 10.0.0.0/8,172.16.0.0/12 */
   TRUSTED_PROXIES?: string;
 
+  /** Header name that carries the real client IP injected by the CDN/proxy.
+   * Default: cf-connecting-ip (Cloudflare). Use x-real-ip or similar for other CDNs. */
+  REAL_IP_HEADER?: string;
+
+  /** Header name that carries the original client-facing hostname set by an upstream proxy.
+   * Default: x-original-host. Cloudflare overwrites X-Forwarded-Host, so a separate
+   * header (set by e.g. Caddy) is needed to preserve the real domain. */
+  ORIGINAL_HOST_HEADER?: string;
+
   // Network
   /** Host to bind the HTTP server on. Default: 0.0.0.0 (logs a warning). */
   BIND_HOST?: string;
@@ -62,6 +71,8 @@ export function loadEnv(): EnvConfig {
     SERVER_URL: process.env.SERVER_URL ?? `http://localhost:${process.env.PORT ?? 3000}`,
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     TRUSTED_PROXIES: process.env.TRUSTED_PROXIES,
+    REAL_IP_HEADER: process.env.REAL_IP_HEADER,
+    ORIGINAL_HOST_HEADER: process.env.ORIGINAL_HOST_HEADER,
     BIND_HOST: process.env.BIND_HOST,
     PORT: process.env.PORT,
     NODE_ENV: process.env.NODE_ENV,

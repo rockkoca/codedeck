@@ -66,8 +66,10 @@ export function buildApp(env: Env) {
   });
 
   // Extract real client IP.
-  // Priority: CF-Connecting-IP (set by Cloudflare, not spoofable) → XFF via trusted proxies → socket IP.
+  // Priority: REAL_IP_HEADER (CDN-injected, default cf-connecting-ip) → XFF via trusted proxies → socket IP.
   // Runs once per request; routes read c.get('clientIp') — never raw headers.
+  const realIpHeader = env.REAL_IP_HEADER ?? 'cf-connecting-ip';
+  const originalHostHeader = env.ORIGINAL_HOST_HEADER ?? 'x-original-host';
   const trust = proxyAddr.compile(
     env.TRUSTED_PROXIES
       ? env.TRUSTED_PROXIES.split(',').map((s) => s.trim()).filter(Boolean)
@@ -76,12 +78,11 @@ export function buildApp(env: Env) {
   app.use('*', async (c, next) => {
     let socketIp = '127.0.0.1';
     try { socketIp = getConnInfo(c).remote.address ?? '127.0.0.1'; } catch { /* test or non-node context */ }
-    // CF-Connecting-IP is injected by Cloudflare and cannot be spoofed by clients
-    // (Cloudflare strips any client-supplied CF-Connecting-IP before adding its own).
-    const cfIp = c.req.header('cf-connecting-ip');
+    // REAL_IP_HEADER is injected by the CDN/proxy and cannot be spoofed by clients.
+    const cdnIp = c.req.header(realIpHeader);
     let clientIp: string;
-    if (cfIp) {
-      clientIp = cfIp.trim();
+    if (cdnIp) {
+      clientIp = cdnIp.trim();
     } else {
       const xff = c.req.header('x-forwarded-for');
       const fakeReq = { socket: { remoteAddress: socketIp }, headers: { 'x-forwarded-for': xff } };
@@ -89,12 +90,12 @@ export function buildApp(env: Env) {
     }
     c.set('clientIp' as never, clientIp);
 
-    // Resolve trusted host: only honour x-forwarded-host when the request
+    // Resolve trusted host: only honour forwarded-host headers when the request
     // arrived through a trusted proxy (clientIp differs from socketIp).
     const fromTrustedProxy = clientIp !== socketIp;
-    // Cloudflare overwrites X-Forwarded-Host with its own hostname; use X-Original-Host (set by
-    // upstream Caddy proxy) which CF passes through unchanged.
-    const fwdHost = c.req.header('x-original-host') ?? c.req.header('x-forwarded-host');
+    // ORIGINAL_HOST_HEADER (default: x-original-host) is set by upstream proxies (e.g. Caddy)
+    // and preserved by Cloudflare, which overwrites the standard X-Forwarded-Host with its own hostname.
+    const fwdHost = c.req.header(originalHostHeader) ?? c.req.header('x-forwarded-host');
     const resolvedHost = (fromTrustedProxy && fwdHost) ? fwdHost : (c.req.header('host') ?? null);
     c.set('resolvedHost' as never, resolvedHost);
 
