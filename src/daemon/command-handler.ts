@@ -998,16 +998,29 @@ async function handleFsGitDiff(cmd: Record<string, unknown>, serverLink: ServerL
     }
 
     const dir = nodePath.dirname(real);
-    // Try staged+unstaged diff vs HEAD; fall back to index diff
+    // Try staged+unstaged diff vs HEAD; fall back to index diff; then untracked diff
     let diff = '';
     try {
       const { stdout } = await execAsync(`git diff HEAD -- ${JSON.stringify(real)}`, { cwd: dir, timeout: 5000 });
       diff = stdout;
-    } catch {
+    } catch { /* ignore */ }
+    if (!diff) {
       try {
         const { stdout } = await execAsync(`git diff -- ${JSON.stringify(real)}`, { cwd: dir, timeout: 5000 });
         diff = stdout;
-      } catch { /* empty diff */ }
+      } catch { /* ignore */ }
+    }
+    // For untracked files, generate a diff against /dev/null
+    if (!diff) {
+      try {
+        const { stdout } = await execAsync(`git diff --no-index -- /dev/null ${JSON.stringify(real)}`, { cwd: dir, timeout: 5000 });
+        diff = stdout;
+      } catch (e) {
+        // git diff --no-index exits with code 1 when files differ (normal), stdout still has diff
+        if (e && typeof e === 'object' && 'stdout' in e && typeof (e as { stdout: unknown }).stdout === 'string') {
+          diff = (e as { stdout: string }).stdout;
+        }
+      }
     }
     try { serverLink.send({ type: 'fs.git_diff_response', requestId, path: rawPath, resolvedPath: real, status: 'ok', diff }); } catch { /* ignore */ }
   } catch (err) {
