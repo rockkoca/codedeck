@@ -617,10 +617,6 @@ export function FileBrowser({
 
   const footer = hideFooter ? null : (
     <div class="fb-footer">
-      <label class="fb-hidden-toggle">
-        <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden((e.target as HTMLInputElement).checked)} />
-        {' '}{t('file_browser.show_hidden')}
-      </label>
       {isMulti && selectedPaths.size > 0 && (
         <span class="fb-count">{t('file_browser.selected_count', { count: selectedPaths.size })}</span>
       )}
@@ -734,6 +730,10 @@ export function FileBrowser({
         })}
       </div>
       {error && <span class="fb-error-inline">{error}</span>}
+      <label class="fb-nav-hidden-toggle" title={t('file_browser.show_hidden')}>
+        <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden((e.target as HTMLInputElement).checked)} />
+        {' ·'}
+      </label>
     </div>
   );
 
