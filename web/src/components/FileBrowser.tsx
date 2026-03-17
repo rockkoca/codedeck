@@ -213,7 +213,7 @@ export function FileBrowser({
   // Panel view: 'files' shows tree + changes section; 'changes' shows only changed files
   const [panelView, setPanelView] = useState<'files' | 'changes'>('files');
   const [changesFiles, setChangesFiles] = useState<Array<{ path: string; code: string }>>([]);
-  const pendingChangesRef = useRef<string | null>(null); // requestId for changesRootPath git status
+  const pendingChangesRef = useRef(new Set<string>()); // all in-flight changesRootPath git status requestIds
 
   const loadedRef = useRef(new Set<string>());
   const pendingRef = useRef(new Map<string, string>()); // requestId → nodeId
@@ -236,6 +236,7 @@ export function FileBrowser({
       pendingReadRef.current.clear();
       pendingGitStatusRef.current.clear();
       pendingGitDiffRef.current.clear();
+      pendingChangesRef.current.clear();
       if (pendingChangesTimerRef.current) clearTimeout(pendingChangesTimerRef.current);
       for (const timer of timersRef.current.values()) clearTimeout(timer);
       timersRef.current.clear();
@@ -319,9 +320,9 @@ export function FileBrowser({
       }
 
       if (msg.type === 'fs.git_status_response') {
-        // Check if this is the changesRootPath request
-        if (pendingChangesRef.current === msg.requestId) {
-          pendingChangesRef.current = null;
+        // Check if this is a changesRootPath request
+        if (pendingChangesRef.current.has(msg.requestId)) {
+          pendingChangesRef.current.delete(msg.requestId);
           if (msg.status === 'ok' && msg.files) {
             setChangesFiles(msg.files);
             // Also update modifiedFiles map for tree indicators
@@ -461,7 +462,7 @@ export function FileBrowser({
     if (elapsed >= CHANGES_RATE_LIMIT_MS) {
       lastChangesRefreshRef.current = now;
       const requestId = ws.fsGitStatus(changesRootPath);
-      pendingChangesRef.current = requestId;
+      pendingChangesRef.current.add(requestId);
     } else {
       // Schedule for when rate limit clears
       if (pendingChangesTimerRef.current) clearTimeout(pendingChangesTimerRef.current);
@@ -469,7 +470,7 @@ export function FileBrowser({
         if (!mountedRef.current) return;
         lastChangesRefreshRef.current = Date.now();
         const requestId = ws.fsGitStatus(changesRootPath);
-        pendingChangesRef.current = requestId;
+        pendingChangesRef.current.add(requestId);
       }, CHANGES_RATE_LIMIT_MS - elapsed);
     }
   }, [changesRootPath, ws]);
@@ -655,7 +656,7 @@ export function FileBrowser({
         {changesRootPath && (
           <button class="fb-changes-refresh" onClick={() => {
             const requestId = ws.fsGitStatus(changesRootPath!);
-            pendingChangesRef.current = requestId;
+            pendingChangesRef.current.add(requestId);
           }} title="Refresh">↻</button>
         )}
       </div>
