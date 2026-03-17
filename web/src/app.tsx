@@ -1044,7 +1044,7 @@ export function App() {
 
             {/* Chat view for active session in chat mode */}
             {activeSession && viewMode === 'chat' && (
-              <ChatView events={timelineEvents} loading={timelineLoading} refreshing={timelineRefreshing} sessionId={activeSession} sessionState={activeSessionInfo?.state} onScrollBottomFn={setChatScrollFn} workdir={activeSessionInfo?.projectDir} />
+              <ChatView events={timelineEvents} loading={timelineLoading} refreshing={timelineRefreshing} sessionId={activeSession} sessionState={activeSessionInfo?.state} onScrollBottomFn={setChatScrollFn} workdir={activeSessionInfo?.projectDir} ws={wsRef.current} />
             )}
 
             {!activeSession && !sessionsLoaded && (
