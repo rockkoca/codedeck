@@ -321,6 +321,8 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
           mode="file-multi"
           layout="panel"
           initialPath={activeSession.projectDir ?? '~'}
+          changesRootPath={activeSession.projectDir ?? undefined}
+          hideFooter={false}
           onConfirm={(paths) => {
             const cwd = activeSession.projectDir;
             const rel = cwd
