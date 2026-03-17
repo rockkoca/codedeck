@@ -89,8 +89,11 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
   const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
 
+  const [genError, setGenError] = useState<string | null>(null);
+
   const handleGenerate = async () => {
     setGenerating(true);
+    setGenError(null);
     try {
       const body = newLabel.trim() ? { label: newLabel.trim() } : {};
       const res = await apiFetch<{ id: string; apiKey: string }>('/api/auth/user/me/keys', {
@@ -101,7 +104,9 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
       setNewLabel('');
       onKeysChanged();
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error('Failed to generate key:', err);
+      setGenError(msg);
     } finally {
       setGenerating(false);
     }
@@ -151,6 +156,13 @@ export function ApiKeyManager({ keys, onKeysChanged }: Props) {
           <button class="btn btn-secondary" style={{ marginTop: 8, fontSize: 12 }} onClick={() => setNewKey(null)}>
             Dismiss
           </button>
+        </div>
+      )}
+
+      {/* Generate error */}
+      {genError && (
+        <div style={{ color: '#f87171', marginBottom: 12, fontSize: 13, wordBreak: 'break-all' }}>
+          [Error] {genError}
         </div>
       )}
 

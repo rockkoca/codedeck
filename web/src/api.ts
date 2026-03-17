@@ -5,7 +5,7 @@
  */
 
 let _baseUrl = '';
-let _onAuthExpired: (() => void) | null = null;
+let _onAuthExpired: ((reason?: string) => void) | null = null;
 let _apiKey: string | null = null;
 
 /** Set a Bearer API key for native app auth (replaces cookie+CSRF). */
@@ -18,7 +18,7 @@ export function configure(baseUrl: string): void {
 }
 
 /** Register a callback invoked when the session expires and refresh fails. */
-export function onAuthExpired(cb: () => void): void {
+export function onAuthExpired(cb: (reason?: string) => void): void {
   _onAuthExpired = cb;
 }
 
@@ -88,6 +88,8 @@ const RETRY_REFRESH_MS = 30 * 1000; // retry failed refresh after 30s
 
 /** Start proactive token refresh timer. Call when user logs in. */
 export function startProactiveRefresh(): void {
+  // Native app uses Bearer API key — no cookie session to refresh.
+  if (_apiKey) return;
   stopProactiveRefresh();
   // Refresh immediately, but only if we haven't refreshed recently.
   // This prevents the double-refresh when auth state updates twice on startup
@@ -139,7 +141,10 @@ async function rawFetch(path: string, opts: RequestInit = {}): Promise<Response>
       if (csrf) headers.set('X-CSRF-Token', csrf);
     }
   }
-  return fetch(`${_baseUrl}${path}`, { ...opts, headers, credentials: 'include' });
+  // Native (Bearer auth): omit credentials — no cookies needed, and 'include' would
+  // require Access-Control-Allow-Credentials from the server (cross-origin from capacitor://).
+  // Web (cookie auth): include credentials so HttpOnly cookies are sent.
+  return fetch(`${_baseUrl}${path}`, { ...opts, headers, credentials: _apiKey ? 'omit' : 'include' });
 }
 
 export async function apiFetch<T = unknown>(
@@ -178,7 +183,7 @@ export async function apiFetch<T = unknown>(
     }
     // Both attempts failed — session truly expired
     console.warn(`[auth] LOGOUT: refresh failed twice for ${path}, triggering onAuthExpired`);
-    _onAuthExpired?.();
+    _onAuthExpired?.(`401 on ${path} — refresh failed twice`);
     throw new ApiError(401, 'session_expired');
   }
 

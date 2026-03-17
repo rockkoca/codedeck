@@ -59,10 +59,18 @@ export function GettingStarted({ keys, onKeyCreated, onDeviceAppeared }: Props) 
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Use the server URL (not window.location.origin which is https://localhost on native)
+  const serverUrl = (() => {
+    try {
+      const raw = localStorage.getItem('rcc_auth');
+      if (raw) return (JSON.parse(raw) as { baseUrl: string }).baseUrl;
+    } catch { /* ignore */ }
+    return window.location.origin;
+  })();
   const bindUrl = apiKey
-    ? `${window.location.origin}/bind/${apiKey}`
+    ? `${serverUrl}/bind/${apiKey}`
     : existingKey
-      ? `${window.location.origin}/bind/<your-api-key>`
+      ? `${serverUrl}/bind/<your-api-key>`
       : '';
   const fullCmd = bindUrl
     ? `npm i -g codedeck && codedeck bind ${bindUrl}`

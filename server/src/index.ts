@@ -289,6 +289,9 @@ function setupWebSocketUpgrade(server: import('node:http').Server, env: Env) {
 }
 
 function validateOrigin(origin: string, env: Env): boolean {
+  // Allow Capacitor native WebView origins (matches CORS middleware)
+  const nativeOrigins = ['capacitor://localhost', 'https://localhost', 'http://localhost'];
+  if (nativeOrigins.includes(origin)) return true;
   if (!env.ALLOWED_ORIGINS) return env.NODE_ENV === 'development';
   return env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).includes(origin);
 }

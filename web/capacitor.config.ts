@@ -5,9 +5,7 @@ const config: CapacitorConfig = {
   appName: 'CodeDeck',
   webDir: 'dist',
   server: {
-    // hostname must match the passkey rpId (app.codedeck.org) so WebAuthn works in WKWebView.
-    // Without this, the WebView origin is capacitor://localhost which doesn't match the rpId.
-    hostname: 'app.codedeck.org',
+    iosScheme: 'https',
     androidScheme: 'https',
     // During development, point to the Vite dev server for live reload.
     // Comment out for production builds.
