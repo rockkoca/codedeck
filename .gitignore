@@ -25,6 +25,9 @@ scripts/deploy.sh
 # Discussion and plans (private)
 docs/plan/
 
+# Server deployment config — contains IPs, domains, env var values (private)
+docs/*.local.md
+
 # Agent memory and skills (private)
 .claude/
 .codex/
