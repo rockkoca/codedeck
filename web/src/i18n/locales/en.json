@@ -148,6 +148,18 @@
     "or": "or",
     "github_signin": "Sign in with GitHub"
   },
+  "serverSetup": {
+    "title": "Choose a Server",
+    "description": "Enter your CodeDeck server address",
+    "placeholder": "https://your-server.com",
+    "connect": "Connect",
+    "useDefault": "Use default server",
+    "verifying": "Verifying...",
+    "error": "Cannot reach server. Check the URL and try again.",
+    "errorNotHttps": "Server URL must use HTTPS",
+    "changeServer": "Change Server",
+    "addServer": "+ Add Server"
+  },
   "passkey": {
     "title": "Passkeys",
     "none": "No passkeys registered",

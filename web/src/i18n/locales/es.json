@@ -148,6 +148,18 @@
     "or": "o",
     "github_signin": "Iniciar sesión con GitHub"
   },
+  "serverSetup": {
+    "title": "Elegir servidor",
+    "description": "Ingresa la dirección de tu servidor CodeDeck",
+    "placeholder": "https://your-server.com",
+    "connect": "Conectar",
+    "useDefault": "Usar servidor predeterminado",
+    "verifying": "Verificando...",
+    "error": "No se puede alcanzar el servidor. Verifica la URL e intenta de nuevo.",
+    "errorNotHttps": "La URL del servidor debe usar HTTPS",
+    "changeServer": "Cambiar servidor",
+    "addServer": "+ Agregar servidor"
+  },
   "passkey": {
     "title": "Passkeys",
     "none": "No hay passkeys registradas",

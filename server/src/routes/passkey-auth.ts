@@ -290,6 +290,21 @@ passkeyRoutes.post('/login/complete', async (c) => {
   const ip = (c.get('clientIp' as never) as string | undefined) ?? 'unknown';
   await logAudit({ userId: user.id, action: 'auth.passkey.login', ip, details: { credentialId: storedCred.id } }, c.env.DB);
 
+  const isNativeReq = c.req.query('native') === '1';
+
+  if (isNativeReq) {
+    // Native app: return a persistent API key instead of setting session cookies.
+    // The client stores this key in biometric-protected storage.
+    const rawKey = `deck_${randomHex(32)}`;
+    const keyHash = sha256Hex(rawKey);
+    const keyId = randomHex(16);
+    const now = Date.now();
+    await c.env.DB.prepare(
+      'INSERT INTO api_keys (id, user_id, key_hash, label, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).bind(keyId, user.id, keyHash, 'mobile-app', now).run();
+    return c.json({ ok: true, userId: user.id, apiKey: rawKey, keyId });
+  }
+
   const accessToken = signJwt({ sub: user.id }, c.env.JWT_SIGNING_KEY, 4 * 3600);
   const refreshToken = randomHex(32);
   await storeRefreshToken(c.env.DB, user.id, sha256Hex(refreshToken));

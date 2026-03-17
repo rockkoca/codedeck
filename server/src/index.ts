@@ -39,6 +39,7 @@ import { WsBridge } from './ws/bridge.js';
 import { MemoryRateLimiter } from './ws/rate-limiter.js';
 import { rateLimiter } from './security/lockout.js';
 import { csrfMiddleware } from './security/csrf.js';
+import { cors } from 'hono/cors';
 import { verifyJwt } from './security/crypto.js';
 import { resolveServerRole } from './security/authorization.js';
 import logger from './util/logger.js';
@@ -102,7 +103,28 @@ export function buildApp(env: Env) {
     await next();
   });
 
-  // Task 4: CSRF protection for all API write operations (skips Bearer auth and safe methods)
+  // CORS: allow Capacitor native WebView (capacitor://localhost) to access the API.
+  // Web same-origin requests never trigger preflight, so this only affects native clients.
+  // Applied to both /api/* and /health so the native app can verify server reachability.
+  const corsMiddleware = cors({
+    origin: (origin) => {
+      const nativeOrigins = ['capacitor://localhost', 'http://localhost'];
+      const configuredOrigins = [
+        env.SERVER_URL,
+        ...(env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+      ];
+      const all = [...configuredOrigins, ...nativeOrigins];
+      // Non-whitelisted origins get no Access-Control-Allow-Origin header
+      return all.includes(origin) ? origin : '';
+    },
+    allowHeaders: ['Authorization', 'Content-Type', 'X-CSRF-Token'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    credentials: false,
+  });
+  app.use('/api/*', corsMiddleware);
+  app.use('/health', corsMiddleware);
+
+  // CSRF protection for all API write operations (skips Bearer auth and safe methods)
   app.use('/api/*', csrfMiddleware());
 
   app.route('/api/auth', authRoutes);

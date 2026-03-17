@@ -20,7 +20,11 @@ import { useSubSessions } from './hooks/useSubSessions.js';
 import { useTimeline } from './hooks/useTimeline.js';
 import { getActiveThinkingTs } from './thinking-utils.js';
 import { WsClient } from './ws-client.js';
-import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSessionIfStale, ApiError } from './api.js';
+import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSessionIfStale, ApiError, configureApiKey, clearApiKey } from './api.js';
+import { isNative, getServerUrl } from './native.js';
+import { getAuthKey, clearAuthKey } from './biometric-auth.js';
+import { initPushNotifications } from './push-notifications.js';
+import { ServerSetupPage } from './pages/ServerSetupPage.js';
 import type { SessionInfo, TerminalDiff } from './types.js';
 
 type ViewMode = 'terminal' | 'chat';
@@ -57,6 +61,10 @@ export function App() {
     }
   });
 
+  // Native: server URL state and readiness flag
+  const [nativeServerUrl, setNativeServerUrl] = useState<string | null>(null);
+  const [nativeReady, setNativeReady] = useState(!isNative()); // web is immediately ready
+
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(
     () => localStorage.getItem('rcc_server'),
@@ -83,6 +91,52 @@ export function App() {
     return () => vv.removeEventListener('resize', update);
   }, []);
 
+  // Native: initialize server URL and API key from Preferences storage
+  useEffect(() => {
+    if (!isNative()) return;
+    // Set status bar to match app background
+    import('@capacitor/status-bar').then(({ StatusBar, Style }) => {
+      StatusBar.setStyle({ style: Style.Dark });
+      StatusBar.setBackgroundColor({ color: '#0f172a' });
+    }).catch(() => {});
+    (async () => {
+      try {
+        const url = await getServerUrl();
+        setNativeServerUrl(url);
+        if (url) configureApi(url);
+
+        const storedKey = url ? await getAuthKey() : null;
+        if (storedKey) {
+          configureApiKey(storedKey);
+          try {
+            const user = await apiFetch<{ id: string }>('/api/auth/user/me');
+            const authState: AuthState = { userId: user.id, baseUrl: url! };
+            localStorage.setItem('rcc_auth', JSON.stringify(authState));
+            setAuth(authState);
+          } catch {
+            clearApiKey();
+            await clearAuthKey();
+          }
+        }
+      } catch (e) {
+        console.error('[native] init error:', e);
+      } finally {
+        setNativeReady(true);
+        // Hide splash screen now that we've decided what to show
+        import('@capacitor/splash-screen').then(({ SplashScreen }) => SplashScreen.hide()).catch(() => {});
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Native: init push notifications after login
+  useEffect(() => {
+    if (!auth || !isNative()) return;
+    getAuthKey().then((key) => {
+      if (key) initPushNotifications(key, auth.baseUrl).catch(console.warn);
+    });
+  }, [auth]);
+
   // When session expires mid-session (refresh failed), clear auth and show login.
   // Registered once so any apiFetch 401 after refresh failure lands here.
   useEffect(() => {
@@ -96,6 +150,7 @@ export function App() {
   // Verify session via /api/auth/user/me on mount (cookie-based auth)
   // Also handles post-OAuth redirect: cookie was set by server, we just need to confirm.
   useEffect(() => {
+    if (isNative()) return; // native uses biometric auth flow above
     const baseUrl = window.location.origin;
     configureApi(baseUrl);
     console.warn('[auth] mount: verifying session via /api/auth/user/me');
@@ -772,9 +827,23 @@ export function App() {
   }, [activeSession, connected]);
 
   const handleLogout = useCallback(async () => {
-    try {
-      await apiFetch('/api/auth/logout', { method: 'POST' });
-    } catch { /* ignore — clear local state regardless */ }
+    if (isNative()) {
+      // Native: revoke API key server-side, clear biometric storage
+      try {
+        const { Preferences } = await import('@capacitor/preferences');
+        const { value: keyId } = await Preferences.get({ key: 'deck_api_key_id' });
+        if (keyId) {
+          await apiFetch(`/api/auth/user/me/keys/${keyId}`, { method: 'DELETE' }).catch(() => {});
+          await Preferences.remove({ key: 'deck_api_key_id' });
+        }
+      } catch { /* ignore */ }
+      await clearAuthKey();
+      clearApiKey();
+    } else {
+      try {
+        await apiFetch('/api/auth/logout', { method: 'POST' });
+      } catch { /* ignore — clear local state regardless */ }
+    }
     localStorage.removeItem('rcc_auth');
     localStorage.removeItem('rcc_server');
     localStorage.removeItem('rcc_server_name');
@@ -858,8 +927,32 @@ export function App() {
     historyApplyersRef.current.set(sessionName, apply);
   }, []);
 
+  if (!nativeReady) {
+    return null; // Splash screen while reading biometric storage
+  }
+
+  if (isNative() && !nativeServerUrl) {
+    return (
+      <ServerSetupPage
+        onConnect={(url) => {
+          setNativeServerUrl(url);
+          configureApi(url);
+        }}
+      />
+    );
+  }
+
   if (!auth) {
-    return <LoginPage />;
+    return (
+      <LoginPage
+        serverUrl={nativeServerUrl}
+        onLoginSuccess={(userId, url) => {
+          const authState: AuthState = { userId, baseUrl: url };
+          localStorage.setItem('rcc_auth', JSON.stringify(authState));
+          setAuth(authState);
+        }}
+      />
+    );
   }
 
   const activeSessionInfo = sessions.find((s) => s.name === activeSession) ?? null;

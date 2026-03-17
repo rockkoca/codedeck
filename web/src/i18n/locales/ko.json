@@ -148,6 +148,18 @@
     "or": "또는",
     "github_signin": "GitHub로 로그인"
   },
+  "serverSetup": {
+    "title": "서버 선택",
+    "description": "CodeDeck 서버 주소를 입력하세요",
+    "placeholder": "https://your-server.com",
+    "connect": "연결",
+    "useDefault": "기본 서버 사용",
+    "verifying": "확인 중...",
+    "error": "서버에 연결할 수 없습니다. URL을 확인하고 다시 시도하세요.",
+    "errorNotHttps": "서버 URL은 HTTPS를 사용해야 합니다",
+    "changeServer": "서버 변경",
+    "addServer": "+ 서버 추가"
+  },
   "passkey": {
     "title": "패스키 관리",
     "none": "등록된 패스키가 없습니다",

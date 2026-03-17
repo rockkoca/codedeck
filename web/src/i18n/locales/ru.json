@@ -148,6 +148,18 @@
     "or": "или",
     "github_signin": "Войти через GitHub"
   },
+  "serverSetup": {
+    "title": "Выбор сервера",
+    "description": "Введите адрес вашего сервера CodeDeck",
+    "placeholder": "https://your-server.com",
+    "connect": "Подключиться",
+    "useDefault": "Использовать сервер по умолчанию",
+    "verifying": "Проверка...",
+    "error": "Не удаётся подключиться к серверу. Проверьте адрес и попробуйте снова.",
+    "errorNotHttps": "URL сервера должен использовать HTTPS",
+    "changeServer": "Сменить сервер",
+    "addServer": "+ Добавить сервер"
+  },
   "passkey": {
     "title": "Passkey",
     "none": "Нет зарегистрированных Passkey",

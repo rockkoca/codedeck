@@ -148,6 +148,18 @@
     "or": "または",
     "github_signin": "GitHubでサインイン"
   },
+  "serverSetup": {
+    "title": "サーバーを選択",
+    "description": "CodeDeckサーバーのアドレスを入力してください",
+    "placeholder": "https://your-server.com",
+    "connect": "接続",
+    "useDefault": "デフォルトサーバーを使用",
+    "verifying": "確認中...",
+    "error": "サーバーに接続できません。URLを確認して再試行してください。",
+    "errorNotHttps": "サーバーURLはHTTPSを使用する必要があります",
+    "changeServer": "サーバーを変更",
+    "addServer": "+ サーバーを追加"
+  },
   "passkey": {
     "title": "パスキー管理",
     "none": "登録済みのパスキーはありません",

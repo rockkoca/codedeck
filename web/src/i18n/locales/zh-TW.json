@@ -148,6 +148,18 @@
     "or": "或",
     "github_signin": "使用 GitHub 登入"
   },
+  "serverSetup": {
+    "title": "選擇伺服器",
+    "description": "輸入您的 CodeDeck 伺服器地址",
+    "placeholder": "https://your-server.com",
+    "connect": "連接",
+    "useDefault": "使用預設伺服器",
+    "verifying": "驗證中...",
+    "error": "無法連接到伺服器，請確認地址後重試。",
+    "errorNotHttps": "伺服器地址必須使用 HTTPS",
+    "changeServer": "更換伺服器",
+    "addServer": "+ 新增伺服器"
+  },
   "passkey": {
     "title": "Passkey 管理",
     "none": "尚未註冊任何 Passkey",

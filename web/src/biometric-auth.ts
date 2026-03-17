@@ -1,60 +1,36 @@
 /**
- * Biometric authentication for Capacitor apps.
- * Protects JWT storage with Face ID / Touch ID / fingerprint.
- * Falls back gracefully on web (no-op).
+ * Auth key storage for Capacitor apps.
+ * Uses @capacitor/preferences on native (already in Package.swift).
+ * Falls back to localStorage on web.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const isNative = (): boolean => typeof (globalThis as any).Capacitor?.isNativePlatform === 'function' && (globalThis as any).Capacitor.isNativePlatform();
 
-const AUTH_KEY = 'deck_auth';
+const AUTH_KEY = 'deck_auth_key';
 
-/** Store API key securely — biometric-protected on native, localStorage on web */
+/** Store API key — Preferences on native (encrypted by iOS), localStorage on web */
 export async function storeAuthKey(apiKey: string): Promise<void> {
   if (!isNative()) {
     localStorage.setItem(AUTH_KEY, apiKey);
     return;
   }
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth') as any;
-    await BiometricAuth.setCredentials({
-      username: 'deck_user',
-      password: apiKey,
-      server: 'codedeck',
-    });
+    const { Preferences } = await import('@capacitor/preferences');
+    await Preferences.set({ key: AUTH_KEY, value: apiKey });
   } catch {
-    // Biometric not available — fall back to localStorage
     localStorage.setItem(AUTH_KEY, apiKey);
   }
 }
 
-/** Retrieve API key — prompts biometric on native */
+/** Retrieve API key */
 export async function getAuthKey(): Promise<string | null> {
   if (!isNative()) {
     return localStorage.getItem(AUTH_KEY);
   }
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth') as any;
-
-    // Check availability first
-    const avail = await BiometricAuth.checkBiometry();
-    if (!avail.isAvailable) {
-      return localStorage.getItem(AUTH_KEY);
-    }
-
-    // Authenticate before retrieving
-    await BiometricAuth.verify({
-      reason: 'Authenticate to access CodeDeck',
-      title: 'CodeDeck',
-      negativeButtonText: 'Use Passcode',
-    });
-
-    const creds = await BiometricAuth.getCredentials({
-      username: 'deck_user',
-      server: 'codedeck',
-    });
-    return creds.password ?? null;
+    const { Preferences } = await import('@capacitor/preferences');
+    const { value } = await Preferences.get({ key: AUTH_KEY });
+    return value;
   } catch {
     return localStorage.getItem(AUTH_KEY);
   }
@@ -65,12 +41,8 @@ export async function clearAuthKey(): Promise<void> {
   localStorage.removeItem(AUTH_KEY);
   if (!isNative()) return;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth') as any;
-    await BiometricAuth.deleteCredentials({
-      username: 'deck_user',
-      server: 'codedeck',
-    });
+    const { Preferences } = await import('@capacitor/preferences');
+    await Preferences.remove({ key: AUTH_KEY });
   } catch {
     // ignore
   }

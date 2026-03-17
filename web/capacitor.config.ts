@@ -16,12 +16,17 @@ const config: CapacitorConfig = {
     },
     SplashScreen: {
       launchShowDuration: 1000,
-      backgroundColor: '#1a1b1e',
+      backgroundColor: '#0f172a',
       showSpinner: false,
+    },
+    StatusBar: {
+      style: 'DARK',
+      backgroundColor: '#0f172a',
     },
   },
   ios: {
-    contentInset: 'automatic',
+    contentInset: 'never',
+    backgroundColor: '#0f172a',
   },
   android: {
     allowMixedContent: false,

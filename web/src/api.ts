@@ -6,6 +6,12 @@
 
 let _baseUrl = '';
 let _onAuthExpired: (() => void) | null = null;
+let _apiKey: string | null = null;
+
+/** Set a Bearer API key for native app auth (replaces cookie+CSRF). */
+export function configureApiKey(key: string): void { _apiKey = key; }
+/** Clear the Bearer API key (reverts to cookie auth). */
+export function clearApiKey(): void { _apiKey = null; }
 
 export function configure(baseUrl: string): void {
   _baseUrl = baseUrl.replace(/\/$/, '');
@@ -122,10 +128,16 @@ async function rawFetch(path: string, opts: RequestInit = {}): Promise<Response>
   if (!headers.has('Content-Type') && opts.body) {
     headers.set('Content-Type', 'application/json');
   }
-  const method = (opts.method ?? 'GET').toUpperCase();
-  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
-    const csrf = getCsrfToken();
-    if (csrf) headers.set('X-CSRF-Token', csrf);
+  if (_apiKey) {
+    // Native: Bearer token auth (CSRF middleware skips Bearer auth requests)
+    headers.set('Authorization', `Bearer ${_apiKey}`);
+  } else {
+    // Web: cookie auth + CSRF token
+    const method = (opts.method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      const csrf = getCsrfToken();
+      if (csrf) headers.set('X-CSRF-Token', csrf);
+    }
   }
   return fetch(`${_baseUrl}${path}`, { ...opts, headers, credentials: 'include' });
 }
@@ -308,6 +320,17 @@ export async function passkeyLoginBegin(): Promise<Record<string, unknown> & { c
 
 export async function passkeyLoginComplete(challengeId: string, response: unknown): Promise<void> {
   await apiFetch('/api/auth/passkey/login/complete', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId, response }),
+  });
+}
+
+/** Native-only: exchange passkey credential for an API key (does not set cookie). */
+export async function passkeyLoginCompleteNative(
+  challengeId: string,
+  response: unknown,
+): Promise<{ apiKey: string; keyId: string; userId: string }> {
+  return apiFetch('/api/auth/passkey/login/complete?native=1', {
     method: 'POST',
     body: JSON.stringify({ challengeId, response }),
   });
