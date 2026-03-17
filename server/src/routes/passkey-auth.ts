@@ -69,6 +69,20 @@ async function storeRefreshToken(db: Env['DB'], userId: string, refreshHash: str
 }
 
 /**
+ * Return an HTML page that redirects to a custom URL scheme.
+ * ASWebAuthenticationSession reliably detects page-level navigations
+ * but may not follow HTTP 302 redirects to non-HTTP schemes.
+ */
+function nativeRedirectPage(c: Context<HonoEnv>, url: string): Response {
+  const html = `<!DOCTYPE html><html><head>
+<meta http-equiv="refresh" content="0;url=${url.replace(/"/g, '&quot;')}">
+</head><body>
+<script>window.location.href=${JSON.stringify(url)};</script>
+</body></html>`;
+  return c.html(html);
+}
+
+/**
  * Parse request body as JSON or form-encoded (for native form submissions).
  * Form submissions send a hidden field "json" containing the JSON payload.
  */
@@ -353,7 +367,7 @@ passkeyRoutes.post('/login/complete', async (c) => {
       cbUrl.searchParams.set('key', rawKey);
       cbUrl.searchParams.set('userId', user.id);
       cbUrl.searchParams.set('keyId', keyId);
-      return c.redirect(cbUrl.toString(), 302);
+      return nativeRedirectPage(c, cbUrl.toString());
     }
 
     return c.json({ ok: true, userId: user.id, apiKey: rawKey, keyId });
