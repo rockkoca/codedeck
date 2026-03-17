@@ -289,6 +289,8 @@ export function SubSessionWindow({
             refreshing={refreshing}
             sessionId={sub.sessionName}
             onScrollBottomFn={onChatScrollBottomFn}
+            ws={ws}
+            workdir={sub.cwd ?? null}
           />
         )}
       </div>
