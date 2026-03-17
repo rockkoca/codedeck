@@ -835,47 +835,84 @@ async function handleDiscussionStop(cmd: Record<string, unknown>): Promise<void>
   );
 }
 
-/** daemon.upgrade — npm install latest, then restart service */
+/** daemon.upgrade — install latest via npm then restart service via a detached script.
+ *
+ * Safety rules:
+ *  1. Never restart the service from within the daemon process itself (would kill us
+ *     before the restart completes). Instead we write a shell script and spawn it
+ *     fully detached so it outlives us.
+ *  2. The script always restarts the service at the end — even if npm install failed —
+ *     so the daemon always comes back up (possibly on the old version).
+ *  3. A short sleep before the restart gives the current daemon time to finish
+ *     sending any in-flight messages.
+ */
 async function handleDaemonUpgrade(): Promise<void> {
   const { spawn } = await import('child_process');
-  logger.info('daemon.upgrade received — installing latest @codedeck/codedeck');
+  const { writeFileSync, mkdtempSync } = await import('fs');
+  const { join } = await import('path');
+  const { tmpdir, homedir } = await import('os');
 
-  const npm = spawn('npm', ['install', '-g', '@codedeck/codedeck@latest'], {
-    stdio: 'pipe',
-    shell: false,
-  });
+  logger.info('daemon.upgrade: preparing upgrade script');
 
-  npm.stdout?.on('data', (d: Buffer) => logger.info({ out: d.toString().trim() }, 'upgrade'));
-  npm.stderr?.on('data', (d: Buffer) => logger.warn({ err: d.toString().trim() }, 'upgrade'));
+  const scriptDir = mkdtempSync(join(tmpdir(), 'codedeck-upgrade-'));
+  const logFile = join(scriptDir, 'upgrade.log');
+  const scriptPath = join(scriptDir, 'upgrade.sh');
 
-  npm.on('close', async (code) => {
-    if (code !== 0) {
-      logger.error({ code }, 'daemon.upgrade: npm install failed');
-      return;
+  // Build the platform-specific restart command.
+  // We always restart regardless of whether npm install succeeded, so the daemon
+  // is never left permanently dead.
+  let restartCmd: string;
+  if (process.platform === 'linux') {
+    const userSvc = join(homedir(), '.config/systemd/user/codedeck.service');
+    const { existsSync } = await import('fs');
+    if (existsSync(userSvc)) {
+      restartCmd = 'systemctl --user restart codedeck';
+    } else {
+      restartCmd = 'sudo systemctl restart codedeck';
     }
-    logger.info('daemon.upgrade: install done, restarting service');
-    try {
-      const { execSync } = await import('child_process');
-      if (process.platform === 'linux') {
-        const { join } = await import('path');
-        const { homedir } = await import('os');
-        const { existsSync } = await import('fs');
-        const userSvc = join(homedir(), '.config/systemd/user/codedeck.service');
-        if (existsSync(userSvc)) {
-          execSync('systemctl --user restart codedeck', { stdio: 'ignore' });
-        } else {
-          execSync('sudo systemctl restart codedeck', { stdio: 'ignore' });
-        }
-      } else if (process.platform === 'darwin') {
-        const { join } = await import('path');
-        const { homedir } = await import('os');
-        const plist = join(homedir(), 'Library/LaunchAgents/codedeck.daemon.plist');
-        execSync(`launchctl unload "${plist}" && launchctl load -w "${plist}"`, { stdio: 'ignore' });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'daemon.upgrade: restart failed');
-    }
+  } else if (process.platform === 'darwin') {
+    const plist = join(homedir(), 'Library/LaunchAgents/codedeck.daemon.plist');
+    restartCmd = `launchctl unload "${plist}" 2>/dev/null || true; sleep 1; launchctl load -w "${plist}"`;
+  } else {
+    logger.warn('daemon.upgrade: unsupported platform, cannot restart service');
+    return;
+  }
+
+  const script = `#!/bin/bash
+LOG="${logFile}"
+echo "=== codedeck upgrade started at $(date) ===" >> "$LOG"
+
+# Give the running daemon a moment to finish sending its response
+sleep 3
+
+# Attempt npm install — if it fails we still restart to keep the daemon alive
+echo "Installing @codedeck/codedeck@latest..." >> "$LOG"
+if npm install -g @codedeck/codedeck@latest >> "$LOG" 2>&1; then
+  echo "Install succeeded." >> "$LOG"
+else
+  echo "Install FAILED (exit $?). Will restart on existing version." >> "$LOG"
+fi
+
+# Always restart the service
+echo "Restarting service..." >> "$LOG"
+${restartCmd} >> "$LOG" 2>&1 || echo "Restart command failed (exit $?)" >> "$LOG"
+
+echo "=== upgrade script done at $(date) ===" >> "$LOG"
+
+# Self-cleanup after 60 s
+sleep 60 && rm -rf "${scriptDir}" &
+`;
+
+  writeFileSync(scriptPath, script, { mode: 0o755 });
+
+  // Spawn fully detached — this process must NOT wait for the child
+  const child = spawn('/bin/bash', [scriptPath], {
+    detached: true,
+    stdio: 'ignore',
   });
+  child.unref();
+
+  logger.info({ log: logFile }, 'daemon.upgrade: upgrade script spawned, will restart in ~3 s');
 }
 
 // ── File system browser ────────────────────────────────────────────────────
