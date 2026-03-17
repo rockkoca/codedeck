@@ -31,30 +31,6 @@ export function NativeAuthBridge({ callbackUrl }: Props) {
   const [deviceName, setDeviceName] = useState('');
   const [autoTriggered, setAutoTriggered] = useState(false);
 
-  /**
-   * Submit the passkey response via a form POST that the server answers with
-   * a 302 redirect to codedeck://auth?key=...  ASWebAuthenticationSession
-   * reliably detects HTTP redirects to the callback scheme (unlike JS
-   * window.location.href which Safari may not treat as a navigation event).
-   */
-  const submitViaForm = (endpoint: string, body: Record<string, unknown>) => {
-    setStatus('Redirecting...');
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = endpoint;
-    form.style.display = 'none';
-
-    // Send JSON body as a hidden input
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = 'json';
-    input.value = JSON.stringify(body);
-    form.appendChild(input);
-
-    document.body.appendChild(form);
-    form.submit();
-  };
-
   const doLogin = async (source: string) => {
     setLoading(true);
     setError(null);
