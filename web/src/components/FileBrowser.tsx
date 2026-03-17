@@ -147,6 +147,8 @@ export interface FileBrowserProps {
   hideFooter?: boolean;
   /** When set, show a git-changes section at bottom of Files view and a Changes tab */
   changesRootPath?: string;
+  /** Increment to trigger a rate-limited git-changes refresh (min 5s between refreshes) */
+  refreshTrigger?: number;
   onConfirm: (paths: string[]) => void;
   onClose?: () => void;
 }
@@ -187,6 +189,7 @@ export function FileBrowser({
   alreadyInserted = [],
   hideFooter = false,
   changesRootPath,
+  refreshTrigger,
   onConfirm,
   onClose,
 }: FileBrowserProps) {
@@ -233,6 +236,7 @@ export function FileBrowser({
       pendingReadRef.current.clear();
       pendingGitStatusRef.current.clear();
       pendingGitDiffRef.current.clear();
+      if (pendingChangesTimerRef.current) clearTimeout(pendingChangesTimerRef.current);
       for (const timer of timersRef.current.values()) clearTimeout(timer);
       timersRef.current.clear();
     };
@@ -445,12 +449,51 @@ export function FileBrowser({
     if (autoPreviewPath) fetchPreview(autoPreviewPath);
   }, [autoPreviewPath, fetchPreview]);
 
-  // Fetch git status for the changes panel
+  // Rate-limited git status refresh for the changes panel
+  const CHANGES_RATE_LIMIT_MS = 5_000;
+  const lastChangesRefreshRef = useRef(0);
+  const pendingChangesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshChanges = useCallback(() => {
+    if (!changesRootPath) return;
+    const now = Date.now();
+    const elapsed = now - lastChangesRefreshRef.current;
+    if (elapsed >= CHANGES_RATE_LIMIT_MS) {
+      lastChangesRefreshRef.current = now;
+      const requestId = ws.fsGitStatus(changesRootPath);
+      pendingChangesRef.current = requestId;
+    } else {
+      // Schedule for when rate limit clears
+      if (pendingChangesTimerRef.current) clearTimeout(pendingChangesTimerRef.current);
+      pendingChangesTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        lastChangesRefreshRef.current = Date.now();
+        const requestId = ws.fsGitStatus(changesRootPath);
+        pendingChangesRef.current = requestId;
+      }, CHANGES_RATE_LIMIT_MS - elapsed);
+    }
+  }, [changesRootPath, ws]);
+
+  // Initial fetch on mount
   useEffect(() => {
     if (!changesRootPath) return;
-    const requestId = ws.fsGitStatus(changesRootPath);
-    pendingChangesRef.current = requestId;
-  }, [changesRootPath, ws]);
+    refreshChanges();
+  }, [changesRootPath, ws]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 30s polling
+  useEffect(() => {
+    if (!changesRootPath) return;
+    const id = setInterval(() => {
+      if (mountedRef.current) refreshChanges();
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [changesRootPath, refreshChanges]);
+
+  // External refresh trigger (e.g. from tool.call events in ChatView)
+  useEffect(() => {
+    if (refreshTrigger === undefined || refreshTrigger === 0) return;
+    refreshChanges();
+  }, [refreshTrigger, refreshChanges]);
 
   // Reload tree when showHidden changes
   useEffect(() => {

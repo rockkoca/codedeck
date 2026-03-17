@@ -205,6 +205,25 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
   const autoScrollRef = useRef(true);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
 
+  // Track tool.call events to trigger file panel refresh
+  const [filePanelRefreshTrigger, setFilePanelRefreshTrigger] = useState(0);
+  const lastToolCallTsRef = useRef(0);
+  useEffect(() => {
+    // Find the latest tool.call event timestamp
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      if (e.type === 'tool.call') {
+        if (e.ts > lastToolCallTsRef.current) {
+          lastToolCallTsRef.current = e.ts;
+          // Delay 1s to let the tool finish before refreshing git status
+          const id = setTimeout(() => setFilePanelRefreshTrigger((n) => n + 1), 1000);
+          return () => clearTimeout(id);
+        }
+        break;
+      }
+    }
+  }, [events]);
+
   // Split-screen file panel
   const [showFilePanel, setShowFilePanel] = useState(() => {
     try { return localStorage.getItem(FILE_PANEL_OPEN_KEY) === '1'; } catch { return false; }
@@ -481,6 +500,7 @@ export function ChatView({ events, loading, refreshing, sessionState, sessionId,
               initialPath={workdir ?? '~'}
               hideFooter
               changesRootPath={workdir ?? undefined}
+              refreshTrigger={filePanelRefreshTrigger}
               onConfirm={(paths) => {
                 if (paths[0]) onInsertPath?.(paths[0]);
               }}
