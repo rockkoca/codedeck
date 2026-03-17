@@ -173,12 +173,15 @@ passkeyRoutes.post('/register/complete', async (c) => {
       expectedRPID: rpId,
     });
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
     logger.warn({ err, rpId, origin }, '[passkey] registration verification failed');
-    return c.json({ error: 'verification_failed' }, 400);
+    // TODO: remove debug detail after fixing native passkey
+    return c.json({ error: 'verification_failed', debug: { rpId, origin, err: errMsg } }, 400);
   }
 
   if (!verification.verified || !verification.registrationInfo) {
-    return c.json({ error: 'verification_failed' }, 400);
+    // TODO: remove debug detail after fixing native passkey
+    return c.json({ error: 'verification_failed', debug: { rpId, origin, note: 'verified=false' } }, 400);
   }
 
   const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
@@ -209,6 +212,23 @@ passkeyRoutes.post('/register/complete', async (c) => {
 
   const ip = (c.get('clientIp' as never) as string | undefined) ?? 'unknown';
   await logAudit({ userId, action: 'auth.passkey.register', ip, details: { credentialId: credentialID } }, c.env.DB);
+
+  // Native callback: issue API key + redirect (skip the second login round-trip)
+  const nativeCallback = c.req.query('native_callback');
+  if (nativeCallback && nativeCallback.startsWith('codedeck://')) {
+    const rawKey = `deck_${randomHex(32)}`;
+    const keyHash = sha256Hex(rawKey);
+    const keyId = randomHex(16);
+    await c.env.DB.prepare(
+      'INSERT INTO api_keys (id, user_id, key_hash, label, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).bind(keyId, userId, keyHash, 'mobile-app', now).run();
+
+    const cbUrl = new URL(nativeCallback);
+    cbUrl.searchParams.set('key', rawKey);
+    cbUrl.searchParams.set('userId', userId);
+    cbUrl.searchParams.set('keyId', keyId);
+    return c.redirect(cbUrl.toString(), 302);
+  }
 
   const accessToken = signJwt({ sub: userId }, c.env.JWT_SIGNING_KEY, 4 * 3600);
   const refreshToken = randomHex(32);
@@ -273,11 +293,16 @@ passkeyRoutes.post('/login/complete', async (c) => {
       },
     });
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
     logger.warn({ err, rpId, origin }, '[passkey] authentication verification failed');
-    return c.json({ error: 'verification_failed' }, 400);
+    // TODO: remove debug detail after fixing native passkey
+    return c.json({ error: 'verification_failed', debug: { rpId, origin, err: errMsg } }, 400);
   }
 
-  if (!verification.verified) return c.json({ error: 'verification_failed' }, 400);
+  if (!verification.verified) {
+    // TODO: remove debug detail after fixing native passkey
+    return c.json({ error: 'verification_failed', debug: { rpId, origin, note: 'verified=false' } }, 400);
+  }
 
   const now = Date.now();
   await c.env.DB.prepare(
@@ -292,7 +317,8 @@ passkeyRoutes.post('/login/complete', async (c) => {
 
   const isNativeReq = c.req.query('native') === '1';
 
-  if (isNativeReq) {
+  const nativeCallback = c.req.query('native_callback');
+  if (isNativeReq || nativeCallback) {
     // Native app: return a persistent API key instead of setting session cookies.
     // The client stores this key in biometric-protected storage.
     const rawKey = `deck_${randomHex(32)}`;
@@ -302,6 +328,17 @@ passkeyRoutes.post('/login/complete', async (c) => {
     await c.env.DB.prepare(
       'INSERT INTO api_keys (id, user_id, key_hash, label, created_at) VALUES (?, ?, ?, ?, ?)',
     ).bind(keyId, user.id, keyHash, 'mobile-app', now).run();
+
+    // If native_callback is provided, redirect via HTTP 302 so ASWebAuthenticationSession
+    // detects the custom-scheme navigation (JS window.location.href is unreliable).
+    if (nativeCallback && nativeCallback.startsWith('codedeck://')) {
+      const cbUrl = new URL(nativeCallback);
+      cbUrl.searchParams.set('key', rawKey);
+      cbUrl.searchParams.set('userId', user.id);
+      cbUrl.searchParams.set('keyId', keyId);
+      return c.redirect(cbUrl.toString(), 302);
+    }
+
     return c.json({ ok: true, userId: user.id, apiKey: rawKey, keyId });
   }
 

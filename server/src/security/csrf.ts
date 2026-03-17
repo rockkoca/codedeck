@@ -80,7 +80,13 @@ function validateOrigin(rawOrigin: string, env: Env): boolean {
     return env.NODE_ENV === 'development';
   }
 
-  const allowed = env.ALLOWED_ORIGINS.split(',').map((s) => s.trim());
+  // Include SERVER_URL alongside ALLOWED_ORIGINS (matches CORS middleware behavior).
+  // This ensures same-origin requests from ASWebAuthenticationSession (native passkey flow)
+  // pass CSRF validation when the server's own origin is SERVER_URL.
+  const allowed = [
+    ...(env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    ...(env.SERVER_URL ? [env.SERVER_URL.replace(/\/$/, '')] : []),
+  ];
   // Exact match only — no startsWith to prevent subdomain prefix bypass
   return allowed.some((a) => normalized === a);
 }

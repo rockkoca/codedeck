@@ -4,15 +4,14 @@ import { startRegistration, startAuthentication } from '@simplewebauthn/browser'
 import { passkeyLoginBegin, passkeyLoginComplete, passkeyRegisterBegin, passkeyRegisterComplete } from '../api.js';
 import { isNative } from '../native.js';
 
-const NATIVE_CALLBACK = 'codedeck://auth';
-
 interface Props {
   onLogin?: () => void;
   serverUrl?: string | null;
+  onLoginSuccess?: (userId: string, serverUrl: string) => void;
   onChangeServer?: () => void;
 }
 
-export function LoginPage({ onLogin, serverUrl, onChangeServer }: Props) {
+export function LoginPage({ onLogin, serverUrl, onLoginSuccess, onChangeServer }: Props) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<'buttons' | 'register'>('buttons');
   const [displayName, setDisplayName] = useState('');
@@ -34,16 +33,44 @@ export function LoginPage({ onLogin, serverUrl, onChangeServer }: Props) {
     window.location.href = `/api/auth/github?${params}`;
   };
 
-  const handlePasskeyLogin = async () => {
-    if (isNative() && serverUrl) {
-      // Native: open server login page in Safari (ASWebAuthenticationSession).
-      // Safari has the correct origin so passkeys work for any server domain.
-      // The result comes back via appUrlOpen listener in app.tsx.
-      const { Browser } = await import('@capacitor/browser');
-      const url = `${serverUrl}?native_callback=${encodeURIComponent(NATIVE_CALLBACK)}`;
-      await Browser.open({ url, windowName: '_self' });
-      return;
+  // Native: open ASWebAuthenticationSession → server page auto-triggers passkey →
+  // redirect to codedeck://auth?key=...&userId=...&keyId=... → session auto-closes.
+  // Works with ANY server domain — no hardcoding.
+  const handleNativeAuth = async (action?: string) => {
+    if (!serverUrl) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const AuthSession = (await import('../plugins/auth-session.js')).default;
+      let url = `${serverUrl}?native_callback=${encodeURIComponent('codedeck://auth')}`;
+      if (action) url += `&action=${action}`;
+      const result = await AuthSession.start({ url, callbackScheme: 'codedeck' });
+      const parsed = new URL(result.url);
+      const key = parsed.searchParams.get('key');
+      const userId = parsed.searchParams.get('userId');
+      const keyId = parsed.searchParams.get('keyId');
+      if (key && userId && keyId) {
+        const { configureApiKey } = await import('../api.js');
+        const { storeAuthKey } = await import('../biometric-auth.js');
+        const { Preferences } = await import('@capacitor/preferences');
+        await storeAuthKey(key);
+        configureApiKey(key);
+        await Preferences.set({ key: 'deck_api_key_id', value: keyId });
+        onLoginSuccess?.(userId, serverUrl);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('cancel')) {
+        // TODO: remove debug error display after fixing
+        setError(`[DEBUG] ${msg}`);
+      }
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handlePasskeyLogin = async () => {
+    if (isNative()) return handleNativeAuth();
     setLoading(true);
     setError(null);
     try {
@@ -66,6 +93,7 @@ export function LoginPage({ onLogin, serverUrl, onChangeServer }: Props) {
   };
 
   const handlePasskeyRegister = async () => {
+    if (isNative()) return handleNativeAuth('register');
     if (!displayName.trim()) return;
     setLoading(true);
     setError(null);
@@ -120,14 +148,7 @@ export function LoginPage({ onLogin, serverUrl, onChangeServer }: Props) {
                 <button
                   class="btn btn-secondary"
                   style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}
-                  onClick={async () => {
-                    if (isNative() && serverUrl) {
-                      const { Browser } = await import('@capacitor/browser');
-                      await Browser.open({ url: `${serverUrl}?native_callback=${encodeURIComponent(NATIVE_CALLBACK)}`, windowName: '_self' });
-                    } else {
-                      setMode('register'); setError(null);
-                    }
-                  }}
+                  onClick={() => { setMode('register'); setError(null); }}
                   disabled={loading}
                 >
                   {t('login.passkey_create')}
