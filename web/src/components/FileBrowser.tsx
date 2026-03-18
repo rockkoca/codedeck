@@ -661,7 +661,10 @@ export function FileBrowser({
       </div>
       <div class="fb-preview-content">
         {preview.status === 'loading' && (
-          <div class="fb-preview-msg">{t('file_browser.preview_loading')}</div>
+          <div class="fb-preview-loading">
+            <div class="fb-loading-spinner" />
+            <div class="fb-loading-text">{t('file_browser.preview_loading')}</div>
+          </div>
         )}
         {preview.status === 'error' && (
           <div class="fb-preview-msg fb-preview-error">{preview.error}</div>
@@ -926,7 +929,7 @@ function FsTreeNode({
         </span>
         <span class="fb-node-icon">
           {node.isDir
-            ? (node.isLoading ? '⟳' : (isExpanded ? '📂' : '📁'))
+            ? (node.isLoading ? <span class="fb-icon-spin">⟳</span> : (isExpanded ? '📂' : '📁'))
             : '📄'}
         </span>
         <span class="fb-node-name">{node.name}</span>
