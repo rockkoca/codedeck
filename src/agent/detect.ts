@@ -24,6 +24,7 @@ const CC_IDLE_PATTERNS = [
 
 const CC_SPINNER_CHARS = [
   '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', // braille
+  '✻', '✱', '✳', '✴', '✵', '✶', '✷', '✸', '❋', '❊', '❇', // star/asterisk pulsing
 ];
 
 // Any capitalized word ending in -ing = Claude Code spinner status (Thinking, Discombobulating, etc.)
