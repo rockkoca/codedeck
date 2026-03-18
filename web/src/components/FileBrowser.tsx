@@ -903,7 +903,7 @@ function FsTreeNode({
   return (
     <div>
       <div
-        class={`fb-node${isSelected ? ' selected' : ''}${isAlready ? ' already' : ''}${isDisabled ? ' disabled' : ''}${isPreviewing ? ' previewing' : ''}${gitCode ? ' git-modified' : ''}`}
+        class={`fb-node${isSelected ? ' selected' : ''}${isAlready ? ' already' : ''}${isDisabled ? ' disabled' : ''}${isPreviewing ? ' previewing' : ''}${gitCode ? ` git-${gitCode === '??' ? 'untracked' : gitCode === 'D' ? 'deleted' : gitCode === 'A' ? 'added' : 'modified'}` : ''}`}
         style={{ paddingLeft: 8 + depth * 16 }}
         onClick={() => {
           if (!isMulti && !isDisabled) onSelect(node.id, node.isDir);
@@ -930,7 +930,7 @@ function FsTreeNode({
             : '📄'}
         </span>
         <span class="fb-node-name">{node.name}</span>
-        {gitCode && <span class="fb-node-git-badge" title={`git: ${gitCode}`}>{gitCode === '??' ? 'U' : gitCode}</span>}
+        {gitCode && <span class={`fb-node-git-badge git-badge-${gitCode === '??' ? 'untracked' : gitCode === 'D' ? 'deleted' : gitCode === 'A' ? 'added' : 'modified'}`} title={`git: ${gitCode}`}>{gitCode === '??' ? 'U' : gitCode}</span>}
         {isAlready && <span class="fb-node-badge">↑</span>}
       </div>
       {node.isDir && isExpanded && node.children && (

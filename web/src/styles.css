@@ -723,8 +723,16 @@ body {
   .fb-modal-wide { width: min(96vw, 900px) !important; }
 }
 .fb-node.previewing { background: rgba(99,102,241,.15); }
-.fb-node.git-modified .fb-node-name { color: #fbbf24; }
-.fb-node-git-badge { font-size: 9px; font-weight: 700; padding: 0 4px; border-radius: 3px; background: rgba(251,191,36,.15); color: #fbbf24; flex-shrink: 0; font-family: monospace; }
+/* Git status colors — VS Code style */
+.fb-node.git-modified .fb-node-name { color: #e2b340; }
+.fb-node.git-untracked .fb-node-name { color: #73c991; }
+.fb-node.git-added .fb-node-name { color: #73c991; }
+.fb-node.git-deleted .fb-node-name { color: #f14c4c; text-decoration: line-through; }
+.fb-node-git-badge { font-size: 9px; font-weight: 700; padding: 0 4px; border-radius: 3px; flex-shrink: 0; font-family: monospace; }
+.git-badge-modified { background: rgba(226,179,64,.15); color: #e2b340; }
+.git-badge-untracked { background: rgba(115,201,145,.15); color: #73c991; }
+.git-badge-added { background: rgba(115,201,145,.15); color: #73c991; }
+.git-badge-deleted { background: rgba(241,76,76,.15); color: #f14c4c; }
 .fb-diff-toggle { background: none; border: 1px solid #475569; border-radius: 4px; color: #94a3b8; cursor: pointer; padding: 1px 8px; font-size: 11px; margin-left: auto; }
 .fb-diff-toggle:hover { border-color: #94a3b8; color: #e2e8f0; }
 .fb-diff-toggle.active { border-color: #f59e0b; color: #f59e0b; }
