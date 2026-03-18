@@ -135,11 +135,13 @@ export function detectStatus(
       if (matchesAny(tail, CC_PERMISSION_PATTERNS)) return 'permission';
       if (matchesAny(tail, CC_IDLE_PATTERNS) && !hasSpinner(lines, CC_SPINNER_CHARS))
         return 'idle';
-      if (matchesAny(text, CC_TOOL_PATTERNS)) return 'tool_running';
       if (hasSpinner(lines, CC_SPINNER_CHARS)) {
-        if (matchesAny(text, CC_THINKING_PATTERNS)) return 'thinking';
+        // Check tail for tool vs thinking — using full text would match stale output
+        if (matchesAny(tail, CC_TOOL_PATTERNS)) return 'tool_running';
+        if (matchesAny(tail, CC_THINKING_PATTERNS)) return 'thinking';
         return 'streaming';
       }
+      if (matchesAny(tail, CC_TOOL_PATTERNS)) return 'tool_running';
       break;
 
     case 'codex':

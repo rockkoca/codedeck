@@ -663,22 +663,21 @@ function ActiveThinkingLabel({ startTs }: { startTs: number }) {
 function ThinkingEvent({ event, endTs }: { event: TimelineEvent; endTs?: number }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-
-  // Not finished yet — shown in the bottom bar instead
-  if (endTs === undefined) return null;
-
-  const elapsedSec = Math.max(0, Math.round((endTs - (event.ts ?? endTs)) / 1000));
-  const label = t('chat.thinking_done', { sec: elapsedSec });
+  const isActive = endTs === undefined;
 
   const text = String(event.payload.text ?? '');
   const preview = text.length > 100 ? text.slice(0, 100) + '…' : text;
   const hasText = text.length > 0;
 
   return (
-    <div class="chat-event chat-thinking">
+    <div class={`chat-event chat-thinking${isActive ? ' thinking-active' : ''}`}>
       <button class={`chat-thinking-toggle${hasText ? '' : ' no-text'}`} onClick={hasText ? () => setExpanded(!expanded) : undefined}>
-        <span class="chat-thinking-dot done">~</span>
-        <span class="chat-thinking-label">{label}</span>
+        <span class={`chat-thinking-dot${isActive ? '' : ' done'}`}>{isActive ? '◌' : '~'}</span>
+        <span class="chat-thinking-label">
+          {isActive
+            ? <ActiveThinkingLabel startTs={event.ts ?? Date.now()} />
+            : t('chat.thinking_done', { sec: Math.max(0, Math.round((endTs - (event.ts ?? endTs)) / 1000)) })}
+        </span>
         {hasText && <span class="chat-thinking-text">{expanded ? text : preview}</span>}
       </button>
     </div>
