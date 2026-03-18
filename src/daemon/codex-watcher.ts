@@ -147,6 +147,26 @@ export function parseLine(sessionName: string, line: string, model?: string): vo
     } else if (pl.type === 'function_call_output') {
       const errMsg = pl.error;
       timelineEmitter.emit(sessionName, 'tool.result', { ...(errMsg ? { error: errMsg } : {}) }, { source: 'daemon', confidence: 'high' });
+    } else if (pl.type === 'reasoning') {
+      // Codex reasoning — content is encrypted, emit empty thinking event to show activity
+      timelineEmitter.emit(sessionName, 'assistant.thinking', { text: '' }, { source: 'daemon', confidence: 'high' });
+    } else if (pl.type === 'custom_tool_call') {
+      // Codex custom tools (e.g. apply_patch)
+      const name = String(pl.name ?? 'tool');
+      const input = typeof pl.input === 'string' ? pl.input.slice(0, 200) : '';
+      timelineEmitter.emit(sessionName, 'tool.call', { tool: name, ...(input ? { input } : {}) }, { source: 'daemon', confidence: 'high' });
+    } else if (pl.type === 'custom_tool_call_output') {
+      let error: string | undefined;
+      try {
+        const out = JSON.parse(pl.output ?? '{}');
+        if (out.metadata?.exit_code && out.metadata.exit_code !== 0) error = `exit ${out.metadata.exit_code}`;
+      } catch {}
+      timelineEmitter.emit(sessionName, 'tool.result', { ...(error ? { error } : {}) }, { source: 'daemon', confidence: 'high' });
+    } else if (pl.type === 'web_search_call') {
+      const action = pl.action;
+      const actionType = action?.type ?? 'search';
+      const query = action?.query ?? action?.url ?? '';
+      timelineEmitter.emit(sessionName, 'tool.call', { tool: `web_${actionType}`, ...(query ? { input: String(query) } : {}) }, { source: 'daemon', confidence: 'high' });
     }
     return;
   }
