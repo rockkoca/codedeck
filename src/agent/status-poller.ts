@@ -3,6 +3,7 @@ import { detectStatusMulti } from './detect.js';
 import { getDriver } from './session-manager.js';
 import type { AgentStatus, AgentType } from './detect.js';
 import type { SessionRecord } from '../store/session-store.js';
+import { timelineEmitter } from '../daemon/timeline-emitter.js';
 import logger from '../util/logger.js';
 
 export type IdleCallback = (session: SessionRecord) => Promise<void>;
@@ -65,6 +66,11 @@ export class StatusPoller {
         if (status === 'idle' && prev !== 'idle') {
           logger.debug({ session: session.name }, 'Polling detected idle');
           await this.triggerIdle(session);
+        }
+
+        // Emit thinking event on transition to thinking (terminal-based, real-time)
+        if (status === 'thinking' && prev !== 'thinking') {
+          timelineEmitter.emit(session.name, 'assistant.thinking', { text: '' }, { source: 'terminal-parse', confidence: 'medium' });
         }
 
         if (driver.isOverlay(lines)) {
