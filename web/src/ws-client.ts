@@ -104,6 +104,10 @@ export class WsClient {
     return this._connected;
   }
 
+  get connecting(): boolean {
+    return this._connecting || (!this._connected && !this._destroyed && this.reconnectTimer !== null);
+  }
+
   get pingLatency(): number | null {
     return this._pingLatency;
   }

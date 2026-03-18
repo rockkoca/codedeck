@@ -315,6 +315,7 @@ export function App() {
   const [showNewSession, setShowNewSession] = useState(false);
   const [renameRequest, setRenameRequest] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [idleAlerts, setIdleAlerts] = useState<Set<string>>(new Set());
   const [activeTools, setActiveTools] = useState<Map<string, string>>(new Map());
@@ -508,10 +509,11 @@ export function App() {
       if (msg.type === 'session.event') {
         if (msg.event === 'connected') {
           setConnected(true);
+          setConnecting(false);
           ws.requestSessionList();
           ws.discussionList();
         }
-        if (msg.event === 'disconnected') setConnected(false);
+        if (msg.event === 'disconnected') { setConnected(false); setConnecting(true); }
         if (msg.session && !msg.session.startsWith('deck_sub_')) {
           setSessions((prev) => {
             const existing = prev.find((s) => s.name === msg.session);
@@ -692,6 +694,7 @@ export function App() {
         setDaemonStats({ cpu: msg.cpu, memUsed: msg.memUsed, memTotal: msg.memTotal, load1: msg.load1, load5: msg.load5, load15: msg.load15, uptime: msg.uptime });
       }
     });
+    setConnecting(true);
     ws.connect();
 
     return () => {
@@ -701,6 +704,7 @@ export function App() {
       ws.disconnect();
       wsRef.current = null;
       setConnected(false);
+      setConnecting(false);
       setLatencyMs(null);
       setDaemonStats(null);
     };
@@ -1105,8 +1109,8 @@ export function App() {
                 <button class="view-toggle" onClick={toggleViewMode}>
                   {viewMode === 'chat' ? '⌨' : '💬'}
                 </button>
-                <span class={`badge ${connected ? 'badge-online' : 'badge-offline'}`} style={{ fontSize: 10 }}>
-                  {connected ? '● Online' : '○ Offline'}
+                <span class={`badge ${connected ? 'badge-online' : connecting ? 'badge-connecting' : 'badge-offline'}`} style={{ fontSize: 10 }}>
+                  {connected ? '● Online' : connecting ? (<><span class="connecting-dot" />{' Connecting'}</>) : '○ Offline'}
                 </span>
                 <span style={{ fontSize: 9, color: '#475569' }}>
                   {(() => { try { const d = new Date(__BUILD_TIME__); return `${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; } catch { return ''; } })()}
