@@ -38,7 +38,12 @@ body {
 /* Session tabs */
 .tab-bar { display: flex; align-items: stretch; background: #0d1117; border-bottom: 1px solid #21262d; overflow-x: auto; flex-shrink: 0; scrollbar-width: none; min-height: 36px; }
 .tab-bar::-webkit-scrollbar { display: none; }
-.tab-wrap { display: flex; align-items: stretch; }
+.tab-wrap { display: flex; align-items: stretch; transition: transform 0.15s; }
+.tab-wrap[draggable] { cursor: grab; }
+.tab-wrap.tab-drop-target { border-left: 2px solid #3b82f6; }
+.tab-dragging { opacity: 0.4; }
+.tab-pin { font-size: 10px; margin-right: 3px; }
+.tab.pinned { border-top-color: rgba(59,130,246,.3); }
 .tab { padding: 0 16px; cursor: pointer; color: #6e7681; border-top: 2px solid transparent; border-bottom: 2px solid transparent; white-space: nowrap; font-size: 12px; font-weight: 500; transition: color 0.12s, background 0.12s, border-color 0.12s; background: transparent; border-left: none; border-right: none; display: flex; align-items: center; }
 .tab:hover { color: #c9d1d9; background: #161b22; }
 .tab.active { color: #e6edf3; background: #161b22; border-top-color: #3b82f6; border-bottom-color: transparent; }

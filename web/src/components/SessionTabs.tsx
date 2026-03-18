@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'preact/hooks';
 import type { SessionInfo } from '../types.js';
 
 interface Props {
@@ -32,6 +32,22 @@ const AGENT_BADGE: Record<string, { label: string; color: string }> = {
   'opencode':    { label: 'oc', color: '#059669' },
 };
 
+const LS_ORDER = 'rcc_tab_order';
+const LS_PINNED = 'rcc_tab_pinned';
+
+function loadOrder(): string[] {
+  try { return JSON.parse(localStorage.getItem(LS_ORDER) ?? '[]'); } catch { return []; }
+}
+function saveOrder(order: string[]) {
+  localStorage.setItem(LS_ORDER, JSON.stringify(order));
+}
+function loadPinned(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(LS_PINNED) ?? '[]')); } catch { return new Set(); }
+}
+function savePinned(pinned: Set<string>) {
+  localStorage.setItem(LS_PINNED, JSON.stringify([...pinned]));
+}
+
 export function SessionTabs({ sessions, activeSession, connected, latencyMs, idleAlerts, onAlertDismiss, activeTools, onSelect, onNewSession, onStopProject, onRestartProject, renameRequest, onRenameHandled, onRenameSession, sessionsLoaded }: Props) {
   const [ctx, setCtx] = useState<CtxMenu | null>(null);
   const [stopConfirmProject, setStopConfirmProject] = useState<string | null>(null);
@@ -39,6 +55,41 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
   const [renameVal, setRenameVal] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
+
+  // Persisted order & pinned state
+  const [tabOrder, setTabOrder] = useState<string[]>(loadOrder);
+  const [pinned, setPinned] = useState<Set<string>>(loadPinned);
+
+  // Drag state
+  const dragIdx = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  // Merge sessions with persisted order: keep known positions, append new ones
+  const orderedSessions = useMemo(() => {
+    const nameSet = new Set(sessions.map((s) => s.name));
+    // Remove stale entries from order
+    const validOrder = tabOrder.filter((n) => nameSet.has(n));
+    // Find new sessions not in order
+    const newNames = sessions.filter((s) => !validOrder.includes(s.name)).map((s) => s.name);
+    const fullOrder = [...validOrder, ...newNames];
+
+    const byName = new Map(sessions.map((s) => [s.name, s]));
+    const ordered = fullOrder.map((n) => byName.get(n)).filter(Boolean) as SessionInfo[];
+
+    // Pinned first, then unpinned — stable within each group
+    const pinnedArr = ordered.filter((s) => pinned.has(s.name));
+    const unpinnedArr = ordered.filter((s) => !pinned.has(s.name));
+    return [...pinnedArr, ...unpinnedArr];
+  }, [sessions, tabOrder, pinned]);
+
+  // Persist order when it changes
+  useEffect(() => {
+    const newOrder = orderedSessions.map((s) => s.name);
+    if (JSON.stringify(newOrder) !== JSON.stringify(tabOrder)) {
+      setTabOrder(newOrder);
+      saveOrder(newOrder);
+    }
+  }, [orderedSessions]);
 
   useEffect(() => {
     if (!ctx) { setStopConfirmProject(null); return; }
@@ -89,8 +140,54 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
     setRenaming(null);
   };
 
+  const togglePin = useCallback((name: string) => {
+    setPinned((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      savePinned(next);
+      return next;
+    });
+    setCtx(null);
+  }, []);
+
+  // Drag handlers
+  const onDragStart = useCallback((e: DragEvent, idx: number) => {
+    dragIdx.current = idx;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(idx));
+    }
+    (e.currentTarget as HTMLElement).classList.add('tab-dragging');
+  }, []);
+
+  const onDragEnd = useCallback((e: DragEvent) => {
+    dragIdx.current = null;
+    setDragOverIdx(null);
+    (e.currentTarget as HTMLElement).classList.remove('tab-dragging');
+  }, []);
+
+  const onDragOver = useCallback((e: DragEvent, idx: number) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    setDragOverIdx(idx);
+  }, []);
+
+  const onDrop = useCallback((e: DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const fromIdx = dragIdx.current;
+    if (fromIdx === null || fromIdx === dropIdx) { setDragOverIdx(null); return; }
+
+    const names = orderedSessions.map((s) => s.name);
+    const [moved] = names.splice(fromIdx, 1);
+    names.splice(dropIdx, 0, moved);
+    setTabOrder(names);
+    saveOrder(names);
+    setDragOverIdx(null);
+    dragIdx.current = null;
+  }, [orderedSessions]);
+
   const menuX = ctx ? Math.min(ctx.x, window.innerWidth - 160) : 0;
-  const menuY = ctx ? Math.min(ctx.y, window.innerHeight - 170) : 0;
+  const menuY = ctx ? Math.min(ctx.y, window.innerHeight - 200) : 0;
 
   return (
     <div class="tab-bar" role="tablist">
@@ -98,19 +195,29 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
         <span class="tab-empty">No active sessions</span>
       )}
 
-      {sessions.map((s) => {
+      {orderedSessions.map((s, idx) => {
         const isActive = s.name === activeSession;
         const isBrain = s.role === 'brain';
+        const isPinned = pinned.has(s.name);
         const hasAlert = idleAlerts?.has(s.name) ?? false;
         const activeTool = activeTools?.get(s.name) ?? null;
         const stateClass = s.state === 'running' ? 'busy' : s.state === 'idle' ? 'idle' : '';
-        const classes = ['tab', isBrain ? 'brain' : '', isActive ? 'active' : '', stateClass, hasAlert ? 'alert' : ''].filter(Boolean).join(' ');
+        const classes = ['tab', isBrain ? 'brain' : '', isActive ? 'active' : '', stateClass, hasAlert ? 'alert' : '', isPinned ? 'pinned' : ''].filter(Boolean).join(' ');
+        const isDragOver = dragOverIdx === idx;
 
         // WS latency shown inline on the active tab
         const latencyColor = latencyMs == null ? '#4ade80' : latencyMs < 150 ? '#4ade80' : latencyMs < 400 ? '#f59e0b' : '#ef4444';
 
         return (
-          <div key={s.name} class="tab-wrap">
+          <div
+            key={s.name}
+            class={`tab-wrap${isDragOver ? ' tab-drop-target' : ''}`}
+            draggable
+            onDragStart={(e) => onDragStart(e as DragEvent, idx)}
+            onDragEnd={(e) => onDragEnd(e as DragEvent)}
+            onDragOver={(e) => onDragOver(e as DragEvent, idx)}
+            onDrop={(e) => onDrop(e as DragEvent, idx)}
+          >
             {renaming === s.name ? (
               <input
                 ref={renameRef}
@@ -131,8 +238,9 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
                 aria-selected={isActive}
                 onClick={() => { onSelect(s.name); if (hasAlert) onAlertDismiss?.(s.name); }}
                 onContextMenu={(e) => openCtx(e, s)}
-                title={`${s.agentType} — ${s.state}`}
+                title={`${s.agentType} — ${s.state}${isPinned ? ' (pinned)' : ''}`}
               >
+                {isPinned && <span class="tab-pin">📌</span>}
                 {agentBadge(s.agentType)}
                 {getLabel(s)}
                 {activeTool && (
@@ -153,6 +261,10 @@ export function SessionTabs({ sessions, activeSession, connected, latencyMs, idl
 
       {ctx && (
         <div ref={menuRef} class="tab-context-menu" style={{ left: menuX, top: menuY }}>
+          <button class="menu-item" onClick={() => togglePin(ctx.session.name)}>
+            {pinned.has(ctx.session.name) ? '📌 Unpin' : '📌 Pin'}
+          </button>
+          <div class="menu-divider" />
           <button class="menu-item" onClick={() => { onRestartProject(ctx.session.project); setCtx(null); }}>↺ Restart</button>
           <button class="menu-item" onClick={() => { onRestartProject(ctx.session.project, true); setCtx(null); }}>＋ New</button>
           <button class="menu-item" onClick={() => startRename(ctx.session)}>✎ Rename</button>
