@@ -59,7 +59,8 @@ function buildViewItems(events: TimelineEvent[]): ViewItem[] {
       e.type !== 'usage.update' &&
       e.type !== 'mode.state' &&
       e.type !== 'command.ack' &&
-      e.type !== 'terminal.snapshot',
+      e.type !== 'terminal.snapshot' &&
+      e.type !== 'assistant.thinking',
   );
 
   // Pre-pass: merge tool.call+tool.result pairs and dedup session.state
