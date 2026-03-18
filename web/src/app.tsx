@@ -90,6 +90,9 @@ export function App() {
     if (!vv) return;
     const update = () => {
       document.documentElement.style.setProperty('--vvh', `${vv.height}px`);
+      // Detect keyboard open: visual viewport significantly smaller than window
+      const kbOpen = window.innerHeight - vv.height > 80;
+      document.documentElement.classList.toggle('kb-open', kbOpen);
       // Reset any document scroll caused by keyboard opening on mobile
       if (window.scrollY !== 0) window.scrollTo(0, 0);
     };
