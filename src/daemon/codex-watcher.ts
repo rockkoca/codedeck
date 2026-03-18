@@ -192,7 +192,7 @@ export function parseLine(sessionName: string, line: string, model?: string): vo
     const text = pl.message;
     if (!text?.trim()) return;
     if (pl.phase === 'final_answer') {
-      timelineEmitter.emit(sessionName, 'assistant.text', { text, streaming: true }, { source: 'daemon', confidence: 'high' });
+      // Buffer and debounce — emit only once when streaming stops
       const existing = finalAnswerBuffers.get(sessionName);
       if (existing) clearTimeout(existing.timer);
       const timer = setTimeout(() => flushFinalAnswer(sessionName), FINAL_ANSWER_DEBOUNCE_MS);
