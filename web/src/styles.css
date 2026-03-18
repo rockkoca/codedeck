@@ -134,6 +134,116 @@ body {
 .btn-voice:hover { color: #e2e8f0; background: rgba(255,255,255,0.05); }
 .btn-voice-active { color: #ef4444; animation: voice-pulse 1s ease-in-out infinite; }
 @keyframes voice-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* ── Voice Overlay (sci-fi 2/3 sheet) ── */
+.voice-overlay {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 9999;
+  height: 66vh;
+  background: radial-gradient(ellipse at 50% 0%, #0c1929 0%, #020617 70%);
+  display: flex; flex-direction: column; align-items: center;
+  padding: var(--sat, 0px) 20px 20px; box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 4px 40px rgba(0,0,0,0.6);
+  animation: voice-slide-down 0.3s ease-out;
+}
+@keyframes voice-slide-down { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+.voice-overlay-grid {
+  position: absolute; inset: 0; opacity: 0.04; border-radius: 0 0 24px 24px;
+  background-image:
+    linear-gradient(rgba(56,189,248,0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56,189,248,0.4) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: voice-grid-scroll 20s linear infinite;
+}
+@keyframes voice-grid-scroll { to { background-position: 40px 40px; } }
+.voice-overlay-header {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 16px 0 0; z-index: 1;
+}
+.voice-overlay-close {
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  color: #94a3b8; font-size: 18px; cursor: pointer;
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.voice-overlay-close:hover { background: rgba(255,255,255,0.12); color: #e2e8f0; }
+.voice-overlay-status {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: #64748b;
+  letter-spacing: 2px; text-transform: uppercase;
+}
+.voice-status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #475569; transition: all 0.3s;
+}
+.voice-status-dot-active {
+  background: #22d3ee;
+  box-shadow: 0 0 12px #22d3ee, 0 0 24px rgba(34,211,238,0.3);
+  animation: voice-dot-pulse 1.5s ease-in-out infinite;
+}
+@keyframes voice-dot-pulse { 0%,100% { box-shadow: 0 0 12px #22d3ee, 0 0 24px rgba(34,211,238,0.3); } 50% { box-shadow: 0 0 20px #22d3ee, 0 0 40px rgba(34,211,238,0.5); } }
+.voice-overlay-text {
+  flex: 1; width: 100%; max-width: 600px;
+  margin: 20px 0; padding: 20px;
+  font-size: 18px; line-height: 1.7; color: #e2e8f0;
+  overflow-y: auto; z-index: 1;
+  border: 1px solid rgba(56,189,248,0.1);
+  border-radius: 16px;
+  background: rgba(15,23,42,0.6);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 30px rgba(56,189,248,0.03), 0 0 1px rgba(56,189,248,0.2);
+  resize: none; font-family: inherit;
+}
+.voice-overlay-text::placeholder { color: #475569; font-style: italic; }
+.voice-overlay-text:focus { outline: none; border-color: rgba(56,189,248,0.25); }
+.voice-overlay-controls {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  gap: 14px; z-index: 1; flex-shrink: 0;
+  width: 100%; height: 52px;
+  border-radius: 26px; overflow: hidden;
+}
+.voice-waveform-bg {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  gap: 2px; pointer-events: none;
+}
+.voice-waveform-bar {
+  width: 3px; min-height: 2px; border-radius: 1.5px;
+  background: linear-gradient(180deg, #22d3ee, #8b5cf6);
+  transition: none;
+}
+.voice-overlay-mic {
+  position: relative; z-index: 1;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #0f172a;
+  border: 1.5px solid rgba(34,211,238,0.4);
+  color: #22d3ee; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.3s;
+}
+.voice-overlay-mic:hover { background: #1e293b; border-color: #22d3ee; }
+.voice-overlay-mic-active {
+  background: #1c1017;
+  border-color: #ef4444; color: #ef4444;
+  animation: voice-mic-glow 2s ease-in-out infinite;
+}
+@keyframes voice-mic-glow { 0%,100% { box-shadow: 0 0 10px rgba(239,68,68,0.2); } 50% { box-shadow: 0 0 20px rgba(239,68,68,0.4); } }
+.voice-overlay-send {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 18px; border-radius: 20px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  border: none; color: white; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.3s;
+  letter-spacing: 0.5px;
+}
+.voice-overlay-send:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+}
+.voice-overlay-send:disabled { background: #334155; color: #64748b; cursor: default; }
+
 .btn-danger { background: #ef4444; color: white; }
 .btn-danger:hover { background: #dc2626; }
 .btn-secondary { background: #334155; color: #cbd5e1; }
@@ -230,6 +340,7 @@ body {
   .mobile-server-menu-item { display: block; width: 100%; padding: 10px 14px; background: none; border: none; color: #cbd5e1; font-size: 13px; font-family: inherit; text-align: left; cursor: pointer; }
   .mobile-server-menu-item:hover, .mobile-server-menu-item:active { background: #334155; }
   .mobile-server-menu-item.active { color: #93c5fd; background: #1d4ed820; }
+  .mobile-server-menu-change { color: #f59e0b !important; border-top: 1px solid #334155; }
   .controls { padding: 6px 8px; gap: 6px; }
   .controls-input { font-size: 16px; } /* prevent iOS zoom on focus */
   .btn { padding: 8px 10px; font-size: 13px; }

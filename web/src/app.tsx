@@ -22,7 +22,7 @@ import { useSwipeBack } from './hooks/useSwipeBack.js';
 import { getActiveThinkingTs } from './thinking-utils.js';
 import { WsClient } from './ws-client.js';
 import { configure as configureApi, apiFetch, onAuthExpired, getUserPref, startProactiveRefresh, stopProactiveRefresh, refreshSessionIfStale, ApiError, configureApiKey, clearApiKey } from './api.js';
-import { isNative, getServerUrl } from './native.js';
+import { isNative, getServerUrl, clearServerUrl } from './native.js';
 import { getAuthKey, clearAuthKey } from './biometric-auth.js';
 import { initPushNotifications } from './push-notifications.js';
 import { ServerSetupPage } from './pages/ServerSetupPage.js';
@@ -864,6 +864,14 @@ export function App() {
     setSelectedServerId(null);
   }, [setActiveSession]);
 
+  // Native only: log out + clear server URL → back to ServerSetupPage
+  const handleChangeServer = useCallback(async () => {
+    setShowMobileServerMenu(false);
+    try { await handleLogout(); } catch { /* ignore */ }
+    try { await clearServerUrl(); } catch { /* ignore */ }
+    setNativeServerUrl(null);
+  }, [handleLogout]);
+
   const handleSelectServer = useCallback(async (serverId: string, serverName?: string) => {
     localStorage.setItem('rcc_server', serverId);
     if (serverName) { localStorage.setItem('rcc_server_name', serverName); setSelectedServerName(serverName); }
@@ -1064,6 +1072,11 @@ export function App() {
                     <button class="mobile-server-menu-item" onClick={handleBackToDashboard}>
                       ← Home
                     </button>
+                    {isNative() && (
+                      <button class="mobile-server-menu-item mobile-server-menu-change" onClick={handleChangeServer}>
+                        ⇄ Switch Cloud Server
+                      </button>
+                    )}
                     {servers.map((s) => {
                       const online = isServerOnline(s);
                       return (
