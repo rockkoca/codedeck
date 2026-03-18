@@ -61,6 +61,8 @@ const CODEX_SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '�
 const CODEX_THINKING_PATTERNS = [
   /\bthinking\b/i,
   /\breasoning\b/i,
+  /\bworking\b/i,
+  /\b[A-Z][a-z]+ing\b/,  // same generic pattern as CC
 ];
 
 const CODEX_TOOL_PATTERNS = [
@@ -151,15 +153,18 @@ export function detectStatus(
       break;
     }
 
-    case 'codex':
-      if (matchesAny(tail, CODEX_IDLE_PATTERNS) && !hasSpinner(lines, CODEX_SPINNER_CHARS))
+    case 'codex': {
+      const codexHasSpinner = hasSpinner(lines, CODEX_SPINNER_CHARS) || CC_SPINNER_LINE.test(tail);
+      if (matchesAny(tail, CODEX_IDLE_PATTERNS) && !codexHasSpinner)
         return 'idle';
-      if (matchesAny(text, CODEX_TOOL_PATTERNS)) return 'tool_running';
-      if (hasSpinner(lines, CODEX_SPINNER_CHARS)) {
-        if (matchesAny(text, CODEX_THINKING_PATTERNS)) return 'thinking';
+      if (codexHasSpinner) {
+        if (matchesAny(tail, CODEX_TOOL_PATTERNS)) return 'tool_running';
+        if (matchesAny(tail, CODEX_THINKING_PATTERNS)) return 'thinking';
         return 'streaming';
       }
+      if (matchesAny(tail, CODEX_TOOL_PATTERNS)) return 'tool_running';
       break;
+    }
 
     case 'opencode':
       if (matchesAny(tail, OC_IDLE_PATTERNS) && !hasSpinner(lines, OC_SPINNER_CHARS))
