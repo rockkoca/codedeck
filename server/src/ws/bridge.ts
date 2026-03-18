@@ -275,10 +275,25 @@ export class WsBridge {
 
       this.relayToBrowsers(msg);
 
-      if (msg.type === 'session.idle' && env) {
-        this.dispatchIdlePush(db, env, msg).catch((err) =>
-          logger.error({ err }, 'Push dispatch failed'),
-        );
+      // Push notifications for key events
+      if (env) {
+        const pushType = msg.type as string;
+        if (pushType === 'session.idle' || pushType === 'session.notification' || pushType === 'session.error') {
+          this.dispatchEventPush(db, env, msg).catch((err) =>
+            logger.error({ err }, 'Push dispatch failed'),
+          );
+        }
+        // Timeline events: ask.question
+        if (pushType === 'timeline.event') {
+          const event = (msg as Record<string, unknown>).event as Record<string, unknown> | undefined;
+          if (event?.type === 'ask.question') {
+            this.dispatchEventPush(db, env, {
+              type: 'ask.question',
+              session: event.sessionId ?? '',
+              ...event.payload as Record<string, unknown>,
+            }).catch((err) => logger.error({ err }, 'Push dispatch failed'));
+          }
+        }
       }
     });
 
@@ -819,19 +834,50 @@ export class WsBridge {
     }
   }
 
-  // ── Push on session.idle ───────────────────────────────────────────────────
+  // ── Push notifications ──────────────────────────────────────────────────────
 
-  private async dispatchIdlePush(db: PgDatabase, env: Env, msg: Record<string, unknown>): Promise<void> {
+  private async dispatchEventPush(db: PgDatabase, env: Env, msg: Record<string, unknown>): Promise<void> {
+    // Skip push if any browser WS is connected (app is in foreground)
+    if (this.browserSockets.size > 0) return;
+
     const server = await db.prepare('SELECT user_id FROM servers WHERE id = ?').bind(this.serverId).first<{ user_id: string }>();
     if (!server) return;
 
     const { dispatchPush } = await import('../routes/push.js').catch(() => ({ dispatchPush: null }));
     if (!dispatchPush) return;
+
+    const session = String(msg.session ?? msg.sessionId ?? '');
+    const eventType = String(msg.type ?? '');
+
+    let title: string;
+    let body: string;
+    switch (eventType) {
+      case 'session.idle':
+        title = 'Task complete';
+        body = `${session} is ready for input`;
+        break;
+      case 'session.notification': {
+        title = String(msg.title ?? 'Notification');
+        body = String(msg.message ?? session);
+        break;
+      }
+      case 'session.error':
+        title = 'Session error';
+        body = `${session}: ${String(msg.error ?? 'unknown error')}`;
+        break;
+      case 'ask.question':
+        title = 'Input needed';
+        body = `${session} is waiting for your answer`;
+        break;
+      default:
+        return;
+    }
+
     await dispatchPush({
       userId: server.user_id,
-      title: 'Agent idle',
-      body: `Session ${String(msg.session ?? '')} is ready`,
-      data: { serverId: this.serverId, session: String(msg.session ?? '') },
+      title,
+      body,
+      data: { serverId: this.serverId, session, type: eventType },
     }, env);
   }
 

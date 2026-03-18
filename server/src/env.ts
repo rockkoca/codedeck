@@ -47,6 +47,19 @@ export interface EnvConfig {
   /** Port to listen on. Default: 3000 */
   PORT?: string;
 
+  // APNs push notifications (iOS)
+  /** APNs auth key (.p8 file content, base64 encoded) */
+  APNS_KEY?: string;
+  /** APNs key ID (from Apple Developer portal) */
+  APNS_KEY_ID?: string;
+  /** Apple Team ID */
+  APNS_TEAM_ID?: string;
+  /** APNs bundle ID (e.g. app.codedeck) */
+  APNS_BUNDLE_ID?: string;
+
+  // FCM push notifications (Android)
+  FCM_SERVER_KEY?: string;
+
   // Runtime
   NODE_ENV?: string;
   ENVIRONMENT?: string;
@@ -82,6 +95,11 @@ export function loadEnv(): EnvConfig {
     WEBAUTHN_RP_ID: process.env.WEBAUTHN_RP_ID,
     BIND_HOST: process.env.BIND_HOST,
     PORT: process.env.PORT,
+    APNS_KEY: process.env.APNS_KEY,
+    APNS_KEY_ID: process.env.APNS_KEY_ID,
+    APNS_TEAM_ID: process.env.APNS_TEAM_ID,
+    APNS_BUNDLE_ID: process.env.APNS_BUNDLE_ID ?? 'app.codedeck',
+    FCM_SERVER_KEY: process.env.FCM_SERVER_KEY,
     NODE_ENV: process.env.NODE_ENV,
     ENVIRONMENT: process.env.ENVIRONMENT,
   };
