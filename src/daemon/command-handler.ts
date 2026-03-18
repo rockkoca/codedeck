@@ -1047,25 +1047,7 @@ async function handleFsGitDiff(cmd: Record<string, unknown>, serverLink: ServerL
         diff = stdout;
       } catch { /* ignore */ }
     }
-    // For untracked files only, generate a diff against /dev/null
-    if (!diff) {
-      let isTracked = false;
-      try {
-        await execAsync(`git ls-files --error-unmatch ${JSON.stringify(real)}`, { cwd: dir, timeout: 5000 });
-        isTracked = true;
-      } catch { /* not tracked */ }
-      if (!isTracked) {
-        try {
-          const { stdout } = await execAsync(`git diff --no-index -- /dev/null ${JSON.stringify(real)}`, { cwd: dir, timeout: 5000 });
-          diff = stdout;
-        } catch (e) {
-          // git diff --no-index exits with code 1 when files differ (normal), stdout still has diff
-          if (e && typeof e === 'object' && 'stdout' in e && typeof (e as { stdout: unknown }).stdout === 'string') {
-            diff = (e as { stdout: string }).stdout;
-          }
-        }
-      }
-    }
+    // Untracked files: no diff (nothing to compare against)
     try { serverLink.send({ type: 'fs.git_diff_response', requestId, path: rawPath, resolvedPath: real, status: 'ok', diff }); } catch { /* ignore */ }
   } catch (err) {
     try { serverLink.send({ type: 'fs.git_diff_response', requestId, path: rawPath, status: 'error', error: err instanceof Error ? err.message : String(err) }); } catch { /* ignore */ }
