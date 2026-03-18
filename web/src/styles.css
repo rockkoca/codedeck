@@ -350,7 +350,11 @@ body {
 .chat-view-wrap { flex: 1; position: relative; overflow: hidden; display: flex; flex-direction: column; }
 .chat-split { flex-direction: row !important; }
 .chat-main { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
-.chat-view { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.chat-view { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; scrollbar-width: thin; scrollbar-color: #1e40af22 transparent; }
+.chat-view::-webkit-scrollbar { width: 3px; }
+.chat-view::-webkit-scrollbar-track { background: transparent; }
+.chat-view::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #3b82f6 0%, #6366f1 50%, #3b82f6 100%); border-radius: 2px; box-shadow: 0 0 6px #3b82f680; }
+.chat-view::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #60a5fa 0%, #818cf8 50%, #60a5fa 100%); box-shadow: 0 0 10px #6366f1aa; }
 /* File panel toggle button */
 .chat-panel-toggle { position: absolute; top: 6px; right: 8px; z-index: 10; background: rgba(15,23,42,.85); border: 1px solid #334155; border-radius: 5px; color: #64748b; cursor: pointer; padding: 3px 7px; font-size: 14px; line-height: 1; transition: color .15s, border-color .15s; }
 .chat-panel-toggle:hover, .chat-panel-toggle.active { color: #818cf8; border-color: #6366f1; }
