@@ -26,24 +26,9 @@ const CC_SPINNER_CHARS = [
   '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', // braille
 ];
 
+// Any capitalized word ending in -ing = Claude Code spinner status (Thinking, Discombobulating, etc.)
 const CC_THINKING_PATTERNS = [
-  /\bThinking\b/i,
-  /\bAnalyz/i,
-  /\bDiscombobulat/i,
-  /\bPondering\b/i,
-  /\bReasoning\b/i,
-  /\bReflecting\b/i,
-  /\bContempl/i,
-  /\bProcessing\b/i,
-  /\bGenerating\b/i,
-  /\bFormulating\b/i,
-  /\bCogitating\b/i,
-  /\bRuminat/i,
-  /\bMusing\b/i,
-  /\bSynthesiz/i,
-  /\bDeducing\b/i,
-  /\bInferring\b/i,
-  /\bEvaluat/i,
+  /\b[A-Z][a-z]+ing\b/,
 ];
 
 const CC_TOOL_PATTERNS = [
