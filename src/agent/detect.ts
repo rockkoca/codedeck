@@ -163,6 +163,9 @@ export function detectStatus(
         return 'streaming';
       }
       if (matchesAny(tail, CODEX_TOOL_PATTERNS)) return 'tool_running';
+      // No idle prompt visible and no spinner caught → assume working
+      // (Codex working text flickers too fast for polling to reliably capture)
+      if (!matchesAny(tail, CODEX_IDLE_PATTERNS)) return 'thinking';
       break;
     }
 
