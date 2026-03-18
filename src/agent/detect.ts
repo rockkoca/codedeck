@@ -24,8 +24,11 @@ const CC_IDLE_PATTERNS = [
 
 const CC_SPINNER_CHARS = [
   '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', // braille
-  '✻', '✱', '✳', '✴', '✵', '✶', '✷', '✸', '❋', '❊', '❇', // star/asterisk pulsing
 ];
+
+// CC uses various Unicode decorative chars as pulsing spinners (✻ ✽ ❋ etc.)
+// Match any non-ASCII symbol followed by a capitalized -ing word on the same line
+const CC_SPINNER_LINE = /[^\x00-\x7F]\s+[A-Z][a-z]+ing/;
 
 // Any capitalized word ending in -ing = Claude Code spinner status (Thinking, Discombobulating, etc.)
 const CC_THINKING_PATTERNS = [
@@ -132,11 +135,13 @@ export function detectStatus(
   const tail = lines.slice(-10).join('\n');
 
   switch (agentType) {
-    case 'claude-code':
+    case 'claude-code': {
       if (matchesAny(tail, CC_PERMISSION_PATTERNS)) return 'permission';
-      if (matchesAny(tail, CC_IDLE_PATTERNS) && !hasSpinner(lines, CC_SPINNER_CHARS))
+      const hasClassicSpinner = hasSpinner(lines, CC_SPINNER_CHARS);
+      const hasStarSpinner = CC_SPINNER_LINE.test(tail);
+      if (matchesAny(tail, CC_IDLE_PATTERNS) && !hasClassicSpinner && !hasStarSpinner)
         return 'idle';
-      if (hasSpinner(lines, CC_SPINNER_CHARS)) {
+      if (hasClassicSpinner || hasStarSpinner) {
         // Check tail for tool vs thinking — using full text would match stale output
         if (matchesAny(tail, CC_TOOL_PATTERNS)) return 'tool_running';
         if (matchesAny(tail, CC_THINKING_PATTERNS)) return 'thinking';
@@ -144,6 +149,7 @@ export function detectStatus(
       }
       if (matchesAny(tail, CC_TOOL_PATTERNS)) return 'tool_running';
       break;
+    }
 
     case 'codex':
       if (matchesAny(tail, CODEX_IDLE_PATTERNS) && !hasSpinner(lines, CODEX_SPINNER_CHARS))
