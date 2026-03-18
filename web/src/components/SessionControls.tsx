@@ -24,8 +24,8 @@ interface Props {
   sessionDisplayName?: string | null;
   /** Quick data hook result from parent (loaded once at app level). */
   quickData: UseQuickDataResult;
-  /** Model detected from terminal output for the active session. */
-  detectedModel?: ModelChoice;
+  /** Model detected from terminal output or usage events for the active session. */
+  detectedModel?: string;
   /** Hide the shortcuts row (e.g. in chat mode). */
   hideShortcuts?: boolean;
   /** Called after a message is sent — for local UX only (e.g. optimistic display). Does not emit timeline events. */
@@ -106,8 +106,14 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
 
   // Auto-adopt detected model when user hasn't explicitly chosen one
   useEffect(() => {
-    if (detectedModel && model === null) {
+    if (!detectedModel) return;
+    // CC models
+    if ((detectedModel === 'opus' || detectedModel === 'sonnet' || detectedModel === 'haiku') && model === null) {
       setModel(detectedModel);
+    }
+    // Codex models
+    if (detectedModel.startsWith('gpt-') && CODEX_MODELS.includes(detectedModel as CodexModelChoice)) {
+      setCodexModel(detectedModel as CodexModelChoice);
     }
   }, [detectedModel, model]);
 

@@ -19,7 +19,7 @@ const THINKING_SKIP_TYPES = new Set([
   'command.ack',
 ]);
 
-export function getActiveThinkingTs(events: Array<{ type: string; ts: number }>): number | null {
+export function getActiveThinkingTs(events: Array<{ type: string; ts: number; payload?: Record<string, unknown> }>): number | null {
   let thinkingTs: number | null = null;
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
@@ -29,6 +29,8 @@ export function getActiveThinkingTs(events: Array<{ type: string; ts: number }>)
       thinkingTs = e.ts;
       continue;
     }
+    // session.state=idle means agent finished — end thinking
+    if (e.type === 'session.state' && e.payload?.state === 'idle') break;
     if (THINKING_SKIP_TYPES.has(e.type)) continue;
     break; // assistant.text / user.message / ask.question — thinking ended
   }

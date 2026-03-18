@@ -71,6 +71,7 @@ export function App() {
   // Native: server URL state and readiness flag
   const [nativeServerUrl, setNativeServerUrl] = useState<string | null>(null);
   const [nativeReady, setNativeReady] = useState(!isNative()); // web is immediately ready
+  const [splashDone, setSplashDone] = useState(false);
 
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(
@@ -138,6 +139,18 @@ export function App() {
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Dismiss splash after minimum display time (let animation play)
+  useEffect(() => {
+    const splash = document.getElementById('splash');
+    if (!splash) { setSplashDone(true); return; }
+    const minMs = isNative() ? 0 : 1800; // web: show full animation; native: Capacitor splash handles it
+    const t = setTimeout(() => {
+      splash.classList.add('splash-exit');
+      setTimeout(() => { splash.remove(); setSplashDone(true); }, 500);
+    }, minMs);
+    return () => clearTimeout(t);
   }, []);
 
   // Native: init push notifications after login
@@ -323,7 +336,7 @@ export function App() {
   const [idleAlerts, setIdleAlerts] = useState<Set<string>>(new Set());
   const [activeTools, setActiveTools] = useState<Map<string, string>>(new Map());
   const [toasts, setToasts] = useState<Array<{ id: number; sessionName: string; project: string; kind: 'idle' | 'notification'; title?: string; message?: string }>>([]);
-  const [detectedModels, setDetectedModels] = useState<Map<string, 'opus' | 'sonnet' | 'haiku'>>(new Map());
+  const [detectedModels, setDetectedModels] = useState<Map<string, string>>(new Map());
   const quickData = useQuickData();
 
   // IDs of currently-open (non-minimized) sub-session windows
@@ -551,10 +564,14 @@ export function App() {
         // Scan terminal lines for model keywords (catches Codex footer, fallback for all agents)
         const sessionName = msg.diff.sessionName;
         const stripped = msg.diff.lines.map(([, l]: [unknown, string]) => l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')).join(' ').toLowerCase();
-        const detected: 'opus' | 'sonnet' | 'haiku' | null =
+        // Detect models from terminal output
+        const claudeModel: string | null =
           stripped.includes('opus') ? 'opus' :
           stripped.includes('sonnet') ? 'sonnet' :
           stripped.includes('haiku') ? 'haiku' : null;
+        const gptMatch = stripped.match(/\b(gpt-5\.\d+(?:-\w+)?)\b/);
+        const geminiMatch = stripped.match(/\b(gemini[- ]\d[\w.-]*)\b/);
+        const detected = claudeModel ?? (gptMatch ? gptMatch[1] : null) ?? (geminiMatch ? geminiMatch[1] : null);
         if (detected) {
           setDetectedModels((prev) => {
             if (prev.get(sessionName) === detected) return prev;
@@ -585,15 +602,18 @@ export function App() {
         }
         if (event.type === 'usage.update' && event.payload.model) {
           const modelStr = String(event.payload.model).toLowerCase();
-          const detected: 'opus' | 'sonnet' | 'haiku' | null =
+          const claudeM: string | null =
             modelStr.includes('opus') ? 'opus' :
             modelStr.includes('sonnet') ? 'sonnet' :
             modelStr.includes('haiku') ? 'haiku' : null;
-          if (detected) {
+          const gptM = modelStr.match(/\b(gpt-5\.\d+(?:-\w+)?)\b/);
+          const gemM = modelStr.match(/\b(gemini[- ]\d[\w.-]*)\b/);
+          const det = claudeM ?? (gptM ? gptM[1] : null) ?? (gemM ? gemM[1] : null);
+          if (det) {
             setDetectedModels((prev) => {
-              if (prev.get(event.sessionId) === detected) return prev;
+              if (prev.get(event.sessionId) === det) return prev;
               const next = new Map(prev);
-              next.set(event.sessionId, detected);
+              next.set(event.sessionId, det);
               return next;
             });
           }
@@ -958,8 +978,8 @@ export function App() {
     return <NativeAuthBridge callbackUrl={nativeCallback} />;
   }
 
-  if (!nativeReady) {
-    return null; // Splash screen while reading biometric storage
+  if (!nativeReady || !splashDone) {
+    return null; // Wait for splash animation + native init
   }
 
   if (isNative() && !nativeServerUrl) {
@@ -1220,7 +1240,7 @@ export function App() {
                         {' '}{trans('chat.thinking_running', { sec: Math.max(0, Math.round((thinkingNow - activeThinkingTs) / 1000)) })}
                       </span>
                     )}
-                    {lastUsage.model && <span class="session-usage-tokens" style={{ color: '#818cf8', marginLeft: 'auto' }}>{lastUsage.model.includes('opus') ? 'opus' : lastUsage.model.includes('sonnet') ? 'sonnet' : lastUsage.model.includes('haiku') ? 'haiku' : lastUsage.model.includes('flash') ? 'flash' : lastUsage.model.split('-').pop()}</span>}
+                    {lastUsage.model && <span class="session-usage-tokens" style={{ color: '#818cf8', marginLeft: 'auto' }}>{(() => { const m = lastUsage.model.toLowerCase(); if (m.includes('opus')) return 'opus'; if (m.includes('sonnet')) return 'sonnet'; if (m.includes('haiku')) return 'haiku'; if (m.includes('flash')) return 'flash'; const gpt = m.match(/gpt-5\.\d+(?:-\w+)?/); if (gpt) return gpt[0]; const gem = m.match(/gemini[- ]\d[\w.-]*/); if (gem) return gem[0]; return lastUsage.model.split('-').pop(); })()}</span>}
                   </div>
                 </div>
               );
