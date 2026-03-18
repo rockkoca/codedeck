@@ -29,6 +29,21 @@ const CC_SPINNER_CHARS = [
 const CC_THINKING_PATTERNS = [
   /\bThinking\b/i,
   /\bAnalyz/i,
+  /\bDiscombobulat/i,
+  /\bPondering\b/i,
+  /\bReasoning\b/i,
+  /\bReflecting\b/i,
+  /\bContempl/i,
+  /\bProcessing\b/i,
+  /\bGenerating\b/i,
+  /\bFormulating\b/i,
+  /\bCogitating\b/i,
+  /\bRuminat/i,
+  /\bMusing\b/i,
+  /\bSynthesiz/i,
+  /\bDeducing\b/i,
+  /\bInferring\b/i,
+  /\bEvaluat/i,
 ];
 
 const CC_TOOL_PATTERNS = [
