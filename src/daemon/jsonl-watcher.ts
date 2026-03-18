@@ -115,7 +115,14 @@ function parseLine(sessionName: string, line: string, lineByteOffset?: number): 
         break;
       }
       case 'agent_progress': {
-        const msg = String(data['message'] ?? 'working');
+        const raw = data['message'];
+        let msg = 'working';
+        if (typeof raw === 'string') {
+          msg = raw;
+        } else if (raw && typeof raw === 'object') {
+          const role = (raw as Record<string, unknown>).type ?? (raw as Record<string, unknown>).role ?? '';
+          msg = String(role) || 'working';
+        }
         timelineEmitter.emit(sessionName, 'agent.status', {
           status: 'agent_working',
           label: `Sub-agent: ${msg}`,

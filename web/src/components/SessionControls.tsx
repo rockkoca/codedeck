@@ -43,11 +43,11 @@ interface Props {
 
 type MenuAction = 'restart' | 'new' | 'stop';
 type ModelChoice = 'opus' | 'sonnet' | 'haiku';
-type CodexModelChoice = 'gpt-5.4' | 'gpt-5.3-codex';
+type CodexModelChoice = 'gpt-5.4' | 'gpt-5.4-mini' | 'gpt-5.3-codex' | 'gpt-5.2';
 
 const MODEL_STORAGE_KEY = 'codedeck-model';
 const CODEX_MODEL_STORAGE_KEY = 'codedeck-codex-model';
-const CODEX_MODELS: CodexModelChoice[] = ['gpt-5.4', 'gpt-5.3-codex'];
+const CODEX_MODELS: CodexModelChoice[] = ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'];
 
 // Enter moved after ↓ arrow
 const SHORTCUTS: Array<{ label: string; title: string; data: string; wide?: boolean }> = [
@@ -316,7 +316,14 @@ export function SessionControls({ ws, activeSession, inputRef, onAfterAction, on
     if (!ws || !activeSession) return;
     setCodexModel(m);
     try { localStorage.setItem(CODEX_MODEL_STORAGE_KEY, m); } catch { /* ignore */ }
-    ws.subSessionSetModel(activeSession.name, m, activeSession.projectDir);
+    const isBrain = activeSession.role === 'brain';
+    if (isBrain) {
+      // Send /model command directly to Codex terminal (like CC)
+      ws.sendSessionCommand('send', { sessionName: activeSession.name, text: `/model ${m} medium` });
+    } else {
+      // Sub-sessions: restart with new model
+      ws.subSessionSetModel(activeSession.name, m, activeSession.projectDir);
+    }
     setModelOpen(false);
     onAfterAction?.();
   };
