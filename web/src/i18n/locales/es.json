@@ -170,5 +170,15 @@
     "added": "Agregada",
     "last_used": "último uso",
     "device_name_placeholder": "Nombre del dispositivo (opcional)"
+  },
+  "voice": {
+    "listening": "Escuchando...",
+    "paused": "Pausado",
+    "speak_now": "Habla ahora...",
+    "voice_input": "Entrada de voz",
+    "stop_voice": "Detener entrada de voz",
+    "send": "Enviar",
+    "mic_permission_failed": "Error al iniciar — verifica los permisos de micrófono/reconocimiento de voz en Ajustes",
+    "error": "Error de voz: {{error}}"
   }
 }

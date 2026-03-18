@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">CodeDeck</string>
     <string name="title_activity_main">CodeDeck</string>
     <string name="package_name">app.codedeck</string>
-    <string name="custom_url_scheme">codedeck</string>
+    <string name="custom_url_scheme">app.codedeck</string>
 </resources>

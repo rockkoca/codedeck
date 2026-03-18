@@ -730,14 +730,14 @@ body {
 .fb-diff-toggle.active { border-color: #f59e0b; color: #f59e0b; }
 /* Diff view — split (GitHub-style) */
 .fb-diff { background: #0d1117; overflow: auto; flex: 1; font-size: 12px; }
-.diff-table { width: 100%; border-collapse: collapse; font-family: 'SF Mono','Fira Code','Cascadia Code',monospace; font-size: 12px; }
+.diff-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-family: 'SF Mono','Fira Code','Cascadia Code',monospace; font-size: 12px; }
 .diff-table td { padding: 0; vertical-align: top; }
 /* Line number cells */
 .diff-ln { width: 1%; min-width: 36px; padding: 0 8px; text-align: right; color: #3d444d; user-select: none; white-space: nowrap; border-right: 1px solid #21262d; font-size: 11px; line-height: 20px; }
 .diff-ln-del { background: rgba(255,70,70,.08); color: #6e4040; }
 .diff-ln-add { background: rgba(46,160,67,.08); color: #3a5a3a; }
 /* Code cells */
-.diff-cell { width: 49%; padding: 0 8px; white-space: pre; overflow: hidden; line-height: 20px; word-break: break-all; }
+.diff-cell { width: 49%; padding: 0 8px; white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; line-height: 20px; word-break: break-all; }
 .diff-cell.diff-del { background: rgba(255,70,70,.12); color: #ffa0a0; border-left: 3px solid #da3633; }
 .diff-cell.diff-add { background: rgba(46,160,67,.12); color: #7ee787; border-left: 3px solid #3fb950; }
 .diff-cell.diff-ctx { color: #8b949e; background: transparent; border-left: 3px solid transparent; }

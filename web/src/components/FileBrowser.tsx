@@ -181,7 +181,7 @@ function renderDiff(diff: string): string {
     }
   }
 
-  return `<table class="diff-table"><tbody>${rows.join('')}</tbody></table>`;
+  return `<table class="diff-table"><colgroup><col style="width:36px"><col style="width:calc(50% - 36px)"><col style="width:36px"><col style="width:calc(50% - 36px)"></colgroup><tbody>${rows.join('')}</tbody></table>`;
 }
 
 function isBinaryContent(content: string): boolean {

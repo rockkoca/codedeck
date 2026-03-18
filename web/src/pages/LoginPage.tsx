@@ -21,11 +21,9 @@ export function LoginPage({ onLogin, serverUrl, onLoginSuccess, onChangeServer }
   const [passkeySupported, setPasskeySupported] = useState(false);
 
   useEffect(() => {
-    // Show passkey buttons whenever the browser supports WebAuthn.
-    // We intentionally do NOT call isUserVerifyingPlatformAuthenticatorAvailable()
-    // because that only detects built-in authenticators (Touch ID, Windows Hello, etc.)
-    // and returns false for third-party managers like Bitwarden, 1Password, etc.
-    setPasskeySupported(typeof window !== 'undefined' && !!window.PublicKeyCredential);
+    // Native apps always support passkey (WebAuthn runs in Custom Tab / ASWebAuthSession, not WebView).
+    // On web, show passkey buttons whenever the browser supports WebAuthn.
+    setPasskeySupported(isNative() || (typeof window !== 'undefined' && !!window.PublicKeyCredential));
   }, []);
 
   const handleGithub = () => {

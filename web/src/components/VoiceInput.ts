@@ -5,10 +5,6 @@
  */
 import { SpeechRecognition } from '@capgo/capacitor-speech-recognition';
 
-/**
- * Choose a recognition locale that maximises English mixing.
- * Chinese SFSpeechRecognizer handles embedded English words reasonably well.
- */
 export function pickLocale(): string {
   const lang = navigator.language.toLowerCase();
   if (lang.startsWith('zh')) return 'zh-Hans';
@@ -24,13 +20,14 @@ export function isAvailable(): boolean {
 }
 
 let _listening = false;
-let _removeListener: (() => void) | null = null;
+let _removePartial: (() => void) | null = null;
+let _removeLevel: (() => void) | null = null;
+let _onLevel: ((level: number) => void) | null = null;
 
 export async function startListening(onResult: (text: string, isFinal: boolean) => void): Promise<boolean> {
   if (!isAvailable() || _listening) return false;
 
   try {
-    // Request permission if needed
     const perms = await SpeechRecognition.requestPermissions();
     if (perms.speechRecognition !== 'granted') return false;
 
@@ -39,13 +36,19 @@ export async function startListening(onResult: (text: string, isFinal: boolean) 
 
     const locale = pickLocale();
 
-    // Add listener for partial results
-    const handle = await SpeechRecognition.addListener('partialResults', (data) => {
+    // Partial results listener
+    const h1 = await SpeechRecognition.addListener('partialResults', (data) => {
       if (data.matches?.length) {
         onResult(data.matches[0], false);
       }
     });
-    _removeListener = () => handle.remove();
+    _removePartial = () => h1.remove();
+
+    // Audio level listener (emitted from native at ~15fps)
+    const h2 = await SpeechRecognition.addListener('audioLevel' as any, (data: any) => {
+      _onLevel?.(data.level ?? 0);
+    });
+    _removeLevel = () => h2.remove();
 
     await SpeechRecognition.start({
       language: locale,
@@ -71,9 +74,17 @@ export async function stopListening(): Promise<void> {
   } catch (err) {
     console.warn('[voice] stop failed:', err);
   } finally {
-    _removeListener?.();
-    _removeListener = null;
+    _removePartial?.();
+    _removePartial = null;
+    _removeLevel?.();
+    _removeLevel = null;
+    _onLevel = null;
   }
+}
+
+/** Register a callback for real-time audio level (0..1). Call before startListening. */
+export function onAudioLevel(cb: ((level: number) => void) | null): void {
+  _onLevel = cb;
 }
 
 export function isListening(): boolean {

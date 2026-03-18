@@ -170,5 +170,15 @@
     "added": "新增於",
     "last_used": "最近使用",
     "device_name_placeholder": "裝置名稱（可選）"
+  },
+  "voice": {
+    "listening": "辨識中...",
+    "paused": "已暫停",
+    "speak_now": "開始說話...",
+    "voice_input": "語音輸入",
+    "stop_voice": "停止語音輸入",
+    "send": "傳送",
+    "mic_permission_failed": "啟動失敗 — 請在設定中檢查麥克風/語音辨識權限",
+    "error": "語音錯誤：{{error}}"
   }
 }

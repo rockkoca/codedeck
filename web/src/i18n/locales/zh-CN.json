@@ -170,5 +170,15 @@
     "added": "添加于",
     "last_used": "最近使用",
     "device_name_placeholder": "设备名称（可选）"
+  },
+  "voice": {
+    "listening": "识别中...",
+    "paused": "已暂停",
+    "speak_now": "开始说话...",
+    "voice_input": "语音输入",
+    "stop_voice": "停止语音输入",
+    "send": "发送",
+    "mic_permission_failed": "启动失败 — 请在设置中检查麦克风/语音识别权限",
+    "error": "语音错误：{{error}}"
   }
 }

@@ -170,5 +170,15 @@
     "added": "추가됨",
     "last_used": "최근 사용",
     "device_name_placeholder": "기기 이름 (선택)"
+  },
+  "voice": {
+    "listening": "인식 중...",
+    "paused": "일시정지",
+    "speak_now": "말씀하세요...",
+    "voice_input": "음성 입력",
+    "stop_voice": "음성 입력 중지",
+    "send": "보내기",
+    "mic_permission_failed": "시작 실패 — 설정에서 마이크/음성 인식 권한을 확인하세요",
+    "error": "음성 오류: {{error}}"
   }
 }

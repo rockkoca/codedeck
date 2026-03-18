@@ -170,5 +170,15 @@
     "added": "追加日",
     "last_used": "最終使用",
     "device_name_placeholder": "デバイス名（任意）"
+  },
+  "voice": {
+    "listening": "音声認識中...",
+    "paused": "一時停止",
+    "speak_now": "話してください...",
+    "voice_input": "音声入力",
+    "stop_voice": "音声入力を停止",
+    "send": "送信",
+    "mic_permission_failed": "開始に失敗しました — 設定でマイク/音声認識の権限を確認してください",
+    "error": "音声エラー：{{error}}"
   }
 }
